@@ -1,1 +1,1 @@
-# train-to-contribute-for-oss
+# lockable-resources-remote-notes
