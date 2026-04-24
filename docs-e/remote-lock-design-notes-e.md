@@ -1,7 +1,5 @@
 # Remote Lock — Design Decision Notes
 
-> Practice / Draft. This is a learning draft, not a production-ready design.
-
 ## 1. Purpose of This Document
 
 - Capture the reasoning behind decisions summarized in the parent Epic.

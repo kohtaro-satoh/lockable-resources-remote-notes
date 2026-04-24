@@ -1,10 +1,5 @@
 # Remote Lock — 背景と動機
 
-> 🧪 Practice / Draft. 本番設計ではなく、練習用の草案です。
-> 本家 `jenkinsci/lockable-resources-plugin` に提案する前の勉強メモとして書いています。
-
-Upstream 要望: `https://github.com/jenkinsci/lockable-resources-plugin/issues/321`
-
 ## 1. このドキュメントの目的
 
 - なぜ「別の Jenkins controller が管理するリソースを `lock()` したい」のか、

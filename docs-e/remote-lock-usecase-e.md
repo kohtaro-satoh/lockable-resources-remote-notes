@@ -1,7 +1,5 @@
 # Remote Lock — Target Use Cases (Small to Mid-Scale)
 
-> Practice / Draft. This is a learning draft, not a production-ready design.
-
 ## 1. Purpose of This Document
 
 - Describe real-world operational scenarios that motivate remote lock support.

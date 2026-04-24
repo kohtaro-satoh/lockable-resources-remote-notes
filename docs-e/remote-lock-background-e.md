@@ -1,8 +1,5 @@
 # Remote Lock — Background and Motivation
 
-> Practice / Draft. This is a learning draft, not a production-ready design.
-> It is intended as preparation material before proposing changes to `jenkinsci/lockable-resources-plugin`.
-
 Upstream request: `https://github.com/jenkinsci/lockable-resources-plugin/issues/321`
 
 ## 1. Purpose of This Document
