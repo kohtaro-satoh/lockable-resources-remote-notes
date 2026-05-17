@@ -401,19 +401,22 @@
 
 記録:
 - 日付: 2026-05-17
-- コミット: 0ea83df
+- コミット: 0ea83df, ecb11f4, cf47eb2
 - 変更ファイル:
   - src/test/java/.../actions/RemoteApiV1ActionTest.java (新規)
   - src/test/java/.../LockStepRemoteTest.java (新規)
+  - src/test/java/.../actions/LockableResourcesRootActionTest.java (編集: Remote: clientId 正常表示テスト追加)
 - 確認結果:
   - `$HOME/.local/apache-maven-3.9.9/bin/mvn test -Dtest=RemoteApiV1ActionTest` を実行し成功（Tests run: 1, Failures: 0, Errors: 0, Skipped: 0）。
   - `$HOME/.local/apache-maven-3.9.9/bin/mvn test -Dtest=LockStepRemoteTest` を実行し成功（Tests run: 6, Failures: 0, Errors: 0, Skipped: 0）。
+  - `$HOME/.local/apache-maven-3.9.9/bin/mvn test -Dtest=LockableResourcesRootActionTest` を実行し成功（Tests run: 19, Failures: 0, Errors: 0, Skipped: 0）。
   - `$HOME/.local/apache-maven-3.9.9/bin/mvn test`（plugin 全体）を実行し成功（Tests run: 268, Failures: 0, Errors: 0, Skipped: 1）。
 - 補足:
   - Step7 は着手済み。まず `RemoteApiV1Action` の代表契約を固定する回帰テストを追加した。
   - 現時点で固定した内容: `remoteApiEnabled=false` 時の 403、`exposeLabel` 制約による 404 `UNKNOWN_RESOURCE`、`heartbeatIntervalSeconds` 不正値による 400 `INVALID_HEARTBEAT_INTERVAL`、正常 acquire の 202 + `lockId`。
   - `LockStepRemoteTest` で `serverId` 指定時に remote 分岐へ入ること、`serverId` なしでは remote 設定が存在しても既存 local lock フローを維持することを固定した。
   - failure 系として、`serverId` に対応する remote 接続が未設定のケース、remote acquire status が `FAILED` を返すケース、`EXPIRED` を返すケース、`POST /acquire` の通信失敗ケースを追加し、body 未実行のまま build failure になることを固定した。
+  - UI では `Remote: (unknown)` に加えて `Remote: clientId` の正常表示分岐も `LockableResourcesRootActionTest` で固定した。
   - 当初は JenkinsRule + HTTP 経由で組んだが、ローカル環境で Jetty の port bind が不安定だったため、action 直叩き + mocked Stapler に切り替えて安定化した。
   - `serverId` 分岐、既存 local 挙動維持、代表的な failure 系の最小回帰テストは追加済み。Step7 全体としては、必要に応じて heartbeat 中断や status poll 中の通信失敗などの拡張ケース追加を残している。
 
