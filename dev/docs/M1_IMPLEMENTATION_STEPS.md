@@ -506,6 +506,54 @@ E2E 確認チェック（3 controller）:
 4. plugin 側に入れない理由が「環境依存」だけなら Step8/9 へ送る
 5. 将来 upstream に残したい検証はまず Step7 で検討する
 
+## `mvn test` 異常時の運用手順（初心者向け）
+
+### 背景（今回の学び）
+
+- `LockableResourcesManager is missing its descriptor` が大量に出ても、必ずしもコード回帰とは限らない。
+- 同一 commit でも、`target/` などの生成物状態が崩れていると JenkinsRule 系テストが雪崩式に失敗する。
+- 比較検証はクリーンな worktree で実行しないと、bisect 判定が偽陽性になることがある。
+
+### まずやること（最短復旧）
+
+1. 作業ツリー状態を確認する。
+2. `target/` を消して再生成する。
+3. 代表 JenkinsRule テストを先に実行する。
+4. 問題が消えたら全件 `mvn test` を実行する。
+
+実行例:
+
+```bash
+cd /home/ksato/projects/jenkins/remote-lr/lockable-resources-plugin
+git status --short
+rm -rf target
+$HOME/.local/apache-maven-3.9.9/bin/mvn test -Dtest=org.jenkins.plugins.lockableresources.actions.LockableResourcesRootActionTest
+$HOME/.local/apache-maven-3.9.9/bin/mvn test
+```
+
+### 切り分け（回帰か環境か）
+
+1. 同じ commit をクリーン worktree に展開する。
+2. そこで `mvn test` を実行する。
+3. クリーン worktree で成功するなら、まず環境/生成物問題として扱う。
+4. クリーン worktree でも失敗するなら、コード回帰として差分解析に進む。
+
+実行例:
+
+```bash
+git worktree add -f /tmp/lr-check <commit-hash>
+cd /tmp/lr-check
+$HOME/.local/apache-maven-3.9.9/bin/mvn test
+```
+
+### 今後の固定ルール（再発防止）
+
+1. bisect は各ステップをクリーン worktree で実行する。
+2. `mvn test` 失敗時は、先に `target/` 再生成で再試行してから回帰判定する。
+3. 長時間テストは途中中断を避ける（中断後は `target/` 再生成して再実行）。
+4. 失敗の一次判断は surefire レポート（`target/surefire-reports/*.txt`）で行う。
+5. 「大量同時失敗 + 起動初期化エラー」は、個別テスト不良より環境不整合を先に疑う。
+
 ## コミット運用ルール（この作業向け）
 
 - 1ステップ 1コミットを基本とする
