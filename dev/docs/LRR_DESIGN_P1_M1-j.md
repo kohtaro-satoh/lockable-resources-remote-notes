@@ -34,15 +34,20 @@
 - 通信失敗は **fail-closed**（ロックを自動解放しない）。
 - リモートのリソースは **事前に登録済みであること**（API 経由の動的作成は不可）。
 
-### ゴール
+### ゴール（M1 / peer mode のみ）
+
+**M1 では peer mode のみを実装します。Delegated mode（M2）と GET /resources（M3）は含まれません。**
 
 | ゴール | 詳細 |
 |---|---|
 | peer mode | `lock(..., serverId: 'X')` で明示指定 |
-| delegated mode | `forcedServerId` 設定時に透過的にルーティング |
-| 後方互換 | `serverId` 未指定 かつ `forcedServerId` 未設定 → 既存挙動そのまま |
+| 後方互換 | `serverId` 未指定 → 既存ローカルモード挙動そのまま |
 | 認証 | username/password credential（service account + API token） |
 | スケール想定 | 小〜中規模。数秒のポーリング遅延は許容 |
+
+**今後の拡張予定（M2 以降）:**
+- Delegated mode（`forcedServerId` による透過的ルーティング） → M2
+- GET /resources と B-side ページのリモートビュー → M3
 
 ---
 
@@ -50,11 +55,11 @@
 
 ```mermaid
 flowchart TD
-    A[lock 呼び出し] --> B{forcedServerId\n設定あり?}
-    B -- はい --> C["Delegated mode\n→ forcedServerId のリモートへ\n（serverId 引数は無視）"]
-    B -- いいえ --> D{serverId 引数\nあり?}
-    D -- あり --> E["Peer mode\n→ 指定 serverId のリモートへ"]
+    A[lock 呼び出し] --> D{serverId 引数\nあり?}
+    D -- あり --> E["Peer mode（M1）\n→ 指定 serverId のリモートへ"]
     D -- なし --> F["ローカル mode\n→ 既存の単一 Jenkins 挙動"]
+
+    note1["Delegated mode は M2 で実装予定"]
 ```
 
 ### Peer mode（M1 対象）
@@ -63,7 +68,9 @@ flowchart TD
 - どのリモートへアクセスするか、パイプラインが把握している。
 - デバッグや運用上のオーバーライドにも使える。
 
-### Delegated mode（M2 以降）
+### Delegated mode（M2 以降 / M1 には含まれない）
+
+**実装は M2 で計画。本セクションは仕様参考のため記載。**
 
 - ローカル Jenkins に `forcedServerId` を設定するだけ。
 - パイプライン側のコード変更なしに全ロックをリモートへ委譲できる。

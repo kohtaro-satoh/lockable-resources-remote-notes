@@ -564,7 +564,7 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 ## 現在ステータス
 
 - 開始日: 2026-05-09
-- **plugin 側 M1 実装: Step 0〜7 完了 ✅**（HEAD: `2a14228`, `mvn test` BUILD SUCCESS / 271件 / Failures: 0）
+- **plugin 側 M1 実装: Step 0〜7 完了 ✅**（HEAD: `2e7eee0`, `mvn test` BUILD SUCCESS / 271件 / Failures: 0）
 - 次アクション: Step 8（lrr-notes 側 / 3 controller ローカル環境自動 E2E）
 - ブロッカー: なし
 
