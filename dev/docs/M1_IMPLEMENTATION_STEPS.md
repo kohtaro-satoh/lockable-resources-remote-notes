@@ -396,8 +396,8 @@
 - 主要ケースが再現可能
 - plugin 単体で CI に載せられる状態になっている
 
-- [ ] 実装完了
-- [ ] CI 相当のローカル実行で確認完了
+- [x] 実装完了
+- [x] CI 相当のローカル実行で確認完了
 
 記録:
 - 日付: 2026-05-17
@@ -408,6 +408,7 @@
 - 確認結果:
   - `$HOME/.local/apache-maven-3.9.9/bin/mvn test -Dtest=RemoteApiV1ActionTest` を実行し成功（Tests run: 1, Failures: 0, Errors: 0, Skipped: 0）。
   - `$HOME/.local/apache-maven-3.9.9/bin/mvn test -Dtest=LockStepRemoteTest` を実行し成功（Tests run: 6, Failures: 0, Errors: 0, Skipped: 0）。
+  - `$HOME/.local/apache-maven-3.9.9/bin/mvn test`（plugin 全体）を実行し成功（Tests run: 268, Failures: 0, Errors: 0, Skipped: 1）。
 - 補足:
   - Step7 は着手済み。まず `RemoteApiV1Action` の代表契約を固定する回帰テストを追加した。
   - 現時点で固定した内容: `remoteApiEnabled=false` 時の 403、`exposeLabel` 制約による 404 `UNKNOWN_RESOURCE`、`heartbeatIntervalSeconds` 不正値による 400 `INVALID_HEARTBEAT_INTERVAL`、正常 acquire の 202 + `lockId`。
@@ -512,8 +513,8 @@ E2E 確認チェック（3 controller）:
 ## 現在ステータス
 
 - 開始日: 2026-05-09
-- 現在ステップ: Step 7 進行中（plugin 側テストコミット `0ea83df`）
-- 次アクション: Step 7 の全体テスト実行
+- 現在ステップ: Step 7 完了（plugin 側テストコミット `0ea83df`）
+- 次アクション: Step 8（3 controller / 個人環境の自動 E2E）
 - ブロッカー: なし
 
 ### ブランチ整理メモ
