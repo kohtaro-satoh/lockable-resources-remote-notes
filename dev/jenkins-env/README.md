@@ -92,6 +92,29 @@ PLUGIN_DIR=../../../lockable-resources-plugin ./start.sh
 
 ## 操作
 
+### Step8 自動 E2E（初版スキャフォールド）
+
+Step8 着手として、以下のスクリプトを追加済みです。
+
+- `run-e2e.sh`: E2E 実行ハーネス（`start.sh` 内包、`--skip-start` 対応）
+- `lib/common.sh`: 共通関数（Jenkins API 呼び出し、job 作成、build 待機、ログ保存）
+- `scenarios/peer-basic.sh`: 正常系シナリオ（8081 holder / 8083 waiter の待機検証）
+- `scenarios/fail-closed.sh`: 異常系シナリオ（remote down / timeout / auth error）
+
+実行例:
+
+```bash
+./run-e2e.sh
+./run-e2e.sh --skip-start
+./run-e2e.sh --only peer-basic
+```
+
+> `--only peer-basic` / `--only fail-closed` で個別実行できます。
+> 実行結果は `dev/reports/` に保存されます。
+>
+> - レポート: `yyyymmddhhmmss-e2e-test.md`
+> - 付随ログ/キャプチャ: `yyyymmddhhmmss-e2e-test/`
+
 ### 停止（Jenkins home は保持）
 
 ```bash

@@ -16,8 +16,8 @@ def hudsonRealm = new HudsonPrivateSecurityRealm(false)
 hudsonRealm.createAccount("admin", "admin")
 instance.setSecurityRealm(hudsonRealm)
 
-def strategy = new GlobalMatrixAuthorizationStrategy()
-strategy.add(Jenkins.ADMINISTER, "admin")
+def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+strategy.setAllowAnonymousRead(false)
 instance.setAuthorizationStrategy(strategy)
 
 instance.save()

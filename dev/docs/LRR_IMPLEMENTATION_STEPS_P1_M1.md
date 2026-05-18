@@ -441,26 +441,52 @@
 - 各 controller へのジョブ投入、待機、結果確認、後片付けを自動化
 - 必要なら `curl` ベースで remote API の生呼び出し確認も補助的に追加
 
+事前方針決定（2026-05-18）:
+- 認証方式: Step8 では「匿名 READ 一時許可」で実装し、成立優先。token 認証版は後続タスクで追加検討。
+- 実行責務: `run-e2e.sh` が `start.sh` を内包して起動まで実施（`--skip-start` オプションで既存起動環境も利用可）。
+- 合格判定: Build 結果だけでなく、待機時間閾値とログキーワードを併用して誤判定を抑制。
+
 完了条件:
 - 3 controller E2E を一連で自動実行できる
 - 成功時/失敗時の判定基準がスクリプト化されている
 - ローカル環境依存の前提条件が `lockable-resources-remote-notes` 側に明記されている
 
-- [ ] 実装完了
-- [ ] ローカル自動実行で確認完了
+- [x] 実装完了
+- [x] ローカル自動実行で確認完了
 
 記録:
-- 日付:
-- コミット:
+- 日付: 2026-05-18
+- コミット: 未コミット（作業ツリーで継続中）
 - 変更ファイル:
+  - `dev/jenkins-env/run-e2e.sh`
+  - `dev/jenkins-env/lib/common.sh`
+  - `dev/jenkins-env/scenarios/peer-basic.sh`
+  - `dev/jenkins-env/scenarios/fail-closed.sh`
+  - `dev/jenkins-env/start.sh`
+  - `dev/jenkins-env/stop.sh`
+  - `dev/jenkins-env/docker-compose.yml`
+  - `dev/jenkins-env/docker/init.groovy.d/00-init.groovy`
+  - `dev/jenkins-env/README.md`
 - 確認結果:
+  - `./run-e2e.sh --skip-start --only peer-basic` が PASS（`dev/reports/20260518112121-e2e-test.md`）
+  - `./run-e2e.sh --skip-start --only fail-closed` が PASS（`dev/reports/20260518112207-e2e-test.md`）
 - 補足:
+  - 2026-05-18: Step8 着手。`dev/jenkins-env/` に `run-e2e.sh`（ハーネス）、`lib/common.sh`（共通関数）、`scenarios/*.sh`（正常系/異常系の初版雛形）を追加。現時点のシナリオ本体は TODO として `SKIP` を返す。
+  - 2026-05-18: シナリオ本体を実装。`peer-basic` は 8081 holder / 8083 waiter の待機検証（SUCCESS + 待機時間閾値 + ログ確認）、`fail-closed` は remote down / timeout / auth error の 3 ケースを自動実行し、body 未実行を確認する構成に更新。現時点では文法/ヘルプ確認まで実施し、ローカルフル実行は次フェーズ。
+  - 2026-05-18: 実行結果保存先を `dev/reports/` に統一。`run-e2e.sh` 実行ごとに `yyyymmddhhmmss-e2e-test.md`（サマリ）と `yyyymmddhhmmss-e2e-test/`（console log / case summary / 手動キャプチャ格納先）を生成する。
+  - 2026-05-18: `RemoteApiV1Action` の `/acquire` ルーティングを整理（`POST /acquire` と `GET /acquire/{lockId}` の競合回避）。
+  - 2026-05-18: Stapler の 302 正規化（末尾 `/`）で lockId 解析が壊れる問題を回避するため、`RemoteApiClient` の acquire 系パスを canonical path に修正。
+  - 2026-05-18: scenario 側は run ごとにユニークな resource 名を使うように変更し、stale state 干渉を抑制。
+  - 2026-05-18: レポートに Scenario Details（Sequence + Checkpoints）を追加。各チェックポイントに API/Action・Expected・Actual・Result を出力するよう更新。
+  - 2026-05-18: Scenario Details の markdown table 崩れを修正（Sequence と Checkpoints を分離生成して最終合成）。
+  - 2026-05-18: レポート本文を英語化（Summary/Scenario details/checkpoint descriptions）。
+  - 2026-05-18: plugin 側修正をコミット（`ade9bb7`）: `RemoteApiV1Action` の acquire ルーティング整理、`RemoteApiClient` の acquire path canonical 化、対応テスト更新。
 
 E2E 確認チェック（3 controller）:
-- [ ] 8081 -> 8082 の remote lock が取得できる
-- [ ] 8083 から同一 resource を叩くと待機/拒否の期待挙動になる
-- [ ] release 後に待機側が進む
-- [ ] 異常系（remote down, timeout, auth error）で fail-closed になる
+- [x] 8081 -> 8082 の remote lock が取得できる
+- [x] 8083 から同一 resource を叩くと待機/拒否の期待挙動になる
+- [x] release 後に待機側が進む
+- [x] 異常系（remote down, timeout, auth error）で fail-closed になる
 
 ---
 
@@ -565,7 +591,7 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 
 - 開始日: 2026-05-09
 - **plugin 側 M1 実装: Step 0〜7 完了 ✅**（HEAD: `2e7eee0`, `mvn test` BUILD SUCCESS / 271件 / Failures: 0）
-- 次アクション: Step 8（lrr-notes 側 / 3 controller ローカル環境自動 E2E）
+- 次アクション: Step 8（`lockable-resources-remote-notes/dev/jenkins-env` 側 / 3 controller ローカル環境自動 E2E）
 - ブロッカー: なし
 
 ### ブランチ整理メモ
