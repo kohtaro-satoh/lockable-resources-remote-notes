@@ -72,6 +72,7 @@ require_command docker
 require_command python3
 require_command base64
 
+mkdir -p "$REPORTS_ROOT"
 mkdir -p "$RESULTS_DIR"
 log "E2E run id: $RUN_ID"
 log "Results dir: $RESULTS_DIR"
