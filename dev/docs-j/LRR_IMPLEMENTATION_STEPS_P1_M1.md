@@ -580,6 +580,64 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 4. 失敗の一次判断は surefire レポート（`target/surefire-reports/*.txt`）で行う。
 5. 「大量同時失敗 + 起動初期化エラー」は、個別テスト不良より環境不整合を先に疑う。
 
+## 最終版 安定化手順（M1 確定）
+
+### 前提条件
+- WSL または Linux 環境で bash を使用
+- Maven 3.9.9 が `$HOME/.local/apache-maven-3.9.9/bin/mvn` に存在
+
+### 手順
+
+#### 1. Maven 多重実行の停止
+```bash
+pkill -f "mvn" || true
+```
+
+#### 2. 作業ディレクトリのリセット
+```bash
+cd /home/ksato/projects/jenkins/remote-lr/lockable-resources-plugin
+rm -rf target
+```
+
+#### 3. Extension インデックス生成確認
+```bash
+$HOME/.local/apache-maven-3.9.9/bin/mvn -DskipTests test-compile
+ls target/classes/META-INF/annotations
+```
+
+**確認ポイント**: `hudson.Extension` と `hudson.Extension.txt` が見えることを確認。
+
+#### 4. 本テスト実行
+```bash
+$HOME/.local/apache-maven-3.9.9/bin/mvn test
+```
+
+**期待結果**: `Tests run: 271, Failures: 0, Errors: 0, Skipped: 1, BUILD SUCCESS`
+
+### トラブルシューティング
+
+**症状1**: Step 3 で `hudson.Extension` ファイルが見えない
+- **原因**: Maven キャッシュが破損している可能性
+- **対処**:
+  ```bash
+  rm -rf ~/.m2/repository/org/jenkins-ci/tools/maven-hpi-plugin/3.1814.v77d15159f9b_d
+  $HOME/.local/apache-maven-3.9.9/bin/mvn -U -DskipTests test-compile
+  ls target/classes/META-INF/annotations
+  ```
+
+**症状2**: テスト実行時に `cannot find symbol` で main classes が見えない
+- **原因**: ビルド生成物の状態不整合（通常は一時的）
+- **対処**: WSL を再起動した後に Step 2 から再開
+
+**症状3**: `LockableResourcesManager is missing its descriptor` エラー多発
+- **原因**: Extension インデックスの欠落（descriptor 登録失敗）
+- **対処**: Step 3 の Extension インデックス確認に戻る。Step 1 で並列実行中の Maven がないことを確認
+
+### 注記
+- maven-hpi-plugin の POM キャッシュ警告は出ていても、テスト成立を妨げない場合がある
+- 初回実行時は 14 分程度かかる（以後は incremental キャッシュで高速化）
+- Skipped: 1 は既知バグ（JENKINS-40787 / GitHub #861）による `LockStepInversePrecedenceTest#lockInverseOrderWithLabel` スキップ
+
 ## コミット運用ルール（この作業向け）
 
 - 1ステップ 1コミットを基本とする
@@ -590,9 +648,11 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 ## 現在ステータス
 
 - 開始日: 2026-05-09
-- **plugin 側 M1 実装: Step 0〜7 完了 ✅**（HEAD: `2e7eee0`, `mvn test` BUILD SUCCESS / 271件 / Failures: 0）
-- 次アクション: Step 8（`lockable-resources-remote-notes/dev/jenkins-env` 側 / 3 controller ローカル環境自動 E2E）
+- **plugin 側 M1 実装: Step 0〜8 完了 ✅**（最終確認: 2026-05-18、`mvn test` BUILD SUCCESS / 271件 / Failures: 0 / Skipped: 1）
+- **テスト安定化: 最終版手順 確定済み ✅**（2026-05-18、WSL 再起動後の再実行でも BUILD SUCCESS を確認）
+- 次アクション: Step 9（テスト運用資産の notes 側整備 / 運用ドキュメント完成）
 - ブロッカー: なし
+- 最新ビルド: 合計実行時間 14:01、全テスト正常終了
 
 ### ブランチ整理メモ
 
