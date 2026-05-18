@@ -12,7 +12,7 @@ remote lock 機能の統合テストを行うための開発環境です。
 ## ディレクトリ構成
 
 ```
-integtest/
+jenkins-env/
 ├── README.md               このファイル
 ├── docker-compose.yml      3 コントローラー定義
 ├── start.sh                ビルド＆起動スクリプト
@@ -24,22 +24,22 @@ integtest/
 │   └── init.groovy.d/
 │       └── 00-init.groovy  admin ユーザー自動作成（dev only）
 ├── lockable-resources-plugin/   ← プラグインのソース（後述）
-├── jh8081/                 Jenkins home（自動生成、.gitignore 対象）
-├── jh8082/
-└── jh8083/
+├── jha/                    Jenkins home（自動生成、.gitignore 対象）
+├── jhb/
+└── jhc/
 ```
 
 ## セットアップ
 
 ### 1. プラグインのソースを用意する
 
-`lockable-resources-plugin` のソースを `integtest/` と同じ場所に用意します。
+`lockable-resources-plugin` のソースを `jenkins-env/` と同じ場所に用意します。
 方法は以下のいずれかです。
 
 **A. 直接 clone する（推奨）**
 
 ```bash
-cd path/to/integtest
+cd path/to/jenkins-env
 git clone https://github.com/jenkinsci/lockable-resources-plugin.git
 ```
 
@@ -48,7 +48,7 @@ git clone https://github.com/jenkinsci/lockable-resources-plugin.git
 すでに別の場所に clone 済みの場合：
 
 ```bash
-cd path/to/integtest
+cd path/to/jenkins-env
 ln -s /path/to/your/lockable-resources-plugin lockable-resources-plugin
 ```
 
@@ -72,7 +72,7 @@ PLUGIN_DIR=../../../lockable-resources-plugin ./start.sh
 
 1. `mvn package -DskipTests` でプラグインをビルド
 2. ビルドした `.hpi` を `docker/` へコピー
-3. `jh8081`〜`jh8083` ディレクトリを作成（初回のみ）
+3. `jha`〜`jhc` ディレクトリを作成（初回のみ）
 4. Docker イメージをビルド
 5. 3 コンテナを起動
 6. 各コントローラーの起動を確認
@@ -87,7 +87,7 @@ PLUGIN_DIR=../../../lockable-resources-plugin ./start.sh
 
 > どのディレクトリからでも実行できます:
 > ```bash
-> ~/projects/jenkins/remote-lr/lrr-notes/dev/integtest/start.sh
+> ~/projects/jenkins/remote-lr/lockable-resources-remote-notes/dev/jenkins-env/start.sh
 > ```
 
 ## 操作
@@ -98,7 +98,7 @@ PLUGIN_DIR=../../../lockable-resources-plugin ./start.sh
 ./stop.sh
 ```
 
-コンテナを停止しますが、`jh8081`〜`jh8083` のデータは残ります。
+コンテナを停止しますが、`jha`〜`jhc` のデータは残ります。
 次回 `./start.sh` で続きから使えます。
 
 ### 完全初期化（Jenkins home も削除）
@@ -114,23 +114,23 @@ PLUGIN_DIR=../../../lockable-resources-plugin ./start.sh
 ./start.sh
 ```
 
-`jh8081`〜`jh8083` ディレクトリを削除してから起動します。
+`jha`〜`jhc` ディレクトリを削除してから起動します。
 管理者設定・パイプライン設定などをすべてリセットしたいときに使います。
 
 ### ログを確認する
 
 ```bash
 # 全コントローラーのログをフォロー
-docker compose -f path/to/integtest/docker-compose.yml logs -f
+docker compose -f path/to/jenkins-env/docker-compose.yml logs -f
 
 # 特定コントローラーのみ
-docker compose -f path/to/integtest/docker-compose.yml logs -f jenkins-8081
+docker compose -f path/to/jenkins-env/docker-compose.yml logs -f jenkins-8081
 ```
 
-`integtest/` ディレクトリにいる場合は `-f` オプション不要：
+`jenkins-env/` ディレクトリにいる場合は `-f` オプション不要：
 
 ```bash
-cd path/to/integtest
+cd path/to/jenkins-env
 docker compose logs -f jenkins-8082
 ```
 

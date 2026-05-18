@@ -426,7 +426,7 @@
 
 方針:
 - 3 controller の検証は M1 の成立確認として必要だが、環境依存が強いため plugin 本体には入れない
-- `lrr-notes` 側に、起動済み 8081/8082/8083 環境で再実行できる自動E2E資産を置く
+- `lockable-resources-remote-notes` 側に、起動済み 8081/8082/8083 環境で再実行できる自動E2E資産を置く
 - 実装方式は A 案に合わせて Java / shell / curl / Jenkins CLI など既存環境で回せるものを優先し、Playwright は使わない
 
 目的:
@@ -434,17 +434,17 @@
 - 実装後に同じ手順をコマンド一発で再実行できるようにする
 
 対象リポジトリ:
-- `lrr-notes`
+- `lockable-resources-remote-notes`
 
 実装候補:
-- `dev/integtest/` 配下に実行スクリプトと README を追加
+- `dev/jenkins-env/` 配下に実行スクリプトと README を追加
 - 各 controller へのジョブ投入、待機、結果確認、後片付けを自動化
 - 必要なら `curl` ベースで remote API の生呼び出し確認も補助的に追加
 
 完了条件:
 - 3 controller E2E を一連で自動実行できる
 - 成功時/失敗時の判定基準がスクリプト化されている
-- ローカル環境依存の前提条件が `lrr-notes` 側に明記されている
+- ローカル環境依存の前提条件が `lockable-resources-remote-notes` 側に明記されている
 
 - [ ] 実装完了
 - [ ] ローカル自動実行で確認完了
@@ -467,7 +467,7 @@ E2E 確認チェック（3 controller）:
 ### 9. テスト運用資産の整備（notes 側）
 
 方針:
-- plugin 側テストを補完する個人運用資産は `lrr-notes` に置く
+- plugin 側テストを補完する個人運用資産は `lockable-resources-remote-notes` に置く
 - M1 完了後も再利用できるよう、実行順序・コマンド・前提条件を文書化する
 
 目的:
@@ -475,11 +475,11 @@ E2E 確認チェック（3 controller）:
 - 将来 M2 以降でも使い回せる最小運用資産を残す
 
 対象リポジトリ:
-- `lrr-notes`
+- `lockable-resources-remote-notes`
 
 実装候補:
 - `dev/docs/` にテスト実行手順メモを追加
-- `dev/integtest/` の README または run スクリプトを整備
+- `dev/jenkins-env/` の README または run スクリプトを整備
 - plugin 側の推奨実行コマンドを notes に集約
 
 完了条件:
@@ -501,7 +501,7 @@ E2E 確認チェック（3 controller）:
 ## テスト実行の整理（M1時点の確定方針）
 
 1. Step7 は `lockable-resources-plugin` に入る正式テスト
-2. Step8 は `lrr-notes` に置く個人環境向け自動E2E
+2. Step8 は `lockable-resources-remote-notes` に置く個人環境向け自動E2E
 3. Step9 は Step7/8 を回すための運用資産整備
 4. plugin 側に入れない理由が「環境依存」だけなら Step8/9 へ送る
 5. 将来 upstream に残したい検証はまず Step7 で検討する

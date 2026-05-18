@@ -11,13 +11,23 @@ for arg in "$@"; do
   [[ "$arg" == "--clean" ]] && CLEAN=true
 done
 
+JENKINS_HOME_DIRS=(jha jhb jhc)
+LEGACY_JENKINS_HOME_DIRS=(jh8081 jh8082 jh8083)
+
 if $CLEAN; then
   echo "[INFO] Stopping containers and removing Jenkins home directories ..."
   docker compose down --remove-orphans
-  for jh in jh8081 jh8082 jh8083; do
+  for jh in "${JENKINS_HOME_DIRS[@]}"; do
     if [[ -d "$SCRIPT_DIR/$jh" ]]; then
       rm -rf "$SCRIPT_DIR/$jh"
       echo "[INFO] Removed $SCRIPT_DIR/$jh"
+    fi
+  done
+  # 旧命名からの移行後片付け（存在する場合のみ削除）
+  for jh in "${LEGACY_JENKINS_HOME_DIRS[@]}"; do
+    if [[ -d "$SCRIPT_DIR/$jh" ]]; then
+      rm -rf "$SCRIPT_DIR/$jh"
+      echo "[INFO] Removed legacy $SCRIPT_DIR/$jh"
     fi
   done
   echo "[INFO] Jenkins home directories removed."

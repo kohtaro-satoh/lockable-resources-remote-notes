@@ -22,6 +22,9 @@ for arg in "$@"; do
   [[ "$arg" == "--clean" ]] && CLEAN=true
 done
 
+JENKINS_HOME_DIRS=(jha jhb jhc)
+LEGACY_JENKINS_HOME_DIRS=(jh8081 jh8082 jh8083)
+
 # ---------------------------------------------------------------------------
 # 1. Maven を特定
 # ---------------------------------------------------------------------------
@@ -60,10 +63,17 @@ if $CLEAN; then
   echo ""
   echo "[INFO] --clean: stopping containers and removing Jenkins home directories ..."
   docker compose down --remove-orphans 2>/dev/null || true
-  for jh in jh8081 jh8082 jh8083; do
+  for jh in "${JENKINS_HOME_DIRS[@]}"; do
     if [[ -d "$SCRIPT_DIR/$jh" ]]; then
       rm -rf "$SCRIPT_DIR/$jh"
       echo "[INFO] Removed $SCRIPT_DIR/$jh"
+    fi
+  done
+  # 旧命名からの移行後片付け（存在する場合のみ削除）
+  for jh in "${LEGACY_JENKINS_HOME_DIRS[@]}"; do
+    if [[ -d "$SCRIPT_DIR/$jh" ]]; then
+      rm -rf "$SCRIPT_DIR/$jh"
+      echo "[INFO] Removed legacy $SCRIPT_DIR/$jh"
     fi
   done
 fi
@@ -71,7 +81,7 @@ fi
 # ---------------------------------------------------------------------------
 # 5. Jenkins home ディレクトリを用意
 # ---------------------------------------------------------------------------
-for jh in jh8081 jh8082 jh8083; do
+for jh in "${JENKINS_HOME_DIRS[@]}"; do
   if [[ ! -d "$SCRIPT_DIR/$jh" ]]; then
     mkdir -p "$SCRIPT_DIR/$jh"
     echo "[INFO] Created $SCRIPT_DIR/$jh"
@@ -124,5 +134,5 @@ echo "  http://localhost:8083/jenkins/  (admin / admin)"
 echo ""
 echo " Logs  : docker compose logs -f"
 echo " Stop  : ./stop.sh"
-echo " Clean : ./start.sh --clean   (removes jh8081-8083 directories)"
+echo " Clean : ./start.sh --clean   (removes jha-jhc directories)"
 echo "----------------------------------------------------------------------"
