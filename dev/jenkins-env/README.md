@@ -104,12 +104,14 @@ Step8 着手として、以下のスクリプトを追加済みです。
 実行例:
 
 ```bash
-./run-e2e.sh
+PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh
+PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh --clean-start
 ./run-e2e.sh --skip-start
-./run-e2e.sh --only peer-basic
+PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh --only peer-basic
 ```
 
 > `--only peer-basic` / `--only fail-closed` で個別実行できます。
+> `run-e2e.sh` が `start.sh` を呼ぶ場合は `PLUGIN_DIR` の指定が必須です（`--skip-start` 時は不要）。
 > 実行結果は `dev/reports/` に保存されます。
 >
 > - レポート: `yyyymmddhhmmss-e2e-test.md`

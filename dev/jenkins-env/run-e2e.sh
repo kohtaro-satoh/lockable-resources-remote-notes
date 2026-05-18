@@ -19,6 +19,10 @@ usage() {
   cat <<'EOF'
 Usage: ./run-e2e.sh [options]
 
+Environment:
+  PLUGIN_DIR            Required unless --skip-start is used.
+                        Passed to start.sh to locate lockable-resources-plugin.
+
 Options:
   --skip-start          Do not call ./start.sh before scenarios.
   --clean-start         Call ./start.sh --clean before scenarios.
@@ -79,11 +83,18 @@ log "Results dir: $RESULTS_DIR"
 log "Report file: $REPORT_FILE"
 
 if [[ "$SKIP_START" == false ]]; then
+  if [[ -z "${PLUGIN_DIR:-}" ]]; then
+    err "PLUGIN_DIR is required when run-e2e.sh starts controllers."
+    err "Example: PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh"
+    exit 2
+  fi
+
   log "Starting Jenkins controllers via start.sh"
+  log "Using PLUGIN_DIR=$PLUGIN_DIR"
   if [[ "$CLEAN_START" == true ]]; then
-    "$RUN_SCRIPT_DIR/start.sh" --clean
+    PLUGIN_DIR="$PLUGIN_DIR" "$RUN_SCRIPT_DIR/start.sh" --clean
   else
-    "$RUN_SCRIPT_DIR/start.sh"
+    PLUGIN_DIR="$PLUGIN_DIR" "$RUN_SCRIPT_DIR/start.sh"
   fi
 else
   log "Skipping start.sh (requested by --skip-start)"
