@@ -27,6 +27,7 @@
 - コミット: 739d6da（※ rebase 後は e4f70c3 が基点。M1 完了後に最終確認し更新予定）
 - メモ: $HOME/.local/apache-maven-3.9.9/bin/mvn test を実行し BUILD SUCCESS（Tests run: 238, Failures: 0, Errors: 0, Skipped: 1, Total time: 13:42）を確認。
   2026-05-14 時点で PR #1028 cherry-pick（NodesMirror パッケージ修正）を master に適用後、feature ブランチを rebase し cold build でも BUILD SUCCESS（Tests run: 238, Failures: 0, Errors: 0, Skipped: 1）を確認。
+  2026-05-19 時点で Step 6c 実装後に再度 `$HOME/.local/apache-maven-3.9.9/bin/mvn test` を実行し BUILD SUCCESS（Tests run: 274, Failures: 0, Errors: 0, Skipped: 1, Total time: 13:37）を確認。
   - PR #1028 は upstream 未マージのため、ローカル master に cherry-pick（コミット `e4f70c3`）して対処中。
   - Skipped: 1 は `LockStepInversePrecedenceTest#lockInverseOrderWithLabel`。JENKINS-40787 / GitHub #861 の既存バグ（ラベルベースロックで inversePrecedence が適用されずハングする）により `@Disabled` でスキップ中。M1 実装とは無関係。
 
@@ -401,20 +402,30 @@
 - Jenkins 再起動後も設定が保持される
 - `mvn test` が通る（少なくとも UI 変更に関連する既存テストは回帰なし）
 
-- [ ] 実装完了
-- [ ] `mvn test` 確認完了
-- [ ] コミット済み
+- [x] 実装完了
+- [x] `mvn test` 確認完了
+- [x] コミット済み
 
 記録:
-- 日付:
-- コミット:
+- 日付: 2026-05-19
+- コミット: 71de798
 - 変更ファイル:
   - src/main/resources/.../LockableResourcesManager/config.jelly (編集)
   - src/main/resources/.../LockableResourcesManager/config.properties (編集)
-  - src/main/resources/.../LockableResourcesManager/help/* (必要に応じて新規)
-  - src/test/java/... (必要に応じて UI/設定回帰テスト追加)
-- 確認結果:
+  - src/main/resources/.../LockableResourcesManager/help-remoteApiEnabled.html (新規)
+  - src/main/resources/.../LockableResourcesManager/help-exposeLabel.html (新規)
+  - src/main/resources/.../LockableResourcesManager/help-remotes.html (新規)
+  - src/main/resources/.../RemoteConnection/config.jelly (新規)
+  - src/main/resources/.../RemoteConnection/config.properties (新規)
+  - src/main/resources/.../RemoteConnection/help-serverId.html (新規)
+  - src/main/resources/.../RemoteConnection/help-url.html (新規)
+  - src/main/resources/.../RemoteConnection/help-credentialsId.html (新規)
+  - src/test/java/.../LockableResourcesManagerRemoteConnectionTest.java (編集: Global Configure round-trip テスト追加)
+- 確認結果: 追加した `LockableResourcesManagerRemoteConnectionTest` を単体実行して成功（Tests run: 10, Failures: 0, Errors: 0, Skipped: 0）。その後、全件 `mvn test` でも BUILD SUCCESS（Tests run: 274, Failures: 0, Errors: 0, Skipped: 1, Total time: 13:37）。2026-05-19
 - 補足:
+  - System 設定 UI を server/client で整理し、server 側に `remoteApiEnabled` / `exposeLabel`、client 側に既存 `clientId` と `remotes[]` editor を配置。
+  - `RemoteConnection` 用の設定断片と help を追加し、`serverId` / `url` / `credentialsId` を UI から編集可能にした。
+  - UI submit 経由の回帰防止として Global Configure round-trip テストを 1 本追加した。既存の persistence test と合わせて保存・再読込経路を確認済み。
 
 ---
 

@@ -27,6 +27,7 @@ Notes:
 - Commit: 739d6da (※ after rebase, e4f70c3 is the base point. Final update planned after M1 completion.)
 - Memo: Ran `$HOME/.local/apache-maven-3.9.9/bin/mvn test` and confirmed BUILD SUCCESS (Tests run: 238, Failures: 0, Errors: 0, Skipped: 1, Total time: 13:42).
   As of 2026-05-14, after cherry-picking PR #1028 (NodesMirror package fix) onto master and rebasing the feature branch, confirmed BUILD SUCCESS on a cold build (Tests run: 238, Failures: 0, Errors: 0, Skipped: 1).
+  As of 2026-05-19, after implementing Step 6c, ran `$HOME/.local/apache-maven-3.9.9/bin/mvn test` again and confirmed BUILD SUCCESS (Tests run: 274, Failures: 0, Errors: 0, Skipped: 1, Total time: 13:37).
   - PR #1028 is not yet merged upstream, so it was cherry-picked onto local master (commit `e4f70c3`) as a workaround.
   - Skipped: 1 is `LockStepInversePrecedenceTest#lockInverseOrderWithLabel`. Skipped with `@Disabled` due to existing bug JENKINS-40787 / GitHub #861 (inversePrecedence not applied for label-based locks, causing hang). Unrelated to M1 implementation.
 
@@ -401,20 +402,30 @@ Completion criteria:
 - Settings persist after Jenkins restart
 - `mvn test` passes (at least no regressions in existing tests related to UI/config)
 
-- [ ] Implementation complete
-- [ ] `mvn test` verification complete
-- [ ] Committed
+- [x] Implementation complete
+- [x] `mvn test` verification complete
+- [x] Committed
 
 Notes:
-- Date:
-- Commit:
+- Date: 2026-05-19
+- Commit: 71de798
 - Changed files:
   - src/main/resources/.../LockableResourcesManager/config.jelly (edited)
   - src/main/resources/.../LockableResourcesManager/config.properties (edited)
-  - src/main/resources/.../LockableResourcesManager/help/* (new as needed)
-  - src/test/java/... (UI/config regression tests if needed)
-- Verification:
+  - src/main/resources/.../LockableResourcesManager/help-remoteApiEnabled.html (new)
+  - src/main/resources/.../LockableResourcesManager/help-exposeLabel.html (new)
+  - src/main/resources/.../LockableResourcesManager/help-remotes.html (new)
+  - src/main/resources/.../RemoteConnection/config.jelly (new)
+  - src/main/resources/.../RemoteConnection/config.properties (new)
+  - src/main/resources/.../RemoteConnection/help-serverId.html (new)
+  - src/main/resources/.../RemoteConnection/help-url.html (new)
+  - src/main/resources/.../RemoteConnection/help-credentialsId.html (new)
+  - src/test/java/.../LockableResourcesManagerRemoteConnectionTest.java (edited: added Global Configure round-trip test)
+- Verification: The added `LockableResourcesManagerRemoteConnectionTest` passed when run alone (Tests run: 10, Failures: 0, Errors: 0, Skipped: 0). After that, full `mvn test` also passed with BUILD SUCCESS (Tests run: 274, Failures: 0, Errors: 0, Skipped: 1, Total time: 13:37). 2026-05-19
 - Notes:
+  - Reorganized the System configuration UI into server/client areas: server side now exposes `remoteApiEnabled` / `exposeLabel`, and client side keeps `clientId` plus the `remotes[]` editor.
+  - Added a dedicated `RemoteConnection` config fragment and help files so `serverId` / `url` / `credentialsId` can be edited from UI.
+  - Added one Global Configure round-trip test to guard the UI submit path; combined with the existing persistence test, save/reload coverage is now in place.
 
 ---
 
