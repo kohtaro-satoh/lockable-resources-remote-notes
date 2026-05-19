@@ -334,7 +334,7 @@
 
 設計方針（確定）:
 - 表示文字列: `Remote: <clientId>`（clientId が null の場合は `Remote: (unknown)`）
-- データ取得: `LockableResource` に `getRemoteLockClientId()` メソッドを追加し、内部で `RemoteLockManager.get().getRecord(remoteLockedBy)` を呼ぶ
+- データ取得: `LockableResource` に `getRemoteLockClientId()` メソッドを追加し、内部で `RemoteLockManager.get().find(remoteLockedBy)` を呼ぶ
 - `remoteLockedBy` が null（remote lock なし）のときは通常の "Locked by" 表示に fallback
 
 実装内容:

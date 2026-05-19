@@ -285,7 +285,7 @@ flowchart TD
 |---|---|
 | Polling interval | 3 seconds |
 | Heartbeat interval | 10 seconds |
-| Request timeout | 10 seconds |
+| Request timeout | 5 seconds |
 
 ---
 
@@ -327,7 +327,7 @@ The "Locked by" column in the server-side LR list shows the remote lock holder.
 
 **Data access pattern (Phase 1):**
 - Add `getRemoteLockClientId()` method to `LockableResource`.
-- Internally calls `RemoteLockManager.get().getRecord(remoteLockedBy)` to get `clientId`.
+- Internally calls `RemoteLockManager.get().find(remoteLockedBy)` to get `clientId`.
 - The `LockableResource` display jelly calls this method to render `Remote: <clientId>`.
 
 > Falls back to the normal display path when `remoteLockedBy` is null (no remote lock).

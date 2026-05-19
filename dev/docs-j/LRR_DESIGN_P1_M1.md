@@ -287,7 +287,7 @@ flowchart TD
 |---|---|
 | ポーリング間隔 | 3 秒 |
 | heartbeat 間隔 | 10 秒 |
-| リクエストタイムアウト | 10 秒 |
+| リクエストタイムアウト | 5 秒 |
 
 ---
 
@@ -329,7 +329,7 @@ flowchart TD
 
 **データアクセスパターン（Phase 1）:**
 - `LockableResource` に `getRemoteLockClientId()` メソッドを追加。
-- 内部で `RemoteLockManager.get().getRecord(remoteLockedBy)` を呼び、`clientId` を取得。
+- 内部で `RemoteLockManager.get().find(remoteLockedBy)` を呼び、`clientId` を取得。
 - `LockableResource` の表示 jelly でこのメソッドを呼び出して `Remote: <clientId>` を描画。
 
 > `remoteLockedBy` が null（remote lock なし）の場合は通常表示パスに fallback する。
