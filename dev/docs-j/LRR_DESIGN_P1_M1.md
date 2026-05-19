@@ -42,7 +42,8 @@
 |---|---|
 | peer mode | `lock(..., serverId: 'X')` で明示指定 |
 | 後方互換 | `serverId` 未指定 → 既存ローカルモード挙動そのまま |
-| 認証 | username/password credential（service account + API token） |
+| 認証 | `credentialsId` から username/password（API token）を解決し、Authorization ヘッダを付与 |
+| 設定UI | System 設定で server 側（`remoteApiEnabled`/`exposeLabel`）と client 側（`remotes[]`）を設定可能 |
 | スケール想定 | 小〜中規模。数秒のポーリング遅延は許容 |
 
 **今後の拡張予定（M2 以降）:**
@@ -299,6 +300,8 @@ flowchart TD
 | `remoteApiEnabled` | `false` | マスタースイッチ。`false` の間は全エンドポイントが 403 を返す |
 | `exposeLabel` | 未設定 | このラベルを持つリソースのみ公開。**未設定時は何も公開しない**（opt-in） |
 
+> M1 ではこれらを System 設定 UI から変更可能にする（checkbox + textbox）。
+
 ### クライアント側（リモートロックを起動する Jenkins）
 
 | 設定 | 説明 |
@@ -310,6 +313,9 @@ flowchart TD
 | `forcedServerId` | 設定時は Delegated mode。`remotes` のキーと一致する必要がある |
 
 > `serverId` はクライアント側が付けたエイリアスであり、リモート Jenkins は認識しない。
+
+> M1 では `credentialsId` を実際に解決し、Basic 認証ヘッダ（Authorization）を付与して remote API を呼び出す。
+> credentials 未設定時の挙動は fail-closed（接続失敗として build failure）を維持する。
 
 ### B-side LR ページ表示
 
@@ -380,6 +386,8 @@ flowchart LR
 | クライアント実装 | `RemoteApiClient`（acquire/poll/heartbeat/release） |
 | サーバー REST API | `POST /acquire`, `GET /acquire/{lockId}`, `POST /lease/{lockId}/heartbeat`, `POST /lease/{lockId}/release` |
 | 設定モデル | `RemoteConnection`（serverId/url/credentialsId）、`LockableResourcesManager.remotes` |
+| 設定UI | System 設定から `remoteApiEnabled` / `exposeLabel` / `remotes[]` を設定可能 |
+| 認証実装 | `credentialsId` を解決して Authorization ヘッダを付与 |
 | エラー処理 | fail-closed、`RemoteApiException` |
 
 ### 含まない（M1 スコープ外）
@@ -389,7 +397,6 @@ flowchart LR
 | `forcedServerId`（Delegated mode） | M2 |
 | `GET /resources` とクライアント側 LR ページのリモートビュー | M3 |
 | `POST /acquire/{lockId}/cancel` | **廃止**（release に統合） |
-| 認証（credentialsId の実際の解決） | Phase 1 では未実装、警告ログのみ |
 | ユーザー設定可能なポーリング/heartbeat/タイムアウト値 | Phase 2 |
 | 複数リモートへのフェイルオーバー | Phase 3 |
 | `serverId: 'any'` 自動選択 | Phase 3 |

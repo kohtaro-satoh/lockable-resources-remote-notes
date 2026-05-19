@@ -275,6 +275,8 @@ Notes:
 Scope confirmed (2026-05-16):
 - **6a**: Add `clientId` to `POST /acquire` (client send + server receive/store + configuration UI)
 - **6b**: B-side LR page display (show `clientId` in server-side LR list)
+- **6c**: Extend System configuration UI (server side: exposeLabel / remoteApiEnabled, client side: remotes connection parameters)
+- **6d**: Authentication implementation (resolve username/password from `credentialsId` and attach Authorization header)
 
 ---
 
@@ -359,6 +361,108 @@ Notes:
   - `getRemoteLockClientId()`: returns null immediately if `remoteLockedBy == null`; otherwise searches for the record via `RemoteLockManager.get().find(remoteLockedBy)` and returns `clientId`. Returns null if record not found (e.g., after restart).
   - `table.jelly`: the remote lock case is placed before the job-locked case in the `j:choose` for status content. Branches on `resource.remoteLockedBy != null` and falls back to `(unknown)` when `remoteLockClientId` is null.
   - The CSS class `j:choose` is unchanged (`resource.locked == true` already maps to `warning`).
+
+---
+
+#### Step 6c: System configuration UI extension (server/client settings)
+
+Purpose:
+- Allow core remote lock server/client settings to be completed via System configuration UI.
+- Expose `remoteApiEnabled` / `exposeLabel` / `remotes[]` in UI to reduce reliance on manual Groovy setup.
+
+In-scope settings for this step:
+- Server-side (`LockableResourcesManager`)
+  - `remoteApiEnabled` (master switch)
+  - `exposeLabel` (label used for exposure)
+- Client-side (`LockableResourcesManager`)
+  - `remotes[]`
+    - `serverId`
+    - `url`
+    - `credentialsId`
+
+Implementation policy:
+- Reorganize/add Remote sections in `LockableResourcesManager/config.jelly`
+  - Server section: checkbox (`remoteApiEnabled`) + textbox (`exposeLabel`)
+  - Client section: keep existing `clientId`, add repeatable `remotes`
+- Add UI label keys to `LockableResourcesManager/config.properties`
+- Add help files as needed
+  - `help/remoteApiEnabled`
+  - `help/exposeLabel`
+  - `help/remotes`
+  - `help/remotes/serverId`, `help/remotes/url`, `help/remotes/credentialsId`
+- Validation policy
+  - Respect existing `RemoteConnection.validate()` checks
+  - Keep current duplicate `serverId` behavior: warning + last-entry-wins (strict mode is a separate future task)
+  - Preserve opt-in behavior when `exposeLabel` is unset (expose none)
+
+Completion criteria:
+- System configuration UI can edit/save `remoteApiEnabled` / `exposeLabel`
+- System configuration UI can add/save `remotes[]` (`serverId`/`url`/`credentialsId`)
+- Settings persist after Jenkins restart
+- `mvn test` passes (at least no regressions in existing tests related to UI/config)
+
+- [ ] Implementation complete
+- [ ] `mvn test` verification complete
+- [ ] Committed
+
+Notes:
+- Date:
+- Commit:
+- Changed files:
+  - src/main/resources/.../LockableResourcesManager/config.jelly (edited)
+  - src/main/resources/.../LockableResourcesManager/config.properties (edited)
+  - src/main/resources/.../LockableResourcesManager/help/* (new as needed)
+  - src/test/java/... (UI/config regression tests if needed)
+- Verification:
+- Notes:
+
+---
+
+#### Step 6d: Authentication implementation (credentialsId resolution + Authorization header)
+
+Purpose:
+- Resolve `remotes[].credentialsId` at runtime and send authenticated requests to remote APIs.
+- Remove the current "credentialsId stored but unused" gap and complete the peer-mode authentication path for M1.
+
+In-scope settings for this step:
+- Client-side (`LockStepExecution` / remote API call path)
+  - credentials resolution
+  - Authorization header generation (Basic)
+- Error handling
+  - fail-closed behavior for missing credentials, unresolved IDs, wrong type, and auth failures
+
+Implementation policy:
+- Implement `LockStepExecution.resolveAuthorizationHeader()`
+  - Resolve `StandardUsernamePasswordCredentials` using Jenkins Credentials API
+  - Build `Authorization: Basic ...` from Base64(username:password)
+- When `credentialsId` is empty
+  - Keep current no-auth call behavior (may fail with 403 depending on server configuration)
+- When `credentialsId` is set but cannot be resolved
+  - Fail early with explicit `AbortException` (surface misconfiguration clearly)
+- Logging policy
+  - Never log credential values
+  - Log only identifiers/categories (`serverId`, `credentialsId`, failure category)
+
+Completion criteria:
+- Remote API is called with Authorization header when `credentialsId` is set
+- Authentication failure (e.g. 403) fails build in fail-closed manner
+- Credential resolution failure stops with intended error
+- `mvn test` passes (with related tests added/updated)
+
+- [ ] Implementation complete
+- [ ] `mvn test` verification complete
+- [ ] Committed
+
+Notes:
+- Date:
+- Commit:
+- Changed files:
+  - src/main/java/.../LockStepExecution.java (edited: credentials resolution + Authorization generation)
+  - src/main/java/.../remote/RemoteApiClient.java (edited if needed)
+  - src/test/java/.../LockStepRemoteTest.java (add auth success/failure cases)
+  - src/test/java/.../remote/RemoteApiClientTest.java (add Authorization header transmission checks)
+- Verification:
+- Notes:
 
 ---
 

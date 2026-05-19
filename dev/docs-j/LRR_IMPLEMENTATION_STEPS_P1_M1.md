@@ -275,6 +275,8 @@
 スコープ確定（2026-05-16）:
 - **6a**: `clientId` を `POST /acquire` に追加（クライアント送信 + サーバー受信・保存 + 設定 UI）
 - **6b**: B-side LR ページ表示（サーバー側 LR 一覧に `clientId` を表示）
+- **6c**: System 設定 UI 拡張（server 側: exposeLabel / remoteApiEnabled、client 側: remotes 接続パラメータ）
+- **6d**: 認証実装（`credentialsId` から username/password を解決し Authorization ヘッダ付与）
 
 ---
 
@@ -359,6 +361,108 @@
   - `getRemoteLockClientId()`: `remoteLockedBy == null` なら null 即返し、そうでなければ `RemoteLockManager.get().find(remoteLockedBy)` でレコードを検索して `clientId` を返す。レコードなし（再起動後等）は null。
   - `table.jelly`: status コンテンツの `j:choose` で remote lock ケースを job-locked ケースより前に配置。`resource.remoteLockedBy != null` で分岐し、`remoteLockClientId` が null の場合は `(unknown)` にフォールバック。
   - CSS クラス選択の `j:choose` は変更なし（`resource.locked == true` が既に `warning` に当たる）。
+
+---
+
+#### Step 6c: System 設定 UI 拡張（server/client 設定）
+
+目的:
+- System 設定画面で、remote lock の server/client 基本設定を UI 経由で完結できるようにする。
+- 現状 UI で露出していない `remoteApiEnabled` / `exposeLabel` / `remotes[]` を設定可能にし、手動 Groovy 依存を減らす。
+
+対象スコープ（本ステップ）:
+- server 側設定（LockableResourcesManager）
+  - `remoteApiEnabled`（master switch）
+  - `exposeLabel`（公開対象ラベル）
+- client 側設定（LockableResourcesManager）
+  - `remotes[]`
+    - `serverId`
+    - `url`
+    - `credentialsId`
+
+実装方針:
+- `LockableResourcesManager/config.jelly` に Remote 設定セクションを再編追加
+  - Server セクション: checkbox (`remoteApiEnabled`) + textbox (`exposeLabel`)
+  - Client セクション: 既存 `clientId` を維持しつつ `remotes` repeatable を追加
+- `LockableResourcesManager/config.properties` に UI ラベルキーを追加
+- 必要に応じて help ファイルを追加
+  - `help/remoteApiEnabled`
+  - `help/exposeLabel`
+  - `help/remotes`
+  - `help/remotes/serverId`, `help/remotes/url`, `help/remotes/credentialsId`
+- バリデーション方針
+  - `RemoteConnection.validate()` の既存検証を尊重
+  - `serverId` 重複は既存実装通り warning + last-entry-wins（将来 strict 化は別タスク）
+  - `exposeLabel` 未設定時は opt-in 設計に合わせ「公開なし」を維持
+
+完了条件:
+- System 設定 UI で `remoteApiEnabled` / `exposeLabel` を入力・保存できる
+- System 設定 UI で `remotes[]`（serverId/url/credentialsId）を追加・保存できる
+- Jenkins 再起動後も設定が保持される
+- `mvn test` が通る（少なくとも UI 変更に関連する既存テストは回帰なし）
+
+- [ ] 実装完了
+- [ ] `mvn test` 確認完了
+- [ ] コミット済み
+
+記録:
+- 日付:
+- コミット:
+- 変更ファイル:
+  - src/main/resources/.../LockableResourcesManager/config.jelly (編集)
+  - src/main/resources/.../LockableResourcesManager/config.properties (編集)
+  - src/main/resources/.../LockableResourcesManager/help/* (必要に応じて新規)
+  - src/test/java/... (必要に応じて UI/設定回帰テスト追加)
+- 確認結果:
+- 補足:
+
+---
+
+#### Step 6d: 認証実装（credentialsId 解決 + Authorization ヘッダ付与）
+
+目的:
+- `remotes[].credentialsId` を実際に解決し、remote API 呼び出し時に認証情報を送信できるようにする。
+- 「credentialsId は保持するが未使用」の状態を解消し、M1 ゴールに合わせて peer mode の認証経路を成立させる。
+
+対象スコープ（本ステップ）:
+- client 側（LockStepExecution / RemoteApiClient 呼び出し経路）
+  - credentials 解決
+  - Authorization ヘッダ生成（Basic）
+- エラー処理
+  - credentials 未設定・未解決・型不一致・認証失敗時の fail-closed
+
+実装方針:
+- `LockStepExecution.resolveAuthorizationHeader()` を実装
+  - Jenkins Credentials API で `StandardUsernamePasswordCredentials` を解決
+  - `username:password` を Base64 エンコードして `Authorization: Basic ...` を生成
+- `credentialsId` が空の場合
+  - 既存方針どおり認証なし呼び出しを維持（サーバー設定次第で 403 → fail-closed）
+- `credentialsId` 指定ありで解決失敗時
+  - 明示的に `AbortException` で停止（誤設定の早期検知）
+- ログ方針
+  - credentials 値は絶対に出力しない
+  - `serverId` / `credentialsId`（識別子のみ） / 失敗理由カテゴリを出力
+
+完了条件:
+- `credentialsId` 指定時に Authorization ヘッダ付きで remote API が呼ばれる
+- 認証失敗（403 等）で fail-closed に build failure になる
+- credentials 解決失敗時に意図したエラーで停止する
+- `mvn test` が通る（関連テストを追加/更新）
+
+- [ ] 実装完了
+- [ ] `mvn test` 確認完了
+- [ ] コミット済み
+
+記録:
+- 日付:
+- コミット:
+- 変更ファイル:
+  - src/main/java/.../LockStepExecution.java (編集: credentials 解決 + Authorization 生成)
+  - src/main/java/.../remote/RemoteApiClient.java (必要に応じて編集)
+  - src/test/java/.../LockStepRemoteTest.java (認証成功/失敗ケース追加)
+  - src/test/java/.../remote/RemoteApiClientTest.java (Authorization ヘッダ送信検証追加)
+- 確認結果:
+- 補足:
 
 ---
 

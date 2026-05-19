@@ -42,7 +42,8 @@ Writing `lock(resource: 'X', serverId: 'B')` is all that is needed to lock a **r
 |---|---|
 | Peer mode | Explicit `lock(..., serverId: 'X')` specification |
 | Backward compatibility | No `serverId` → existing local-mode behavior unchanged |
-| Authentication | username/password credential (service account + API token) |
+| Authentication | Resolve username/password (API token) from `credentialsId` and attach Authorization header |
+| Configuration UI | System configuration can edit server-side (`remoteApiEnabled`/`exposeLabel`) and client-side (`remotes[]`) settings |
 | Scale assumption | Small to medium scale. Polling latency of a few seconds is acceptable |
 
 **Planned future extensions (M2+):**
@@ -297,6 +298,8 @@ flowchart TD
 | `remoteApiEnabled` | `false` | Master switch. All endpoints return 403 while `false` |
 | `exposeLabel` | (not set) | Only resources with this label are exposed. **Nothing is exposed when not set** (opt-in) |
 
+> In M1, these settings are editable from the System configuration UI (checkbox + textbox).
+
 ### Client side (Jenkins that initiates remote locks)
 
 | Setting | Description |
@@ -308,6 +311,9 @@ flowchart TD
 | `forcedServerId` | When set, enables Delegated mode. Must match a key in `remotes` |
 
 > `serverId` is an alias defined by the client; the remote Jenkins does not recognize it.
+
+> In M1, `credentialsId` is resolved at runtime and remote API calls are sent with Basic Authorization headers.
+> If credentials are missing/invalid, behavior remains fail-closed (build fails on communication/auth errors).
 
 ### B-side LR Page Display
 
@@ -378,6 +384,8 @@ flowchart LR
 | Client implementation | `RemoteApiClient` (acquire/poll/heartbeat/release) |
 | Server REST API | `POST /acquire`, `GET /acquire/{lockId}`, `POST /lease/{lockId}/heartbeat`, `POST /lease/{lockId}/release` |
 | Configuration model | `RemoteConnection` (serverId/url/credentialsId), `LockableResourcesManager.remotes` |
+| Configuration UI | `remoteApiEnabled` / `exposeLabel` / `remotes[]` editable from System configuration |
+| Authentication implementation | Resolve `credentialsId` and attach Authorization header |
 | Error handling | Fail-closed, `RemoteApiException` |
 
 ### Not included (outside M1 scope)
@@ -387,7 +395,6 @@ flowchart LR
 | `forcedServerId` (Delegated mode) | M2 |
 | `GET /resources` and remote view on client-side LR page | M3 |
 | `POST /acquire/{lockId}/cancel` | **Removed** (consolidated into release) |
-| Authentication (actual credentialsId resolution) | Not implemented in Phase 1, warning log only |
 | User-configurable polling/heartbeat/timeout values | Phase 2 |
 | Failover across multiple remotes | Phase 3 |
 | Automatic remote selection via `serverId: 'any'` | Phase 3 |
