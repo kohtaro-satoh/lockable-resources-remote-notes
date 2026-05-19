@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/../../lockable-resources-plugin" && pwd)"
 MAVEN_BIN="${HOME}/.local/apache-maven-3.9.9/bin/mvn"
 EXTENSION_INDEX="${PLUGIN_ROOT}/target/classes/META-INF/annotations"
+REPORTS_DIR="${SCRIPT_DIR}/reports"
 
 SKIP_EXTEND_CHECK=false
 SKIP_TEST=false
@@ -151,8 +152,18 @@ echo ""
 
 START_TIME=$(date +%s)
 cd "$PLUGIN_ROOT"
-if ! "$MAVEN_BIN" test; then
+mkdir -p "$REPORTS_DIR"
+MVN_TEST_LOG="${REPORTS_DIR}/$(date +%Y%m%d%H%M%S)-mvn-test.log"
+log_info "Saving mvn test log to: $MVN_TEST_LOG"
+
+set +e
+"$MAVEN_BIN" test 2>&1 | tee "$MVN_TEST_LOG"
+MVN_TEST_RC=${PIPESTATUS[0]}
+set -e
+
+if [[ $MVN_TEST_RC -ne 0 ]]; then
     log_error "Test execution failed"
+    log_warn "mvn test log: $MVN_TEST_LOG"
     exit 1
 fi
 END_TIME=$(date +%s)
@@ -163,6 +174,7 @@ echo "============================================"
 log_success "Build Stabilization Complete!"
 echo "============================================"
 echo "Duration: $(printf '%d:%02d' $((DURATION / 60)) $((DURATION % 60)))"
+log_info "mvn test log: $MVN_TEST_LOG"
 echo ""
 log_info "Expected: Tests run: 271, Failures: 0, Errors: 0, Skipped: 1"
 echo ""
