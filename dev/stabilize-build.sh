@@ -12,6 +12,7 @@ PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/../../lockable-resources-plugin" && pwd)"
 MAVEN_BIN="${HOME}/.local/apache-maven-3.9.9/bin/mvn"
 EXTENSION_INDEX="${PLUGIN_ROOT}/target/classes/META-INF/annotations"
 REPORTS_DIR="${SCRIPT_DIR}/reports"
+LOCK_FILE="${SCRIPT_DIR}/.stabilize-build.lock"
 
 SKIP_EXTEND_CHECK=false
 SKIP_TEST=false
@@ -57,6 +58,19 @@ log_warn() {
 log_error() {
     echo -e "${RED}[✗]${NC} $*"
 }
+
+# Prevent concurrent runs that can corrupt target/ while Maven is compiling/testing.
+if ! command -v flock >/dev/null 2>&1; then
+    log_error "flock command is required but not found"
+    exit 1
+fi
+
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    log_error "Another stabilize-build.sh process is running. Wait for it to finish and retry."
+    log_info "Lock file: $LOCK_FILE"
+    exit 1
+fi
 
 # check maven
 if [[ ! -x "$MAVEN_BIN" ]]; then

@@ -468,11 +468,11 @@
 
 - [x] 実装完了
 - [x] `mvn test` 確認完了
-- [ ] コミット済み
+- [x] コミット済み
 
 記録:
 - 日付: 2026-05-19
-- コミット: 未コミット（作業ツリーで継続中）
+- コミット: plugin `28e1fc9`, docs-j `6b8ebda`
 - 変更ファイル:
   - src/main/java/.../LockStepExecution.java (編集: credentials 解決 + Authorization 生成)
   - src/main/java/.../remote/RemoteApiClient.java (必要に応じて編集)

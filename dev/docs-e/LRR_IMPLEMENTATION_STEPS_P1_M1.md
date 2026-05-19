@@ -444,15 +444,21 @@ In-scope settings for this step:
 
 Implementation policy:
 - Implement `LockStepExecution.resolveAuthorizationHeader()`
-  - Resolve `StandardUsernamePasswordCredentials` using Jenkins Credentials API
+  - Resolve `StandardUsernamePasswordCredentials` from Jenkins-global credentials by `credentialsId`
   - Build `Authorization: Basic ...` from Base64(username:password)
+- Limit Step 6d authentication support to Basic only
+  - Treat username/password and username/API token uniformly as Basic Authorization
+  - Keep secret text and bearer token support out of scope for this step
 - When `credentialsId` is empty
   - Keep current no-auth call behavior (may fail with 403 depending on server configuration)
 - When `credentialsId` is set but cannot be resolved
   - Fail early with explicit `AbortException` (surface misconfiguration clearly)
+- When `credentialsId` is set but resolves to the wrong type
+  - Fail early with explicit `AbortException` (`StandardUsernamePasswordCredentials` only)
 - Logging policy
   - Never log credential values
   - Log only identifiers/categories (`serverId`, `credentialsId`, failure category)
+  - Keep 401/403 handling as existing remote API failure behavior: fail-closed build failure
 
 Completion criteria:
 - Remote API is called with Authorization header when `credentialsId` is set
@@ -460,20 +466,23 @@ Completion criteria:
 - Credential resolution failure stops with intended error
 - `mvn test` passes (with related tests added/updated)
 
-- [ ] Implementation complete
-- [ ] `mvn test` verification complete
-- [ ] Committed
+- [x] Implementation complete
+- [x] `mvn test` verification complete
+- [x] Committed
 
 Notes:
-- Date:
-- Commit:
+- Date: 2026-05-19
+- Commit: plugin `28e1fc9`, docs-j `6b8ebda`
 - Changed files:
   - src/main/java/.../LockStepExecution.java (edited: credentials resolution + Authorization generation)
   - src/main/java/.../remote/RemoteApiClient.java (edited if needed)
   - src/test/java/.../LockStepRemoteTest.java (add auth success/failure cases)
   - src/test/java/.../remote/RemoteApiClientTest.java (add Authorization header transmission checks)
 - Verification:
+  - Targeted runs for `LockStepRemoteTest` / `RemoteApiV1ActionTest` / `RemoteApiClientTest` passed (Failures: 0, Errors: 0).
+  - Full `mvn test` log `dev/reports/20260519170441-mvn-test.log` shows BUILD SUCCESS (Tests run: 276, Failures: 0, Errors: 0, Skipped: 1).
 - Notes:
+  - Debug-time `missing descriptor` / `cannot find symbol` symptoms were isolated as parallel execution or transient build-state issues, not a Step 6d implementation defect.
 
 ---
 
