@@ -444,15 +444,21 @@
 
 実装方針:
 - `LockStepExecution.resolveAuthorizationHeader()` を実装
-  - Jenkins Credentials API で `StandardUsernamePasswordCredentials` を解決
+  - Jenkins 全体の Credentials から `credentialsId` で `StandardUsernamePasswordCredentials` を解決する
   - `username:password` を Base64 エンコードして `Authorization: Basic ...` を生成
+- 認証方式は Step 6d では Basic のみ対象とする
+  - username/password または username/API token を同一の Basic Authorization として扱う
+  - Secret text や Bearer token は本ステップのスコープ外とする
 - `credentialsId` が空の場合
   - 既存方針どおり認証なし呼び出しを維持（サーバー設定次第で 403 → fail-closed）
 - `credentialsId` 指定ありで解決失敗時
   - 明示的に `AbortException` で停止（誤設定の早期検知）
+- `credentialsId` 指定ありで型不一致時
+  - 明示的に `AbortException` で停止（`StandardUsernamePasswordCredentials` 以外は受け付けない）
 - ログ方針
   - credentials 値は絶対に出力しない
   - `serverId` / `credentialsId`（識別子のみ） / 失敗理由カテゴリを出力
+  - 401/403 は remote API 失敗として既存どおり fail-closed で build failure にする
 
 完了条件:
 - `credentialsId` 指定時に Authorization ヘッダ付きで remote API が呼ばれる
@@ -460,20 +466,23 @@
 - credentials 解決失敗時に意図したエラーで停止する
 - `mvn test` が通る（関連テストを追加/更新）
 
-- [ ] 実装完了
-- [ ] `mvn test` 確認完了
+- [x] 実装完了
+- [x] `mvn test` 確認完了
 - [ ] コミット済み
 
 記録:
-- 日付:
-- コミット:
+- 日付: 2026-05-19
+- コミット: 未コミット（作業ツリーで継続中）
 - 変更ファイル:
   - src/main/java/.../LockStepExecution.java (編集: credentials 解決 + Authorization 生成)
   - src/main/java/.../remote/RemoteApiClient.java (必要に応じて編集)
   - src/test/java/.../LockStepRemoteTest.java (認証成功/失敗ケース追加)
   - src/test/java/.../remote/RemoteApiClientTest.java (Authorization ヘッダ送信検証追加)
 - 確認結果:
+  - `LockStepRemoteTest` / `RemoteApiV1ActionTest` / `RemoteApiClientTest` の対象実行が成功（Failures: 0, Errors: 0）。
+  - 全件 `mvn test` ログ `dev/reports/20260519170441-mvn-test.log` で BUILD SUCCESS を確認（Tests run: 276, Failures: 0, Errors: 0, Skipped: 1）。
 - 補足:
+  - デバッグ中に発生した `missing descriptor` / `cannot find symbol` は並行実行や一時的な build state 不整合起因で、Step 6d 実装の不具合ではないことを切り分け済み。
 
 ---
 
