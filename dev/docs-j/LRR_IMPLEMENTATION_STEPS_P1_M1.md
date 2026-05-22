@@ -486,6 +486,34 @@
 
 ---
 
+#### Step 6e: errorCode 統一修正（`UNKNOWN_RESOURCE`）
+
+目的:
+- remote API 入口と内部遷移で不一致だった missing-resource の errorCode を統一し、運用時の判定とログ解釈を単純化する。
+
+実装内容:
+- `RemoteLockManager` 内の missing-resource 失敗コードを `RESOURCE_NOT_FOUND` から `UNKNOWN_RESOURCE` に統一
+- 回帰防止として `RemoteLockManagerTest` を新規追加し、存在しない resource enqueue 時に `FAILED + UNKNOWN_RESOURCE` となることを固定
+
+完了条件:
+- plugin 側の修正がコミット済み
+- 対象テストが成功している
+
+- [x] 実装完了
+- [x] 対象テスト確認完了
+- [x] コミット済み
+
+記録:
+- 日付: 2026-05-23
+- コミット: plugin `3a111a0`
+- 変更ファイル:
+  - src/main/java/.../remote/RemoteLockManager.java (編集)
+  - src/test/java/.../remote/RemoteLockManagerTest.java (新規)
+- 確認結果:
+  - `$HOME/.local/apache-maven-3.9.9/bin/mvn test -Dtest=RemoteLockManagerTest,RemoteApiV1ActionTest` を実行し成功（Tests run: 2, Failures: 0, Errors: 0, Skipped: 0）。
+
+---
+
 ### 7. 正式テスト（plugin 側 / M1 の成立確認）
 
 方針:
@@ -543,6 +571,8 @@
   - UI では `Remote: (unknown)` に加えて `Remote: clientId` の正常表示分岐も `LockableResourcesRootActionTest` で固定した。
   - 当初は JenkinsRule + HTTP 経由で組んだが、ローカル環境で Jetty の port bind が不安定だったため、action 直叩き + mocked Stapler に切り替えて安定化した。
   - `serverId` 分岐、既存 local 挙動維持、代表的な failure 系の最小回帰テストは追加済み。Step7 全体としては、必要に応じて heartbeat 中断や status poll 中の通信失敗などの拡張ケース追加を残している。
+  - 2026-05-23 追記: Step6e の errorCode 統一修正後、`RemoteLockManagerTest,RemoteApiV1ActionTest` の対象実行が成功（Tests run: 2, Failures: 0, Errors: 0, Skipped: 0）。
+  - 2026-05-23 追記: `./stabilize-build.sh` 再実行で全件 `mvn test` が成功（Tests run: 278, Failures: 0, Errors: 0, Skipped: 1, BUILD SUCCESS, Total time: 14:45）。ログ: `dev/reports/20260523075036-mvn-test.log`。
 
 ---
 
@@ -736,7 +766,7 @@ ls target/classes/META-INF/annotations
 $HOME/.local/apache-maven-3.9.9/bin/mvn test
 ```
 
-**期待結果**: `Tests run: 271, Failures: 0, Errors: 0, Skipped: 1, BUILD SUCCESS`
+**期待結果**: `Tests run: 278, Failures: 0, Errors: 0, Skipped: 1, BUILD SUCCESS`
 
 ### トラブルシューティング
 
@@ -772,11 +802,11 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 ## 現在ステータス
 
 - 開始日: 2026-05-09
-- **plugin 側 M1 実装: Step 0〜8 完了 ✅**（最終確認: 2026-05-18、`mvn test` BUILD SUCCESS / 271件 / Failures: 0 / Skipped: 1）
-- **テスト安定化: 最終版手順 確定済み ✅**（2026-05-18、WSL 再起動後の再実行でも BUILD SUCCESS を確認）
+- **plugin 側 M1 実装: Step 0〜8 完了 ✅**（最終確認: 2026-05-23、`./stabilize-build.sh` 経由で `mvn test` BUILD SUCCESS / 278件 / Failures: 0 / Errors: 0 / Skipped: 1）
+- **テスト安定化: 最終版手順 確定済み ✅**（2026-05-23、再実行で BUILD SUCCESS を確認）
 - 次アクション: Step 9（テスト運用資産の notes 側整備 / 運用ドキュメント完成）
 - ブロッカー: なし
-- 最新ビルド: 合計実行時間 14:01、全テスト正常終了
+- 最新ビルド: 合計実行時間 14:45、全テスト正常終了（ログ: `dev/reports/20260523075036-mvn-test.log`）
 
 ### ブランチ整理メモ
 

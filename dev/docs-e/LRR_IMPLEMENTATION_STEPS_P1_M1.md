@@ -486,6 +486,34 @@ Notes:
 
 ---
 
+#### Step 6e: errorCode unification fix (`UNKNOWN_RESOURCE`)
+
+Purpose:
+- Unify the missing-resource errorCode between remote API entry checks and internal state transitions, so operational diagnosis and log interpretation remain consistent.
+
+Implementation:
+- Replaced `RESOURCE_NOT_FOUND` with `UNKNOWN_RESOURCE` in `RemoteLockManager` for missing-resource failures
+- Added a regression test (`RemoteLockManagerTest`) to lock down `FAILED + UNKNOWN_RESOURCE` when enqueueing a non-existent resource
+
+Completion criteria:
+- Plugin-side fix is committed
+- Focused tests are green
+
+- [x] Implementation complete
+- [x] Focused test verification complete
+- [x] Committed
+
+Notes:
+- Date: 2026-05-23
+- Commit: plugin `3a111a0`
+- Changed files:
+  - src/main/java/.../remote/RemoteLockManager.java (edited)
+  - src/test/java/.../remote/RemoteLockManagerTest.java (new)
+- Verification:
+  - `$HOME/.local/apache-maven-3.9.9/bin/mvn test -Dtest=RemoteLockManagerTest,RemoteApiV1ActionTest` succeeded (Tests run: 2, Failures: 0, Errors: 0, Skipped: 0).
+
+---
+
 ### 7. Formal tests (plugin-side / M1 completeness verification)
 
 Policy:
@@ -543,6 +571,8 @@ Notes:
   - UI: `LockableResourcesRootActionTest` locks down both `Remote: (unknown)` and the normal `Remote: clientId` display branch.
   - Originally built with JenkinsRule + HTTP, but Jetty port binding was unstable in the local environment. Switched to direct action invocation + mocked Stapler for stability.
   - Minimum regression tests for the `serverId` branch, preservation of existing local behavior, and representative failure cases are added. Remaining for Step 7 as a whole: optional extension cases such as heartbeat interruption or communication failure during status polling.
+  - 2026-05-23 addendum: After Step 6e errorCode unification, focused run `RemoteLockManagerTest,RemoteApiV1ActionTest` succeeded (Tests run: 2, Failures: 0, Errors: 0, Skipped: 0).
+  - 2026-05-23 addendum: Re-ran `./stabilize-build.sh`; full `mvn test` succeeded (Tests run: 278, Failures: 0, Errors: 0, Skipped: 1, BUILD SUCCESS, Total time: 14:45). Log: `dev/reports/20260523075036-mvn-test.log`.
 
 ---
 
@@ -736,7 +766,7 @@ ls target/classes/META-INF/annotations
 $HOME/.local/apache-maven-3.9.9/bin/mvn test
 ```
 
-**Expected result**: `Tests run: 271, Failures: 0, Errors: 0, Skipped: 1, BUILD SUCCESS`
+**Expected result**: `Tests run: 278, Failures: 0, Errors: 0, Skipped: 1, BUILD SUCCESS`
 
 ### Troubleshooting
 
@@ -772,11 +802,11 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 ## Current Status
 
 - Start date: 2026-05-09
-- **Plugin-side M1 implementation: Steps 0–8 complete ✅** (Last verified: 2026-05-18, `mvn test` BUILD SUCCESS / 271 tests / Failures: 0 / Skipped: 1)
-- **Test stabilization: Final procedure confirmed ✅** (2026-05-18, BUILD SUCCESS confirmed on re-run after WSL restart)
+- **Plugin-side M1 implementation: Steps 0–8 complete ✅** (Last verified: 2026-05-23, BUILD SUCCESS via `./stabilize-build.sh` (`mvn test`) / 278 tests / Failures: 0 / Errors: 0 / Skipped: 1)
+- **Test stabilization: Final procedure confirmed ✅** (2026-05-23, BUILD SUCCESS confirmed on re-run)
 - Next action: Step 9 (notes-side test operational asset preparation / operational documentation completion)
 - Blockers: None
-- Latest build: Total time 14:01, all tests passed
+- Latest build: Total time 14:45, all tests passed (log: `dev/reports/20260523075036-mvn-test.log`)
 
 ### Branch maintenance notes
 
