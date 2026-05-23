@@ -731,15 +731,25 @@ Completion criteria:
 - Entry points for Step 7 / Step 8 are organized on the notes side
 - Prerequisites and known constraints are documented for easy onboarding in a new environment
 
-- [ ] Implementation complete
-- [ ] Content review complete
+- [x] Implementation complete
+- [x] Content review complete
 
 Notes:
-- Date:
-- Commit:
+- Date: 2026-05-23
+- Commit: notes `1ac2932`
 - Changed files:
+  - `dev/jenkins-env/README.md`
+  - `dev/docs-j/E2E_TEST_SPECIFICATION.md`
+  - `dev/docs-e/E2E_TEST_SPECIFICATION.md`
+  - `dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1.md`
+  - `dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1.md`
 - Verification:
+  - Step 7 entry points and `mvn test` stabilization steps are consolidated in this tracker
+  - Step 8 entry points, prerequisites, `--only` options, and report locations are consolidated in `dev/jenkins-env/README.md` and `E2E_TEST_SPECIFICATION.md`
+  - Known constraints and recovery procedures (missing descriptor, target regeneration, clean-worktree isolation) are consolidated in this tracker
 - Notes:
+  - Step 9 was completed by consolidating operational entry points into the existing README, E2E spec, and step tracker rather than creating a separate operations document
+  - No remaining work is left within the M1 scope
 
 ---
 
@@ -867,9 +877,10 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 ## Current Status
 
 - Start date: 2026-05-09
-- **Plugin-side M1 implementation: Steps 0–8 complete ✅** (Last verified: 2026-05-23, BUILD SUCCESS via `./stabilize-build.sh` (`mvn test`) / 278 tests / Failures: 0 / Errors: 0 / Skipped: 1)
+- **Plugin-side M1 implementation: Steps 0–8 complete ✅** (Last verified: 2026-05-23, plugin HEAD `3a111a0`, BUILD SUCCESS via `./stabilize-build.sh` (`mvn test`) / 278 tests / Failures: 0 / Errors: 0 / Skipped: 1)
+- **Notes-side operational assets: Step 9 complete ✅** (2026-05-23, README / E2E spec / tracker synchronized)
 - **Test stabilization: Final procedure confirmed ✅** (2026-05-23, BUILD SUCCESS confirmed on re-run)
-- Next action: Step 9 (notes-side test operational asset preparation / operational documentation completion)
+- Next action: No remaining work in M1 scope
 - Blockers: None
 - Latest build: Total time 14:28, all tests passed (log: `dev/reports/20260523135413-mvn-test.log`)
 
@@ -878,4 +889,4 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 - PR #1028 (NodesMirror package fix) cherry-picked onto current master (commit `e4f70c3`)
 - Feature branch rebased on this cherry-pick-applied master (2026-05-16)
 - Once #1028 is merged into upstream master, drop the cherry-pick commit and rebase again
-- **Update the hashes below to actual commit hashes after final verification when Steps 7–9 are complete**
+- Notes-side M1 sync commit: `1ac2932`; `.gitignore` cleanup commit: `037e395`

@@ -24,7 +24,7 @@
 
 記録:
 - 日付: 2026-05-09
-- コミット: 739d6da（※ rebase 後は e4f70c3 が基点。M1 完了後に最終確認し更新予定）
+- コミット: 739d6da（※ rebase 後の基点は `e4f70c3` のまま。M1 クローズ時点も同一）
 - メモ: $HOME/.local/apache-maven-3.9.9/bin/mvn test を実行し BUILD SUCCESS（Tests run: 238, Failures: 0, Errors: 0, Skipped: 1, Total time: 13:42）を確認。
   2026-05-14 時点で PR #1028 cherry-pick（NodesMirror パッケージ修正）を master に適用後、feature ブランチを rebase し cold build でも BUILD SUCCESS（Tests run: 238, Failures: 0, Errors: 0, Skipped: 1）を確認。
   2026-05-19 時点で Step 6c 実装後に再度 `$HOME/.local/apache-maven-3.9.9/bin/mvn test` を実行し BUILD SUCCESS（Tests run: 274, Failures: 0, Errors: 0, Skipped: 1, Total time: 13:37）を確認。
@@ -711,10 +711,10 @@ Step8 最終状態（2026-05-23）:
 今回のデバッグで plugin 側不具合は未検出。
 検出・修正したのは `lockable-resources-remote-notes` 側 E2E ハーネス/環境起動スクリプトの問題。
 
-次アクション（この後すぐ実施）:
-1. report 差分確認とコミット
-2. 必要なら `run-e2e.sh --clean-start --only all` でクリーン環境再現を追加取得
-3. Step9（運用資産整備）の残タスク整理
+フォローアップ結果（2026-05-23）:
+1. report 差分確認とコミットは完了（notes: `1ac2932`）
+2. `./run-e2e.sh` のフル実行レポートを最新版として採用し、`--clean-start --only all` の再取得は任意扱いへ整理
+3. Step9 の完了条件を README / E2E spec / 本手順書で満たしていることを確認し、本節へ反映
 
 ---
 
@@ -740,15 +740,25 @@ Step8 最終状態（2026-05-23）:
 - Step7 / Step8 の実行入口が notes 側で整理されている
 - 新しい環境でも追従しやすいよう前提条件・既知制約が書かれている
 
-- [ ] 実装完了
-- [ ] 内容見直し完了
+- [x] 実装完了
+- [x] 内容見直し完了
 
 記録:
-- 日付:
-- コミット:
+- 日付: 2026-05-23
+- コミット: notes `1ac2932`
 - 変更ファイル:
+  - `dev/jenkins-env/README.md`
+  - `dev/docs-j/E2E_TEST_SPECIFICATION.md`
+  - `dev/docs-e/E2E_TEST_SPECIFICATION.md`
+  - `dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1.md`
+  - `dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1.md`
 - 確認結果:
+  - Step7 の実行入口と `mvn test` 安定化手順は本ファイル内に整理済み
+  - Step8 の実行入口・前提条件・`--only` オプション・レポート出力先は `dev/jenkins-env/README.md` と `E2E_TEST_SPECIFICATION.md` に整理済み
+  - 既知制約と復旧手順（descriptor 欠落、target 再生成、clean worktree 切り分け）は本ファイル内に整理済み
 - 補足:
+  - Step9 は新規の専用運用文書を増やすのではなく、既存の README / E2E spec / 実装手順書へ入口と前提条件を集約する形で完了とした
+  - M1 スコープ上の残件は解消済み。以後は M2 以降の検討事項のみ
 
 ---
 
@@ -876,9 +886,10 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 ## 現在ステータス
 
 - 開始日: 2026-05-09
-- **plugin 側 M1 実装: Step 0〜8 完了 ✅**（最終確認: 2026-05-23、`./stabilize-build.sh` 経由で `mvn test` BUILD SUCCESS / 278件 / Failures: 0 / Errors: 0 / Skipped: 1）
+- **plugin 側 M1 実装: Step 0〜8 完了 ✅**（最終確認: 2026-05-23、plugin HEAD `3a111a0`、`./stabilize-build.sh` 経由で `mvn test` BUILD SUCCESS / 278件 / Failures: 0 / Errors: 0 / Skipped: 1）
+- **notes 側運用資産: Step 9 完了 ✅**（2026-05-23、README / E2E spec / 本手順書の同期完了）
 - **テスト安定化: 最終版手順 確定済み ✅**（2026-05-23、再実行で BUILD SUCCESS を確認）
-- 次アクション: Step 9（テスト運用資産の notes 側整備 / 運用ドキュメント完成）
+- 次アクション: M1 スコープの残件なし
 - ブロッカー: なし
 - 最新ビルド: 合計実行時間 14:28、全テスト正常終了（ログ: `dev/reports/20260523135413-mvn-test.log`）
 
@@ -887,4 +898,4 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 - 現 master に PR #1028（NodesMirror パッケージ修正）を cherry-pick 済み（コミット `e4f70c3`）
 - feature ブランチは この cherry-pick 済み master で rebase 済み（2026-05-16）
 - 本家 master に #1028 が取り込まれ次第、cherry-pick コミットを drop して rebase し直す
-- **Step7-9 完了後の最終テスト実施時に下記 hash を実際のコミット hash へ更新すること**
+- notes 側の M1 同期コミットは `1ac2932`、`.gitignore` 整理は `037e395`
