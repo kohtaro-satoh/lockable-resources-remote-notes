@@ -14,6 +14,9 @@ fi
 SCENARIO_DIR="$RESULTS_DIR/peer-basic"
 mkdir -p "$SCENARIO_DIR"
 RESOURCE_NAME="step8-board-$(date +%s)"
+CREDENTIALS_ID="step8-peer-basic-auth"
+REMOTE_USER="admin"
+REMOTE_API_TOKEN=""
 DETAIL_FILE="$SCENARIO_DIR/scenario-details.md"
 SEQ_FILE="$SCENARIO_DIR/.sequence.tmp"
 CP_FILE="$SCENARIO_DIR/.checkpoints.tmp"
@@ -67,24 +70,37 @@ finalize_scenario_details() {
 trap finalize_scenario_details EXIT
 
 log "peer-basic: configure controllers"
-scenario_sequence "Configure Controller B as remote server and create exposed resource ${RESOURCE_NAME}"
-configure_controller_b_remote_server "$RESOURCE_NAME"
-verify_controller_b_remote_server_config "$RESOURCE_NAME"
+scenario_sequence "Configure Controller B as authenticated remote server and create exposed resource ${RESOURCE_NAME}"
+configure_controller_b_remote_server "$RESOURCE_NAME" "authenticated"
+verify_controller_b_remote_server_config "$RESOURCE_NAME" "authenticated"
 scenario_checkpoint \
   "Controller B remote server configuration" \
-  "Groovy /scriptText (set remoteApiEnabled, exposeLabel, resource)" \
-  "remoteApiEnabled=true and resourceExposed=true" \
-  "verify_controller_b_remote_server_config passed" \
+  "Groovy /scriptText (set auth mode, remoteApiEnabled, exposeLabel, resource)" \
+  "authenticatedMode=true, remoteApiEnabled=true and resourceExposed=true" \
+  "verify_controller_b_remote_server_config(authenticated) passed" \
   "PASS"
 
-scenario_sequence "Configure Controllers A and C as remote clients (serverId=b)"
-configure_remote_client "$CONTROLLER_A_URL" "jenkins-a" "$CONTROLLER_B_INTERNAL_URL"
-configure_remote_client "$CONTROLLER_C_URL" "jenkins-c" "$CONTROLLER_B_INTERNAL_URL"
+scenario_sequence "Issue API token for Controller B admin and upsert username/password credentials on Controllers A/C"
+REMOTE_API_TOKEN="$(issue_user_api_token "$CONTROLLER_B_URL" "$REMOTE_USER" "e2e-peer-basic-token")"
+upsert_username_password_credential "$CONTROLLER_A_URL" "$CREDENTIALS_ID" "$REMOTE_USER" "$REMOTE_API_TOKEN"
+upsert_username_password_credential "$CONTROLLER_C_URL" "$CREDENTIALS_ID" "$REMOTE_USER" "$REMOTE_API_TOKEN"
+scenario_checkpoint \
+  "Controller A/C credentials upsert" \
+  "Groovy /scriptText (ApiTokenProperty issue + SystemCredentialsProvider upsert)" \
+  "credential id=${CREDENTIALS_ID} exists on A/C and password field contains B-side API token" \
+  "issue_user_api_token + upsert_username_password_credential completed for A and C" \
+  "PASS"
+
+scenario_sequence "Configure Controllers A and C as remote clients with credentials (serverId=b)"
+configure_remote_client "$CONTROLLER_A_URL" "jenkins-a" "$CONTROLLER_B_INTERNAL_URL" "$CREDENTIALS_ID"
+configure_remote_client "$CONTROLLER_C_URL" "jenkins-c" "$CONTROLLER_B_INTERNAL_URL" "$CREDENTIALS_ID"
+verify_remote_client_config "$CONTROLLER_A_URL" "jenkins-a" "$CONTROLLER_B_INTERNAL_URL" "$CREDENTIALS_ID"
+verify_remote_client_config "$CONTROLLER_C_URL" "jenkins-c" "$CONTROLLER_B_INTERNAL_URL" "$CREDENTIALS_ID"
 scenario_checkpoint \
   "Controller A/C remote client configuration" \
-  "Groovy /scriptText (set remotes=[b->8082])" \
-  "A/C can reference Controller B remote API" \
-  "configure_remote_client completed for A and C" \
+  "Groovy /scriptText (set remotes=[b->8082], credentialsId)" \
+  "A/C remotes point to B with credentialsId=${CREDENTIALS_ID}" \
+  "configure_remote_client + verify_remote_client_config completed for A and C" \
   "PASS"
 
 holder_script="$(cat <<EOF

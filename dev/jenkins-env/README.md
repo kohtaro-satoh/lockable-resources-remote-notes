@@ -98,8 +98,8 @@ Step8 着手として、以下のスクリプトを追加済みです。
 
 - `run-e2e.sh`: E2E 実行ハーネス（`start.sh` 内包、`--skip-start` 対応）
 - `lib/common.sh`: 共通関数（Jenkins API 呼び出し、job 作成、build 待機、ログ保存）
-- `scenarios/peer-basic.sh`: 正常系シナリオ（8081 holder / 8083 waiter の待機検証）
-- `scenarios/fail-closed.sh`: 異常系シナリオ（remote down / timeout / auth error）
+- `scenarios/peer-basic.sh`: 正常系シナリオ（認証必須 remote lock の 8081 holder / 8083 waiter 待機検証）
+- `scenarios/fail-closed.sh`: 異常系シナリオ（remote down / timeout / auth error / missing credentialsId / credentials type mismatch）
 
 実行例:
 
@@ -112,6 +112,7 @@ PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh --only peer-basic
 
 > `--only peer-basic` / `--only fail-closed` で個別実行できます。
 > `run-e2e.sh` が `start.sh` を呼ぶ場合は `PLUGIN_DIR` の指定が必須です（`--skip-start` 時は不要）。
+> E2E はデフォルトで認証必須モードを使います（Step6d 検証を含む）。
 > 実行結果は `dev/reports/` に保存されます。
 >
 > - レポート: `yyyymmddhhmmss-e2e-test.md`
@@ -149,14 +150,14 @@ PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh --only peer-basic
 docker compose -f path/to/jenkins-env/docker-compose.yml logs -f
 
 # 特定コントローラーのみ
-docker compose -f path/to/jenkins-env/docker-compose.yml logs -f jenkins-8081
+docker compose -f path/to/jenkins-env/docker-compose.yml logs -f jenkins-a
 ```
 
 `jenkins-env/` ディレクトリにいる場合は `-f` オプション不要：
 
 ```bash
 cd path/to/jenkins-env
-docker compose logs -f jenkins-8082
+docker compose logs -f jenkins-b
 ```
 
 ## プラグインを更新して再起動する
@@ -202,7 +203,7 @@ Bind for 0.0.0.0:8081 failed: port is already allocated
 240 秒以内に `/jenkins/login` が返らない場合：
 
 ```bash
-docker compose logs jenkins-8081
+docker compose logs jenkins-a
 ```
 
 でログを確認してください。

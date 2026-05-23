@@ -596,7 +596,8 @@
 - 必要なら `curl` ベースで remote API の生呼び出し確認も補助的に追加
 
 事前方針決定（2026-05-18）:
-- 認証方式: Step8 では「匿名 READ 一時許可」で実装し、成立優先。token 認証版は後続タスクで追加検討。
+- 認証方式: 当初は「匿名 READ 一時許可」で成立優先。
+- 2026-05-23 更新: 認証必須 + API トークン方式へ移行（CSRF 403 を回避し、Step6d 実装に合わせる）。
 - 実行責務: `run-e2e.sh` が `start.sh` を内包して起動まで実施（`--skip-start` オプションで既存起動環境も利用可）。
 - 合格判定: Build 結果だけでなく、待機時間閾値とログキーワードを併用して誤判定を抑制。
 
@@ -609,8 +610,8 @@
 - [x] ローカル自動実行で確認完了
 
 記録:
-- 日付: 2026-05-18
-- コミット: 未コミット（作業ツリーで継続中）
+- 日付: 2026-05-18（最終更新: 2026-05-23）
+- コミット: 本コミットで反映
 - 変更ファイル:
   - `dev/jenkins-env/run-e2e.sh`
   - `dev/jenkins-env/lib/common.sh`
@@ -624,6 +625,8 @@
 - 確認結果:
   - `./run-e2e.sh --skip-start --only peer-basic` が PASS（`dev/reports/20260518112121-e2e-test.md`）
   - `./run-e2e.sh --skip-start --only fail-closed` が PASS（`dev/reports/20260518112207-e2e-test.md`）
+  - `PLUGIN_DIR=... ./run-e2e.sh --clean-start --only peer-basic` が PASS（`dev/reports/20260523100012-e2e-test.md`）
+  - `PLUGIN_DIR=... ./run-e2e.sh --clean-start` が PASS（`dev/reports/20260523100138-e2e-test.md`, pass=2 fail=0）
 - 補足:
   - 2026-05-18: Step8 着手。`dev/jenkins-env/` に `run-e2e.sh`（ハーネス）、`lib/common.sh`（共通関数）、`scenarios/*.sh`（正常系/異常系の初版雛形）を追加。現時点のシナリオ本体は TODO として `SKIP` を返す。
   - 2026-05-18: シナリオ本体を実装。`peer-basic` は 8081 holder / 8083 waiter の待機検証（SUCCESS + 待機時間閾値 + ログ確認）、`fail-closed` は remote down / timeout / auth error の 3 ケースを自動実行し、body 未実行を確認する構成に更新。現時点では文法/ヘルプ確認まで実施し、ローカルフル実行は次フェーズ。
@@ -635,12 +638,20 @@
   - 2026-05-18: Scenario Details の markdown table 崩れを修正（Sequence と Checkpoints を分離生成して最終合成）。
   - 2026-05-18: レポート本文を英語化（Summary/Scenario details/checkpoint descriptions）。
   - 2026-05-18: plugin 側修正をコミット（`ade9bb7`）: `RemoteApiV1Action` の acquire ルーティング整理、`RemoteApiClient` の acquire path canonical 化、対応テスト更新。
+  - 2026-05-23: compose service/container 名を `jenkins-8081/2/3` から `jenkins-a/b/c` へ変更し、`common.sh` / `start.sh` / `fail-closed.sh` / `README.md` の参照先も追従。
+  - 2026-05-23: `peer-basic` の 403 を切り分け。Controller B ログで `No valid crumb was included ... /remote/v1/acquire/ ... Returning 403` を確認。
+  - 2026-05-23: E2E ハーネスを API トークン運用へ変更。Controller B の `admin` API token をシナリオで発行し、Controller A/C の username/password credentials（password 側）に設定して Basic 認証で remote API を呼び出す形へ更新。
+  - 2026-05-23: `dev/docs-j/E2E_TEST_SPECIFICATION.md` を作成し、認証必須（APIトークン）/ fail-closed 5ケース / compose 命名（a/b/c）へ内容更新。
 
 E2E 確認チェック（3 controller）:
 - [x] 8081 -> 8082 の remote lock が取得できる
 - [x] 8083 から同一 resource を叩くと待機/拒否の期待挙動になる
 - [x] release 後に待機側が進む
 - [x] 異常系（remote down, timeout, auth error）で fail-closed になる
+
+Step8 最終状態（2026-05-23）:
+- 認証必須 + API トークン方式で E2E が安定実行可能
+- フル実行結果: pass=2 fail=0（`20260523100138-e2e-test.md`）
 
 ---
 

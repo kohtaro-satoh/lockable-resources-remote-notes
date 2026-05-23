@@ -12,25 +12,25 @@ x-jenkins-common: &jenkins-common
     start_period: 90s
 
 services:
-  jenkins-8081:
+  jenkins-a:
     <<: *jenkins-common
-    container_name: lrr-jenkins-8081
+    container_name: lrr-jenkins-a
     ports:
       - "8081:8080"
     volumes:
       - ./jha:/var/jenkins_home
 
-  jenkins-8082:
+  jenkins-b:
     <<: *jenkins-common
-    container_name: lrr-jenkins-8082
+    container_name: lrr-jenkins-b
     ports:
       - "8082:8080"
     volumes:
       - ./jhb:/var/jenkins_home
 
-  jenkins-8083:
+  jenkins-c:
     <<: *jenkins-common
-    container_name: lrr-jenkins-8083
+    container_name: lrr-jenkins-c
     ports:
       - "8083:8080"
     volumes:

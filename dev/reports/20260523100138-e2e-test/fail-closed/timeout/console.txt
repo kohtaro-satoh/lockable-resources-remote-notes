@@ -1,26 +1,33 @@
 Started by user admin
 [Pipeline] Start of Pipeline
 [Pipeline] node
-Running on Jenkins in /var/jenkins_home/workspace/step8-fail-auth
+Running on Jenkins in /var/jenkins_home/workspace/step8-fail-timeout
 [Pipeline] {
 [Pipeline] stage
 [Pipeline] { (FailClosed)
 [Pipeline] lock
-Trying to acquire remote lock on [Resource: step8-fail-board-1779146061] (serverId=b)
+Trying to acquire remote lock on [Resource: step8-fail-board-1779498177] (serverId=b)
 [Pipeline] }
 [Pipeline] // stage
 [Pipeline] }
 [Pipeline] // node
 [Pipeline] End of Pipeline
-org.jenkins.plugins.lockableresources.remote.RemoteApiException: Remote API request failed: POST /acquire/ returned HTTP 403
-	at PluginClassLoader for lockable-resources//org.jenkins.plugins.lockableresources.remote.RemoteApiClient.send(RemoteApiClient.java:195)
-Also:   org.jenkinsci.plugins.workflow.actions.ErrorAction$ErrorId: 24a353ca-0cde-468e-8f1e-61f4a0038a88
-Caused: org.jenkins.plugins.lockableresources.remote.RemoteApiException: Remote API communication failure: POST /acquire/
+hudson.remoting.ProxyException: java.net.ConnectException: HTTP connect timed out
+Caused: hudson.remoting.ProxyException: java.net.http.HttpConnectTimeoutException: HTTP connect timed out
+	at java.net.http/jdk.internal.net.http.ResponseTimerEvent.handle(Unknown Source)
+	at java.net.http/jdk.internal.net.http.HttpClientImpl.purgeTimeoutsAndReturnNextDeadline(Unknown Source)
+	at java.net.http/jdk.internal.net.http.HttpClientImpl$SelectorManager.run(Unknown Source)
+Caused: hudson.remoting.ProxyException: java.net.http.HttpConnectTimeoutException: HTTP connect timed out
+	at java.net.http/jdk.internal.net.http.HttpClientImpl.send(Unknown Source)
+	at java.net.http/jdk.internal.net.http.HttpClientFacade.send(Unknown Source)
+	at PluginClassLoader for lockable-resources//org.jenkins.plugins.lockableresources.remote.RemoteApiClient.send(RemoteApiClient.java:191)
+Also:   hudson.remoting.ProxyException: org.jenkinsci.plugins.workflow.actions.ErrorAction$ErrorId: 49238c73-8256-4352-83c5-a2d29979b229
+Caused: hudson.remoting.ProxyException: org.jenkins.plugins.lockableresources.remote.RemoteApiException: Remote API communication failure: POST /acquire/
 	at PluginClassLoader for lockable-resources//org.jenkins.plugins.lockableresources.remote.RemoteApiClient.send(RemoteApiClient.java:210)
 	at PluginClassLoader for lockable-resources//org.jenkins.plugins.lockableresources.remote.RemoteApiClient.sendAndDecodeJson(RemoteApiClient.java:153)
 	at PluginClassLoader for lockable-resources//org.jenkins.plugins.lockableresources.remote.RemoteApiClient.enqueueAcquire(RemoteApiClient.java:78)
-	at PluginClassLoader for lockable-resources//org.jenkins.plugins.lockableresources.LockStepExecution.startRemoteFlow(LockStepExecution.java:152)
-	at PluginClassLoader for lockable-resources//org.jenkins.plugins.lockableresources.LockStepExecution.start(LockStepExecution.java:80)
+	at PluginClassLoader for lockable-resources//org.jenkins.plugins.lockableresources.LockStepExecution.startRemoteFlow(LockStepExecution.java:159)
+	at PluginClassLoader for lockable-resources//org.jenkins.plugins.lockableresources.LockStepExecution.start(LockStepExecution.java:87)
 	at PluginClassLoader for workflow-cps//org.jenkinsci.plugins.workflow.cps.DSL.invokeStep(DSL.java:339)
 	at PluginClassLoader for workflow-cps//org.jenkinsci.plugins.workflow.cps.DSL.invokeMethod(DSL.java:199)
 	at PluginClassLoader for workflow-cps//org.jenkinsci.plugins.workflow.cps.CpsScript.invokeMethod(CpsScript.java:124)

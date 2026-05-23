@@ -596,7 +596,8 @@ Implementation candidates:
 - Optionally add raw curl-based remote API call verification as supplemental
 
 Pre-decided policy (2026-05-18):
-- Authentication: Use "allow anonymous READ temporarily" for Step 8; token-based auth version is a follow-up task.
+- Authentication: Initially used "allow anonymous READ temporarily" for speed.
+- 2026-05-23 update: migrated to authenticated mode + API token credentials (aligned with Step 6d and avoids CSRF 403 on POST).
 - Execution responsibility: `run-e2e.sh` includes `start.sh` to launch controllers (`--skip-start` option available for already-running environments).
 - Pass/fail determination: Combined build result + wait time threshold + log keywords to reduce false positives.
 
@@ -609,8 +610,8 @@ Completion criteria:
 - [x] Verified with local automated run
 
 Notes:
-- Date: 2026-05-18
-- Commit: uncommitted (continuing in working tree)
+- Date: 2026-05-18 (last updated: 2026-05-23)
+- Commit: reflected in this commit
 - Changed files:
   - `dev/jenkins-env/run-e2e.sh`
   - `dev/jenkins-env/lib/common.sh`
@@ -624,6 +625,8 @@ Notes:
 - Verification:
   - `./run-e2e.sh --skip-start --only peer-basic` PASS (`dev/reports/20260518112121-e2e-test.md`)
   - `./run-e2e.sh --skip-start --only fail-closed` PASS (`dev/reports/20260518112207-e2e-test.md`)
+  - `PLUGIN_DIR=... ./run-e2e.sh --clean-start --only peer-basic` PASS (`dev/reports/20260523100012-e2e-test.md`)
+  - `PLUGIN_DIR=... ./run-e2e.sh --clean-start` PASS (`dev/reports/20260523100138-e2e-test.md`, pass=2 fail=0)
 - Notes:
   - 2026-05-18: Step 8 started. Added `run-e2e.sh` (harness), `lib/common.sh` (common functions), `scenarios/*.sh` (initial stubs for normal/error cases) under `dev/jenkins-env/`. Stub scenario bodies return `SKIP`.
   - 2026-05-18: Implemented scenario bodies. `peer-basic` verifies 8081 holder / 8083 waiter wait behavior (SUCCESS + wait time threshold + log check). `fail-closed` runs 3 cases (remote down / timeout / auth error) automatically and verifies body is not executed.
@@ -635,12 +638,20 @@ Notes:
   - 2026-05-18: Fixed markdown table corruption in Scenario Details (separated Sequence and Checkpoints generation, then combined at end).
   - 2026-05-18: Translated report body to English (Summary / Scenario details / checkpoint descriptions).
   - 2026-05-18: Plugin-side fix committed (`ade9bb7`): `RemoteApiV1Action` acquire routing fix, `RemoteApiClient` acquire path canonicalization, corresponding test updates.
+  - 2026-05-23: Renamed compose service/container names from `jenkins-8081/2/3` to `jenkins-a/b/c` and updated references in `common.sh`, `start.sh`, `fail-closed.sh`, and `README.md`.
+  - 2026-05-23: Root-caused peer-basic 403 by checking Controller B logs: `No valid crumb was included ... /remote/v1/acquire/ ... Returning 403`.
+  - 2026-05-23: Updated E2E harness to API-token-backed Basic auth. Scenario now issues a Controller-B `admin` API token and stores it as the password field in Controller A/C username-password credentials.
+  - 2026-05-23: Added/updated `dev/docs-j/E2E_TEST_SPECIFICATION.md` to reflect authenticated mode (API token), 5 fail-closed cases, and `jenkins-a/b/c` naming.
 
 E2E verification checklist (3 controllers):
 - [x] Remote lock from 8081 → 8082 is acquired
 - [x] Same resource from 8083 results in expected wait/reject behavior
 - [x] Waiting side proceeds after release
 - [x] Abnormal cases (remote down, timeout, auth error) result in fail-closed behavior
+
+Final Step 8 status (2026-05-23):
+- Authenticated mode with API-token-backed Basic credentials is stable in E2E.
+- Full run result: pass=2 fail=0 (`20260523100138-e2e-test.md`).
 
 ---
 

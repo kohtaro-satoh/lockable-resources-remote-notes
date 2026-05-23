@@ -108,19 +108,25 @@ docker compose up -d
 # ---------------------------------------------------------------------------
 echo ""
 echo "[INFO] Waiting for Jenkins instances to become ready ..."
-for port in 8081 8082 8083; do
+for node in a b c; do
+  case "$node" in
+    a) port=8081 ;;
+    b) port=8082 ;;
+    c) port=8083 ;;
+  esac
+
   ready=false
   for i in $(seq 1 120); do
     if curl -fsS "http://127.0.0.1:${port}/jenkins/login" >/dev/null 2>&1; then
-      echo "[OK]   Jenkins ${port} is up (${i}s)"
+      echo "[OK]   Jenkins ${node} (port ${port}) is up (${i}s)"
       ready=true
       break
     fi
     sleep 2
   done
   if ! $ready; then
-    echo "[WARN] Jenkins ${port} did not become ready within 240s"
-    echo "       Check logs: docker compose logs jenkins-${port}"
+    echo "[WARN] Jenkins ${node} (port ${port}) did not become ready within 240s"
+    echo "       Check logs: docker compose logs jenkins-${node}"
   fi
 done
 

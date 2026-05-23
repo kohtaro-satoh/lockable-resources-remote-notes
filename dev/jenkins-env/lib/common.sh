@@ -7,7 +7,7 @@ COMMON_ROOT_DIR="$(cd "$COMMON_SCRIPT_DIR/.." && pwd)"
 CONTROLLER_A_URL="http://127.0.0.1:8081/jenkins"
 CONTROLLER_B_URL="http://127.0.0.1:8082/jenkins"
 CONTROLLER_C_URL="http://127.0.0.1:8083/jenkins"
-CONTROLLER_B_INTERNAL_URL="http://jenkins-8082:8080/jenkins"
+CONTROLLER_B_INTERNAL_URL="http://jenkins-b:8080/jenkins"
 
 JENKINS_USER="${JENKINS_USER:-admin}"
 JENKINS_PASSWORD="${JENKINS_PASSWORD:-admin}"
@@ -177,20 +177,47 @@ run_groovy_script_checked() {
 
 configure_controller_b_remote_server() {
   local resource_name="${1:-board-a1}"
+  local auth_mode="${2:-authenticated}"
 
-  run_groovy_script_checked "$CONTROLLER_B_URL" "
+  if [[ "$auth_mode" != "authenticated" && "$auth_mode" != "anonymous" ]]; then
+    err "Invalid auth_mode for configure_controller_b_remote_server: $auth_mode"
+    return 1
+  fi
+
+  local auth_groovy
+  if [[ "$auth_mode" == "authenticated" ]]; then
+    auth_groovy='''
+import hudson.security.FullControlOnceLoggedInAuthorizationStrategy
+import hudson.security.HudsonPrivateSecurityRealm
+import hudson.security.csrf.DefaultCrumbIssuer
+
+if (!(j.getSecurityRealm() instanceof HudsonPrivateSecurityRealm)) {
+  def realm = new HudsonPrivateSecurityRealm(false)
+  realm.createAccount("admin", "admin")
+  j.setSecurityRealm(realm)
+}
+def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+strategy.setAllowAnonymousRead(false)
+j.setAuthorizationStrategy(strategy)
+j.setCrumbIssuer(new DefaultCrumbIssuer(false))
+'''
+  else
+    auth_groovy='''
 import hudson.security.AuthorizationStrategy
 import hudson.security.SecurityRealm
+
+j.setSecurityRealm(SecurityRealm.NO_AUTHENTICATION)
+j.setAuthorizationStrategy(AuthorizationStrategy.UNSECURED)
+j.setCrumbIssuer(null)
+'''
+  fi
+
+  run_groovy_script_checked "$CONTROLLER_B_URL" "
 import jenkins.model.Jenkins
 import org.jenkins.plugins.lockableresources.LockableResourcesManager
 
 def j = Jenkins.get()
-j.setSecurityRealm(SecurityRealm.NO_AUTHENTICATION)
-j.setAuthorizationStrategy(AuthorizationStrategy.UNSECURED)
-
-// Step8 E2E: remote client currently sends no auth/crumb.
-// Disable CSRF in this local environment so POST /acquire can be exercised.
-j.setCrumbIssuer(null)
+${auth_groovy}
 
 def lrm = LockableResourcesManager.get()
 lrm.setRemoteApiEnabled(true)
@@ -201,22 +228,31 @@ if (lrm.fromName(\"$resource_name\") == null) {
 }
 lrm.save()
 j.save()
-println(\"OK: configured remote server B\")
-" "OK: configured remote server B" >/dev/null
+println(\"OK: configured remote server B ($auth_mode)\")
+" "OK: configured remote server B ($auth_mode)" >/dev/null
 }
 
 verify_controller_b_remote_server_config() {
   local resource_name="${1:-board-a1}"
+  local auth_mode="${2:-authenticated}"
+
+  if [[ "$auth_mode" != "authenticated" && "$auth_mode" != "anonymous" ]]; then
+    err "Invalid auth_mode for verify_controller_b_remote_server_config: $auth_mode"
+    return 1
+  fi
 
   local check_output
   check_output="$(run_groovy_script_checked "$CONTROLLER_B_URL" "
 import jenkins.model.Jenkins
 import hudson.security.SecurityRealm
 import hudson.security.AuthorizationStrategy
+import hudson.security.HudsonPrivateSecurityRealm
+import hudson.security.FullControlOnceLoggedInAuthorizationStrategy
 import org.jenkins.plugins.lockableresources.LockableResourcesManager
 
 def j = Jenkins.get()
 def unsecured = (j.getSecurityRealm() == SecurityRealm.NO_AUTHENTICATION) && (j.getAuthorizationStrategy() == AuthorizationStrategy.UNSECURED)
+def authenticated = (j.getSecurityRealm() instanceof HudsonPrivateSecurityRealm) && (j.getAuthorizationStrategy() instanceof FullControlOnceLoggedInAuthorizationStrategy)
 
 def lrm = LockableResourcesManager.get()
 def resource = lrm.fromName(\"$resource_name\")
@@ -225,6 +261,7 @@ def exposed = hasResource && resource.getLabelsAsList().contains(lrm.getExposeLa
 
 println(\"crumbDisabled=\" + (j.getCrumbIssuer() == null))
 println(\"unsecuredMode=\" + unsecured)
+println(\"authenticatedMode=\" + authenticated)
 println(\"remoteApiEnabled=\" + lrm.isRemoteApiEnabled())
 println(\"exposeLabel=\" + lrm.getExposeLabel())
 println(\"resourceExists=\" + hasResource)
@@ -232,14 +269,26 @@ println(\"resourceExposed=\" + exposed)
 
 " "unsecuredMode=")"
 
-  if ! printf '%s' "$check_output" | grep -Fq "crumbDisabled=true"; then
-    err "Controller B verification failed: crumbDisabled is not true"
-    return 1
+  if [[ "$auth_mode" == "anonymous" ]]; then
+    if ! printf '%s' "$check_output" | grep -Fq "crumbDisabled=true"; then
+      err "Controller B verification failed: crumbDisabled is not true (anonymous mode)"
+      return 1
+    fi
+    if ! printf '%s' "$check_output" | grep -Fq "unsecuredMode=true"; then
+      err "Controller B verification failed: unsecuredMode is not true (anonymous mode)"
+      return 1
+    fi
+  else
+    if ! printf '%s' "$check_output" | grep -Fq "crumbDisabled=false"; then
+      err "Controller B verification failed: crumbDisabled is not false (authenticated mode)"
+      return 1
+    fi
+    if ! printf '%s' "$check_output" | grep -Fq "authenticatedMode=true"; then
+      err "Controller B verification failed: authenticatedMode is not true"
+      return 1
+    fi
   fi
-  if ! printf '%s' "$check_output" | grep -Fq "unsecuredMode=true"; then
-    err "Controller B verification failed: unsecuredMode is not true"
-    return 1
-  fi
+
   if ! printf '%s' "$check_output" | grep -Fq "remoteApiEnabled=true"; then
     err "Controller B verification failed: remoteApiEnabled is not true"
     return 1
@@ -258,36 +307,19 @@ set_controller_b_anonymous_read() {
   local enabled="$1"
 
   if [[ "$enabled" == "on" ]]; then
-    configure_controller_b_remote_server
+    configure_controller_b_remote_server "board-a1" "anonymous"
     return 0
   fi
 
   # "off" means force authenticated mode so no-auth remote POST fails.
-  run_groovy_script_checked "$CONTROLLER_B_URL" "
-import hudson.security.FullControlOnceLoggedInAuthorizationStrategy
-import hudson.security.HudsonPrivateSecurityRealm
-import hudson.security.csrf.DefaultCrumbIssuer
-import jenkins.model.Jenkins
-
-def j = Jenkins.get()
-if (!(j.getSecurityRealm() instanceof HudsonPrivateSecurityRealm)) {
-  def realm = new HudsonPrivateSecurityRealm(false)
-  realm.createAccount(\"admin\", \"admin\")
-  j.setSecurityRealm(realm)
-}
-def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
-strategy.setAllowAnonymousRead(false)
-j.setAuthorizationStrategy(strategy)
-j.setCrumbIssuer(new DefaultCrumbIssuer(false))
-j.save()
-println(\"OK: anonymous read set to $enabled\")
-" "OK: anonymous read set to $enabled" >/dev/null
+  configure_controller_b_remote_server "board-a1" "authenticated"
 }
 
 configure_remote_client() {
   local base_url="$1"
   local client_id="$2"
   local remote_url="$3"
+  local credentials_id="${4:-}"
 
   run_groovy_script_checked "$base_url" "
 import org.jenkins.plugins.lockableresources.LockableResourcesManager
@@ -295,10 +327,151 @@ import org.jenkins.plugins.lockableresources.RemoteConnection
 
 def lrm = LockableResourcesManager.get()
 lrm.setClientId(\"$client_id\")
-lrm.setRemotes([new RemoteConnection(\"b\", \"$remote_url\", \"\")])
+lrm.setRemotes([new RemoteConnection(\"b\", \"$remote_url\", \"$credentials_id\")])
 lrm.save()
-println(\"OK: configured remote client $client_id -> $remote_url\")
-" "OK: configured remote client $client_id -> $remote_url" >/dev/null
+println(\"OK: configured remote client $client_id -> $remote_url (credentialsId=$credentials_id)\")
+" "OK: configured remote client $client_id -> $remote_url (credentialsId=$credentials_id)" >/dev/null
+}
+
+verify_remote_client_config() {
+  local base_url="$1"
+  local expected_client_id="$2"
+  local expected_remote_url="$3"
+  local expected_credentials_id="${4:-}"
+
+  local check_output
+  check_output="$(run_groovy_script_checked "$base_url" "
+import org.jenkins.plugins.lockableresources.LockableResourcesManager
+
+def lrm = LockableResourcesManager.get()
+def remote = lrm.getRemotesAsMap().get(\"b\")
+println(\"clientId=\" + lrm.getClientId())
+println(\"remoteExists=\" + (remote != null))
+println(\"remoteUrl=\" + (remote == null ? \"\" : remote.getUrl()))
+println(\"credentialsId=\" + (remote == null ? \"\" : remote.getCredentialsId()))
+" "remoteExists=")"
+
+  if ! printf '%s' "$check_output" | grep -Fq "clientId=$expected_client_id"; then
+    err "Remote client verification failed: clientId mismatch (expected=$expected_client_id)"
+    return 1
+  fi
+  if ! printf '%s' "$check_output" | grep -Fq "remoteExists=true"; then
+    err "Remote client verification failed: remote connection for serverId=b does not exist"
+    return 1
+  fi
+  if ! printf '%s' "$check_output" | grep -Fq "remoteUrl=$expected_remote_url"; then
+    err "Remote client verification failed: remoteUrl mismatch (expected=$expected_remote_url)"
+    return 1
+  fi
+  if ! printf '%s' "$check_output" | grep -Fq "credentialsId=$expected_credentials_id"; then
+    err "Remote client verification failed: credentialsId mismatch (expected=$expected_credentials_id)"
+    return 1
+  fi
+}
+
+upsert_username_password_credential() {
+  local base_url="$1"
+  local credentials_id="$2"
+  local username="$3"
+  local password="$4"
+
+  run_groovy_script_checked "$base_url" "
+import com.cloudbees.plugins.credentials.SystemCredentialsProvider
+import com.cloudbees.plugins.credentials.CredentialsScope
+import com.cloudbees.plugins.credentials.common.IdCredentials
+import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl
+
+def provider = SystemCredentialsProvider.getInstance()
+def credentials = provider.getCredentials()
+credentials.removeAll { c -> (c instanceof IdCredentials) && c.getId() == \"$credentials_id\" }
+credentials.add(new UsernamePasswordCredentialsImpl(
+  CredentialsScope.GLOBAL,
+  \"$credentials_id\",
+  \"E2E generated username/password credential\",
+  \"$username\",
+  \"$password\"
+))
+provider.save()
+println(\"OK: upserted username/password credential $credentials_id\")
+" "OK: upserted username/password credential $credentials_id" >/dev/null
+}
+
+issue_user_api_token() {
+  local base_url="$1"
+  local username="$2"
+  local token_name="$3"
+
+  local token_output
+  token_output="$(run_groovy_script_checked "$base_url" "
+import hudson.model.User
+import jenkins.security.ApiTokenProperty
+
+def user = User.getById(\"$username\", false)
+if (user == null) {
+  throw new IllegalStateException(\"User not found: $username\")
+}
+
+def apiTokenProperty = user.getProperty(ApiTokenProperty.class)
+if (apiTokenProperty == null) {
+  throw new IllegalStateException(\"ApiTokenProperty not found for user: $username\")
+}
+
+def generated = apiTokenProperty.tokenStore.generateNewToken(\"$token_name\")
+user.save()
+println(\"TOKEN=\" + generated.plainValue)
+" "TOKEN=")"
+
+  local token_value
+  token_value="$(printf '%s\n' "$token_output" | awk -F= '/^TOKEN=/{print substr($0,7)}' | tail -n 1)"
+
+  if [[ -z "$token_value" ]]; then
+    err "Failed to issue API token for user=$username tokenName=$token_name"
+    return 1
+  fi
+
+  printf '%s\n' "$token_value"
+}
+
+upsert_string_credential() {
+  local base_url="$1"
+  local credentials_id="$2"
+  local secret_value="$3"
+
+  run_groovy_script_checked "$base_url" "
+import com.cloudbees.plugins.credentials.SystemCredentialsProvider
+import com.cloudbees.plugins.credentials.common.IdCredentials
+import jenkins.model.Jenkins
+
+def cl = Jenkins.get().pluginManager.uberClassLoader
+def stringCredentialsClass
+def credentialsScopeClass
+def secretClass
+
+try {
+  stringCredentialsClass = cl.loadClass(\"org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl\")
+  credentialsScopeClass = cl.loadClass(\"com.cloudbees.plugins.credentials.CredentialsScope\")
+  secretClass = cl.loadClass(\"hudson.util.Secret\")
+} catch (ClassNotFoundException ex) {
+  throw new IllegalStateException(\"plain-credentials plugin is required for type-mismatch test\")
+}
+
+def globalScope = credentialsScopeClass.getField(\"GLOBAL\").get(null)
+def secret = secretClass.getMethod(\"fromString\", String.class).invoke(null, \"$secret_value\")
+def ctor = stringCredentialsClass.getConstructor(credentialsScopeClass, String.class, String.class, secretClass)
+def credential = ctor.newInstance(
+  globalScope,
+  \"$credentials_id\",
+  \"E2E generated string credential\",
+  secret
+)
+
+def provider = SystemCredentialsProvider.getInstance()
+def credentials = provider.getCredentials()
+credentials.removeAll { c -> (c instanceof IdCredentials) && c.getId() == \"$credentials_id\" }
+credentials.add(credential)
+provider.save()
+println(\"OK: upserted string credential $credentials_id\")
+" "OK: upserted string credential $credentials_id" >/dev/null
 }
 
 upsert_pipeline_job() {
