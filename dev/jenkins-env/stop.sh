@@ -11,7 +11,7 @@ for arg in "$@"; do
   [[ "$arg" == "--clean" ]] && CLEAN=true
 done
 
-JENKINS_HOME_DIRS=(jha jhb jhc)
+JENKINS_HOME_DIRS=(jha jhb jhc jhd)
 LEGACY_JENKINS_HOME_DIRS=(jh8081 jh8082 jh8083)
 
 if $CLEAN; then

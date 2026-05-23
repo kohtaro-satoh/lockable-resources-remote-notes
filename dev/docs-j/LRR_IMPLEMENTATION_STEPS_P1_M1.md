@@ -651,7 +651,70 @@ E2E 確認チェック（3 controller）:
 
 Step8 最終状態（2026-05-23）:
 - 認証必須 + API トークン方式で E2E が安定実行可能
-- フル実行結果: pass=2 fail=0（`20260523100138-e2e-test.md`）
+- S/D 拡張後のフル実行結果: pass=10 fail=0 skip=0（`dev/reports/20260523133947-e2e-test.md`）
+
+#### 2026-05-23 追記（M1: S/D シリーズ拡張実装）
+
+- 既存 `peer-basic` を廃止し、`E2E_TEST_SPECIFICATION.md` の設計に合わせて 10 シナリオ構成へ拡張した。
+  - S 系: `mutual-peer`, `fan-in-contention`, `server-self-use`, `mixed-local-remote`, `skip-if-locked`, `three-way-mesh`, `fail-closed`
+  - D 系: `fan-in-4`, `chain-4`, `diamond`
+- `run-e2e.sh` の `--only` を拡張し、個別シナリオ名に加えて `s-series` / `d-series` / `all` を選択可能にした。
+- `lib/common.sh` を汎用化し、任意 `serverId` 向け remote 設定関数と 4 controller 待機関数を追加した。
+- `docker-compose.yml` に `jenkins-d`（8084）を追加した。
+- `fail-closed` は S07 命名規約へ更新した（credentials/job 名の `s07-*` 化）。
+
+この時点の変更ファイル（拡張分）:
+- `dev/jenkins-env/run-e2e.sh`
+- `dev/jenkins-env/lib/common.sh`
+- `dev/jenkins-env/docker-compose.yml`
+- `dev/jenkins-env/README.md`
+- `dev/jenkins-env/scenarios/fail-closed.sh`
+- `dev/jenkins-env/scenarios/mutual-peer.sh`
+- `dev/jenkins-env/scenarios/fan-in-contention.sh`
+- `dev/jenkins-env/scenarios/server-self-use.sh`
+- `dev/jenkins-env/scenarios/mixed-local-remote.sh`
+- `dev/jenkins-env/scenarios/skip-if-locked.sh`
+- `dev/jenkins-env/scenarios/three-way-mesh.sh`
+- `dev/jenkins-env/scenarios/fan-in-4.sh`
+- `dev/jenkins-env/scenarios/chain-4.sh`
+- `dev/jenkins-env/scenarios/diamond.sh`
+- `dev/jenkins-env/scenarios/peer-basic.sh`（削除）
+
+拡張分の検証ステータス（2026-05-23 時点）:
+- [x] スクリプト文法チェック（`bash -n`）
+- [x] `run-e2e.sh --help` で新オプション表示確認
+- [x] `--only s-series` 実行確認
+- [x] `--only d-series` 実行確認
+- [x] `--only all` 実行確認
+
+追加デバッグ（2026-05-23）:
+- S04 `mixed-local-remote` で初回失敗を確認。
+  - 原因1: ローカルリソースが存在しないケースで `isLocked()` を直接呼び、NullPointerException 相当の誤判定が発生。
+  - 対応1: `EXISTS`/`LOCKED` の2値を取得し、`LOCKED=false` を条件とする判定へ修正。
+- S04 再実行時に credentials 再作成で失敗。
+  - 原因2: `provider.getCredentials().removeAll { ... }` が `CopyOnWriteArrayList` 環境で `UnsupportedOperationException`。
+  - 対応2: `SystemCredentialsProvider#getStore()` + `Domain.global()` の add/remove API に置換。
+- D 系は当初 SKIP（`jenkins-d` 再起動ループ）。
+  - 原因3: `jhd/` が root 所有になり `copy_reference_file.log` 書き込み不可。
+  - 対応3: `start.sh`/`stop.sh` を 4 controller 前提へ更新し、`jhd` 作成と Docker 経由 `chown -R 1000:1000` を追加。
+
+拡張分の実行確認結果:
+- `PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh --clean-start --only s-series`
+  - 初回: pass=6 fail=1 skip=0（S04 失敗）
+- `./run-e2e.sh --skip-start --only s-series`
+  - 修正後: pass=7 fail=0 skip=0
+- `./run-e2e.sh --skip-start --only d-series`
+  - 修正後: pass=3 fail=0 skip=0
+- `./run-e2e.sh`
+  - 最終: pass=10 fail=0 skip=0（report: `dev/reports/20260523133947-e2e-test.md`）
+
+今回のデバッグで plugin 側不具合は未検出。
+検出・修正したのは `lockable-resources-remote-notes` 側 E2E ハーネス/環境起動スクリプトの問題。
+
+次アクション（この後すぐ実施）:
+1. report 差分確認とコミット
+2. 必要なら `run-e2e.sh --clean-start --only all` でクリーン環境再現を追加取得
+3. Step9（運用資産整備）の残タスク整理
 
 ---
 
@@ -817,7 +880,7 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 - **テスト安定化: 最終版手順 確定済み ✅**（2026-05-23、再実行で BUILD SUCCESS を確認）
 - 次アクション: Step 9（テスト運用資産の notes 側整備 / 運用ドキュメント完成）
 - ブロッカー: なし
-- 最新ビルド: 合計実行時間 14:45、全テスト正常終了（ログ: `dev/reports/20260523075036-mvn-test.log`）
+- 最新ビルド: 合計実行時間 14:28、全テスト正常終了（ログ: `dev/reports/20260523135413-mvn-test.log`）
 
 ### ブランチ整理メモ
 

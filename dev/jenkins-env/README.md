@@ -92,14 +92,15 @@ PLUGIN_DIR=../../../lockable-resources-plugin ./start.sh
 
 ## 操作
 
-### Step8 自動 E2E（初版スキャフォールド）
+### Step8 自動 E2E
 
-Step8 着手として、以下のスクリプトを追加済みです。
+Step8 では以下の E2E 構成を提供します。
 
 - `run-e2e.sh`: E2E 実行ハーネス（`start.sh` 内包、`--skip-start` 対応）
 - `lib/common.sh`: 共通関数（Jenkins API 呼び出し、job 作成、build 待機、ログ保存）
-- `scenarios/peer-basic.sh`: 正常系シナリオ（認証必須 remote lock の 8081 holder / 8083 waiter 待機検証）
-- `scenarios/fail-closed.sh`: 異常系シナリオ（remote down / timeout / auth error / missing credentialsId / credentials type mismatch）
+- `scenarios/`: 10 シナリオ（S01-S07 / D01-D03）
+	- `mutual-peer`, `fan-in-contention`, `server-self-use`, `mixed-local-remote`, `skip-if-locked`, `three-way-mesh`, `fail-closed`
+	- `fan-in-4`, `chain-4`, `diamond`
 
 実行例:
 
@@ -107,10 +108,12 @@ Step8 着手として、以下のスクリプトを追加済みです。
 PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh
 PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh --clean-start
 ./run-e2e.sh --skip-start
-PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh --only peer-basic
+PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh --only mutual-peer
+PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh --only s-series
+PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh --only d-series
 ```
 
-> `--only peer-basic` / `--only fail-closed` で個別実行できます。
+> `--only` は個別シナリオ名または `s-series` / `d-series` / `all` を指定できます。
 > `run-e2e.sh` が `start.sh` を呼ぶ場合は `PLUGIN_DIR` の指定が必須です（`--skip-start` 時は不要）。
 > E2E はデフォルトで認証必須モードを使います（Step6d 検証を含む）。
 > 実行結果は `dev/reports/` に保存されます。
@@ -124,7 +127,7 @@ PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh --only peer-basic
 ./stop.sh
 ```
 
-コンテナを停止しますが、`jha`〜`jhc` のデータは残ります。
+コンテナを停止しますが、`jha`〜`jhd` のデータは残ります。
 次回 `./start.sh` で続きから使えます。
 
 ### 完全初期化（Jenkins home も削除）
@@ -140,7 +143,7 @@ PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh --only peer-basic
 ./start.sh
 ```
 
-`jha`〜`jhc` ディレクトリを削除してから起動します。
+`jha`〜`jhd` ディレクトリを削除してから起動します。
 管理者設定・パイプライン設定などをすべてリセットしたいときに使います。
 
 ### ログを確認する

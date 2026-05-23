@@ -35,3 +35,11 @@ services:
       - "8083:8080"
     volumes:
       - ./jhc:/var/jenkins_home
+
+  jenkins-d:
+    <<: *jenkins-common
+    container_name: lrr-jenkins-d
+    ports:
+      - "8084:8080"
+    volumes:
+      - ./jhd:/var/jenkins_home

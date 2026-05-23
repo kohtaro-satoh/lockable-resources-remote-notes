@@ -651,7 +651,61 @@ E2E verification checklist (3 controllers):
 
 Final Step 8 status (2026-05-23):
 - Authenticated mode with API-token-backed Basic credentials is stable in E2E.
-- Full run result: pass=2 fail=0 (`20260523100138-e2e-test.md`).
+- Expanded to 10 scenarios (S01-S07, D01-D03), replacing `peer-basic` with the S-series topology set.
+- Full run result: pass=10 fail=0 skip=0 (`dev/reports/20260523133947-e2e-test.md`).
+
+#### 2026-05-23 update (M1: S/D-series E2E expansion)
+
+- Replaced `peer-basic` with the full 10-scenario topology set defined in `E2E_TEST_SPECIFICATION.md`.
+  - S-series: `mutual-peer`, `fan-in-contention`, `server-self-use`, `mixed-local-remote`, `skip-if-locked`, `three-way-mesh`, `fail-closed`
+  - D-series: `fan-in-4`, `chain-4`, `diamond`
+- Extended `run-e2e.sh --only` to accept individual scenario names plus `s-series`, `d-series`, and `all`.
+- Generalized `lib/common.sh` to support arbitrary remote `serverId` entries and 4-controller readiness checks.
+- Added `jenkins-d` (8084) to `docker-compose.yml` and updated `start.sh` / `stop.sh` for a 4-controller environment.
+- Added report improvements: scenario IDs (`Sxx` / `Dxx`), command-line recording, artifact links, and scenario-details headings with IDs.
+
+Changed files for the expansion:
+- `dev/jenkins-env/run-e2e.sh`
+- `dev/jenkins-env/lib/common.sh`
+- `dev/jenkins-env/docker-compose.yml`
+- `dev/jenkins-env/README.md`
+- `dev/jenkins-env/start.sh`
+- `dev/jenkins-env/stop.sh`
+- `dev/jenkins-env/scenarios/fail-closed.sh`
+- `dev/jenkins-env/scenarios/mutual-peer.sh`
+- `dev/jenkins-env/scenarios/fan-in-contention.sh`
+- `dev/jenkins-env/scenarios/server-self-use.sh`
+- `dev/jenkins-env/scenarios/mixed-local-remote.sh`
+- `dev/jenkins-env/scenarios/skip-if-locked.sh`
+- `dev/jenkins-env/scenarios/three-way-mesh.sh`
+- `dev/jenkins-env/scenarios/fan-in-4.sh`
+- `dev/jenkins-env/scenarios/chain-4.sh`
+- `dev/jenkins-env/scenarios/diamond.sh`
+- `dev/jenkins-env/scenarios/peer-basic.sh` (deleted)
+
+Verification status for the expansion:
+- [x] shell syntax checks (`bash -n`)
+- [x] `run-e2e.sh --help`
+- [x] `--only s-series`
+- [x] `--only d-series`
+- [x] `--only all`
+
+Debug notes from the expansion:
+- Initial S04 `mixed-local-remote` failure was caused by harness-side unlock verification that assumed the local resource always remained addressable. Fixed by checking `EXISTS` and `LOCKED` separately.
+- Re-running S04 exposed a second harness issue: credentials replacement used `removeAll` against a `CopyOnWriteArrayList`. Fixed by switching to `SystemCredentialsProvider#getStore()` with `Domain.global()` add/remove APIs.
+- Initial D-series execution skipped because `jenkins-d` entered a restart loop. Root cause was `jhd/` ownership (`root:root`). Fixed by extending `start.sh`/`stop.sh` for 4 controllers and forcing Docker-based `chown -R 1000:1000` on Jenkins home directories.
+
+Verification results:
+- `PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh --clean-start --only s-series`
+  - first run: pass=6 fail=1 skip=0 (S04 failure)
+- `./run-e2e.sh --skip-start --only s-series`
+  - after fixes: pass=7 fail=0 skip=0
+- `./run-e2e.sh --skip-start --only d-series`
+  - after fixes: pass=3 fail=0 skip=0
+- `./run-e2e.sh`
+  - final: pass=10 fail=0 skip=0 (`dev/reports/20260523133947-e2e-test.md`)
+
+No plugin-side defect was found during this expansion. All fixes were in the notes-side E2E harness and environment startup scripts.
 
 ---
 
@@ -817,7 +871,7 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 - **Test stabilization: Final procedure confirmed ✅** (2026-05-23, BUILD SUCCESS confirmed on re-run)
 - Next action: Step 9 (notes-side test operational asset preparation / operational documentation completion)
 - Blockers: None
-- Latest build: Total time 14:45, all tests passed (log: `dev/reports/20260523075036-mvn-test.log`)
+- Latest build: Total time 14:28, all tests passed (log: `dev/reports/20260523135413-mvn-test.log`)
 
 ### Branch maintenance notes
 

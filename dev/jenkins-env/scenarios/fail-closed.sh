@@ -12,12 +12,13 @@ if [[ -z "$RESULTS_DIR" ]]; then
 fi
 
 SCENARIO_DIR="$RESULTS_DIR/fail-closed"
+SCENARIO_ID="S07"
 mkdir -p "$SCENARIO_DIR"
-RESOURCE_NAME="step8-fail-board-$(date +%s)"
-VALID_CREDENTIALS_ID="step8-fail-valid-creds"
-INVALID_AUTH_CREDENTIALS_ID="step8-fail-invalid-auth-creds"
-MISSING_CREDENTIALS_ID="step8-fail-missing-creds"
-TYPE_MISMATCH_CREDENTIALS_ID="step8-fail-type-mismatch-creds"
+RESOURCE_NAME="s07-fail-board-$(date +%s)"
+VALID_CREDENTIALS_ID="s07-valid-creds"
+INVALID_AUTH_CREDENTIALS_ID="s07-invalid-auth-creds"
+MISSING_CREDENTIALS_ID="s07-missing-creds"
+TYPE_MISMATCH_CREDENTIALS_ID="s07-type-mismatch-creds"
 DETAIL_FILE="$SCENARIO_DIR/scenario-details.md"
 SEQ_FILE="$SCENARIO_DIR/.sequence.tmp"
 CP_FILE="$SCENARIO_DIR/.checkpoints.tmp"
@@ -30,7 +31,7 @@ CP_NO=0
 scenario_sequence() {
   local text="$1"
   SEQ_NO=$((SEQ_NO + 1))
-  printf -- "- S%02d %s\n" "$SEQ_NO" "$text" >>"$SEQ_FILE"
+  printf -- "- SEQ%02d %s\n" "$SEQ_NO" "$text" >>"$SEQ_FILE"
 }
 
 scenario_checkpoint() {
@@ -47,6 +48,8 @@ scenario_checkpoint() {
 
 finalize_scenario_details() {
   {
+    echo "### ${SCENARIO_ID}: fail-closed"
+    echo ""
     echo "#### Sequence"
     echo ""
     cat "$SEQ_FILE"
@@ -83,7 +86,7 @@ setup_base() {
 
   scenario_sequence "Issue API token for Controller B admin and create valid username/password credential on Controller A"
   local valid_remote_token
-  valid_remote_token="$(issue_user_api_token "$CONTROLLER_B_URL" "admin" "e2e-fail-closed-valid-token")"
+  valid_remote_token="$(issue_user_api_token "$CONTROLLER_B_URL" "admin" "e2e-s07-valid-token")"
   upsert_username_password_credential "$CONTROLLER_A_URL" "$VALID_CREDENTIALS_ID" "admin" "$valid_remote_token"
   scenario_checkpoint \
     "Controller A credentials upsert" \
@@ -214,7 +217,7 @@ scenario_sequence "Case remote-down: stop Controller B to simulate remote API un
 docker_compose stop jenkins-b
 run_failure_case \
   "remote-down" \
-  "step8-fail-remote-down" \
+  "s07-fail-remote-down" \
   600 \
   "POST /acquire/ or GET /acquire/{lockId}/ fails due to connection issue" \
   "Remote API communication failure|Connection refused|ConnectException|No route to host"
@@ -230,7 +233,7 @@ scenario_sequence "Case timeout: point Controller A remote URL to unroutable IP 
 configure_remote_client "$CONTROLLER_A_URL" "jenkins-a" "http://10.255.255.1:18082/jenkins" "$VALID_CREDENTIALS_ID"
 run_failure_case \
   "timeout" \
-  "step8-fail-timeout" \
+  "s07-fail-timeout" \
   600 \
   "POST /acquire/ times out" \
   "timed out|HttpTimeoutException|timeout"
@@ -242,7 +245,7 @@ upsert_username_password_credential "$CONTROLLER_A_URL" "$INVALID_AUTH_CREDENTIA
 configure_remote_client "$CONTROLLER_A_URL" "jenkins-a" "$CONTROLLER_B_INTERNAL_URL" "$INVALID_AUTH_CREDENTIALS_ID"
 run_failure_case \
   "auth-error" \
-  "step8-fail-auth" \
+  "s07-fail-auth" \
   600 \
   "POST /acquire/ returns HTTP 401/403 due to invalid Authorization" \
   "HTTP 401|HTTP 403|returned HTTP 401|returned HTTP 403|Sign in to access"
@@ -252,7 +255,7 @@ scenario_sequence "Case missing-credentials-id: configure unknown credentialsId 
 configure_remote_client "$CONTROLLER_A_URL" "jenkins-a" "$CONTROLLER_B_INTERNAL_URL" "$MISSING_CREDENTIALS_ID"
 run_failure_case \
   "missing-credentials-id" \
-  "step8-fail-missing-credentials" \
+  "s07-fail-missing-credentials" \
   600 \
   "LockStepExecution.resolveAuthorizationHeader() cannot resolve credentialsId" \
   "Remote credentials not found for serverId=b, credentialsId=${MISSING_CREDENTIALS_ID}"
@@ -263,7 +266,7 @@ upsert_string_credential "$CONTROLLER_A_URL" "$TYPE_MISMATCH_CREDENTIALS_ID" "du
 configure_remote_client "$CONTROLLER_A_URL" "jenkins-a" "$CONTROLLER_B_INTERNAL_URL" "$TYPE_MISMATCH_CREDENTIALS_ID"
 run_failure_case \
   "credentials-type-mismatch" \
-  "step8-fail-credentials-type-mismatch" \
+  "s07-fail-credentials-type-mismatch" \
   600 \
   "LockStepExecution.resolveAuthorizationHeader() rejects non-username/password credential" \
   "Remote credentials not found for serverId=b, credentialsId=${TYPE_MISMATCH_CREDENTIALS_ID}"

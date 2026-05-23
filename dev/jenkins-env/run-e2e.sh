@@ -2,12 +2,12 @@
 set -euo pipefail
 
 RUN_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
 source "$RUN_SCRIPT_DIR/lib/common.sh"
 
 SKIP_START=false
 CLEAN_START=false
 ONLY="all"
+ORIGINAL_ARGS=("$@")
 
 RUN_ID="$(date '+%Y%m%d%H%M%S')"
 REPORTS_ROOT="$RUN_SCRIPT_DIR/../reports"
@@ -15,8 +15,48 @@ REPORT_NAME="$RUN_ID-e2e-test"
 RESULTS_DIR="$REPORTS_ROOT/$REPORT_NAME"
 REPORT_FILE="$REPORTS_ROOT/$REPORT_NAME.md"
 
+S_SCENARIOS=(
+  "mutual-peer"
+  "fan-in-contention"
+  "server-self-use"
+  "mixed-local-remote"
+  "skip-if-locked"
+  "three-way-mesh"
+  "fail-closed"
+)
+D_SCENARIOS=(
+  "fan-in-4"
+  "chain-4"
+  "diamond"
+)
+ALL_SCENARIOS=(
+  "mutual-peer"
+  "fan-in-contention"
+  "server-self-use"
+  "mixed-local-remote"
+  "skip-if-locked"
+  "three-way-mesh"
+  "fail-closed"
+  "fan-in-4"
+  "chain-4"
+  "diamond"
+)
+
+declare -A SCENARIO_IDS=(
+  ["mutual-peer"]="S01"
+  ["fan-in-contention"]="S02"
+  ["server-self-use"]="S03"
+  ["mixed-local-remote"]="S04"
+  ["skip-if-locked"]="S05"
+  ["three-way-mesh"]="S06"
+  ["fail-closed"]="S07"
+  ["fan-in-4"]="D01"
+  ["chain-4"]="D02"
+  ["diamond"]="D03"
+)
+
 usage() {
-  cat <<'EOF'
+  cat <<'USAGE'
 Usage: ./run-e2e.sh [options]
 
 Environment:
@@ -26,9 +66,19 @@ Environment:
 Options:
   --skip-start          Do not call ./start.sh before scenarios.
   --clean-start         Call ./start.sh --clean before scenarios.
-  --only <name>         Run only one scenario: peer-basic | fail-closed | all
+  --only <name>         Run specific scenario or group.
+                        mutual-peer | fan-in-contention | server-self-use |
+                        mixed-local-remote | skip-if-locked | three-way-mesh |
+                        fail-closed | fan-in-4 | chain-4 | diamond |
+                        s-series | d-series | all
   -h, --help            Show this help.
-EOF
+USAGE
+}
+
+format_command_line() {
+  local rendered
+  rendered="$(printf ' %q' "$0" "${ORIGINAL_ARGS[@]}")"
+  printf '%s\n' "${rendered# }"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -61,7 +111,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$ONLY" != "all" && "$ONLY" != "peer-basic" && "$ONLY" != "fail-closed" ]]; then
+is_valid_only=false
+for allowed in all s-series d-series "${ALL_SCENARIOS[@]}"; do
+  if [[ "$ONLY" == "$allowed" ]]; then
+    is_valid_only=true
+    break
+  fi
+done
+if [[ "$is_valid_only" == false ]]; then
   err "Invalid --only value: $ONLY"
   exit 2
 fi
@@ -76,8 +133,7 @@ require_command docker
 require_command python3
 require_command base64
 
-mkdir -p "$REPORTS_ROOT"
-mkdir -p "$RESULTS_DIR"
+mkdir -p "$REPORTS_ROOT" "$RESULTS_DIR"
 log "E2E run id: $RUN_ID"
 log "Results dir: $RESULTS_DIR"
 log "Report file: $REPORT_FILE"
@@ -100,7 +156,7 @@ else
   log "Skipping start.sh (requested by --skip-start)"
 fi
 
-log "Waiting for controllers readiness"
+log "Waiting for controllers readiness (a/b/c)"
 if ! wait_for_controllers 240; then
   err "Controller readiness check failed"
   exit 1
@@ -126,7 +182,6 @@ run_scenario() {
     log "[PASS] $name"
     return 0
   fi
-
   if [[ "$rc" -eq 10 ]]; then
     log "[SKIP] $name"
     return 10
@@ -136,60 +191,69 @@ run_scenario() {
   return "$rc"
 }
 
-pass_count=0
-fail_count=0
-skip_count=0
-peer_basic_status="NOT_RUN"
-fail_closed_status="NOT_RUN"
-
-if [[ "$ONLY" == "all" || "$ONLY" == "peer-basic" ]]; then
-  if run_scenario "peer-basic"; then
-    pass_count=$((pass_count + 1))
-    peer_basic_status="PASS"
-  else
-    rc=$?
-    if [[ "$rc" -eq 10 ]]; then
-      skip_count=$((skip_count + 1))
-      peer_basic_status="SKIP"
-    else
-      fail_count=$((fail_count + 1))
-      peer_basic_status="FAIL"
-    fi
-  fi
-fi
-
-if [[ "$ONLY" == "all" || "$ONLY" == "fail-closed" ]]; then
-  if run_scenario "fail-closed"; then
-    pass_count=$((pass_count + 1))
-    fail_closed_status="PASS"
-  else
-    rc=$?
-    if [[ "$rc" -eq 10 ]]; then
-      skip_count=$((skip_count + 1))
-      fail_closed_status="SKIP"
-    else
-      fail_count=$((fail_count + 1))
-      fail_closed_status="FAIL"
-    fi
-  fi
-fi
-
-log "Scenario summary: pass=$pass_count fail=$fail_count skip=$skip_count"
-
 append_scenario_details() {
   local scenario_name="$1"
+  local scenario_id="${SCENARIO_IDS[$scenario_name]:-N/A}"
   local scenario_dir="$RESULTS_DIR/$scenario_name"
   local detail_file="$scenario_dir/scenario-details.md"
 
-  echo "### $scenario_name"
-  echo ""
   if [[ -f "$detail_file" ]]; then
     cat "$detail_file"
   else
+    echo "### $scenario_id: $scenario_name"
+    echo ""
     echo "- Details file is not available: $detail_file"
   fi
   echo ""
 }
+
+select_scenarios() {
+  local selection="$1"
+  case "$selection" in
+    all)
+      printf '%s\n' "${ALL_SCENARIOS[@]}"
+      ;;
+    s-series)
+      printf '%s\n' "${S_SCENARIOS[@]}"
+      ;;
+    d-series)
+      printf '%s\n' "${D_SCENARIOS[@]}"
+      ;;
+    *)
+      printf '%s\n' "$selection"
+      ;;
+  esac
+}
+
+pass_count=0
+fail_count=0
+skip_count=0
+
+declare -A STATUS
+for scenario in "${ALL_SCENARIOS[@]}"; do
+  STATUS["$scenario"]="NOT_RUN"
+done
+
+mapfile -t SELECTED_SCENARIOS < <(select_scenarios "$ONLY")
+COMMAND_LINE="$(format_command_line)"
+
+for scenario in "${SELECTED_SCENARIOS[@]}"; do
+  if run_scenario "$scenario"; then
+    pass_count=$((pass_count + 1))
+    STATUS["$scenario"]="PASS"
+  else
+    rc=$?
+    if [[ "$rc" -eq 10 ]]; then
+      skip_count=$((skip_count + 1))
+      STATUS["$scenario"]="SKIP"
+    else
+      fail_count=$((fail_count + 1))
+      STATUS["$scenario"]="FAIL"
+    fi
+  fi
+done
+
+log "Scenario summary: pass=$pass_count fail=$fail_count skip=$skip_count"
 
 {
   echo "# E2E Test Report"
@@ -197,6 +261,7 @@ append_scenario_details() {
   echo "- runId: $RUN_ID"
   echo "- executedAt: $(date '+%Y-%m-%d %H:%M:%S %z')"
   echo "- mode: ${ONLY}"
+  echo "- commandLine: ${COMMAND_LINE}"
   echo "- skipStart: ${SKIP_START}"
   echo "- cleanStart: ${CLEAN_START}"
   echo "- reportFile: $REPORT_FILE"
@@ -210,24 +275,22 @@ append_scenario_details() {
   echo ""
   echo "## Scenarios"
   echo ""
-  echo "| Scenario | Status | Output |"
-  echo "|---|---|---|"
-  echo "| peer-basic | $peer_basic_status | $RESULTS_DIR/peer-basic |"
-  echo "| fail-closed | $fail_closed_status | $RESULTS_DIR/fail-closed |"
+  echo "| ID | Scenario | Status | Output | Details |"
+  echo "|---|---|---|---|---|"
+  for scenario in "${ALL_SCENARIOS[@]}"; do
+    echo "| ${SCENARIO_IDS[$scenario]} | $scenario | ${STATUS[$scenario]} | [${REPORT_NAME}/${scenario}/](./${REPORT_NAME}/${scenario}/) | [scenario-details.md](./${REPORT_NAME}/${scenario}/scenario-details.md) |"
+  done
   echo ""
   echo "## Notes"
   echo ""
   echo "- Console logs and per-case summaries are stored under captureDir."
-  echo "- Image capture is not automated in this script; place manual screenshots under captureDir if needed."
+  echo "- D-series scenarios return SKIP when jenkins-d is unavailable."
   echo ""
   echo "## Scenario Details"
   echo ""
-  if [[ "$ONLY" == "all" || "$ONLY" == "peer-basic" ]]; then
-    append_scenario_details "peer-basic"
-  fi
-  if [[ "$ONLY" == "all" || "$ONLY" == "fail-closed" ]]; then
-    append_scenario_details "fail-closed"
-  fi
+  for scenario in "${SELECTED_SCENARIOS[@]}"; do
+    append_scenario_details "$scenario"
+  done
 } >"$REPORT_FILE"
 
 log "Report generated: $REPORT_FILE"

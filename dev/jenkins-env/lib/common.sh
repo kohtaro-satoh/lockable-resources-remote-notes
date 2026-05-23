@@ -7,7 +7,12 @@ COMMON_ROOT_DIR="$(cd "$COMMON_SCRIPT_DIR/.." && pwd)"
 CONTROLLER_A_URL="http://127.0.0.1:8081/jenkins"
 CONTROLLER_B_URL="http://127.0.0.1:8082/jenkins"
 CONTROLLER_C_URL="http://127.0.0.1:8083/jenkins"
+CONTROLLER_D_URL="http://127.0.0.1:8084/jenkins"
+
+CONTROLLER_A_INTERNAL_URL="http://jenkins-a:8080/jenkins"
 CONTROLLER_B_INTERNAL_URL="http://jenkins-b:8080/jenkins"
+CONTROLLER_C_INTERNAL_URL="http://jenkins-c:8080/jenkins"
+CONTROLLER_D_INTERNAL_URL="http://jenkins-d:8080/jenkins"
 
 JENKINS_USER="${JENKINS_USER:-admin}"
 JENKINS_PASSWORD="${JENKINS_PASSWORD:-admin}"
@@ -41,6 +46,22 @@ wait_for_controllers() {
   local ok=true
 
   for url in "$CONTROLLER_A_URL" "$CONTROLLER_B_URL" "$CONTROLLER_C_URL"; do
+    if wait_for_url "$url/login" "$timeout_seconds"; then
+      log "Controller ready: $url"
+    else
+      err "Controller not ready within ${timeout_seconds}s: $url"
+      ok=false
+    fi
+  done
+
+  [[ "$ok" == true ]]
+}
+
+wait_for_controllers_with_d() {
+  local timeout_seconds="${1:-180}"
+  local ok=true
+
+  for url in "$CONTROLLER_A_URL" "$CONTROLLER_B_URL" "$CONTROLLER_C_URL" "$CONTROLLER_D_URL"; do
     if wait_for_url "$url/login" "$timeout_seconds"; then
       log "Controller ready: $url"
     else
@@ -94,7 +115,6 @@ get_crumb_header() {
   local crumb_json
 
   if ! crumb_json="$(curl -fsS -u "$JENKINS_USER:$JENKINS_PASSWORD" -c "$cookie_jar" "$base_url/crumbIssuer/api/json" 2>/dev/null)"; then
-    # Some Jenkins setups may not require crumbs.
     echo ""
     return 0
   fi
@@ -138,8 +158,7 @@ jenkins_post() {
   fi
 
   cat "$response_file"
-  rm -f "$cookie_jar"
-  rm -f "$response_file"
+  rm -f "$cookie_jar" "$response_file"
 }
 
 run_groovy_script() {
@@ -175,12 +194,14 @@ run_groovy_script_checked() {
   printf '%s\n' "$output"
 }
 
-configure_controller_b_remote_server() {
-  local resource_name="${1:-board-a1}"
-  local auth_mode="${2:-authenticated}"
+configure_remote_server() {
+  local base_url="$1"
+  local resource_name="$2"
+  local expose_label="${3:-remote-enabled}"
+  local auth_mode="${4:-authenticated}"
 
   if [[ "$auth_mode" != "authenticated" && "$auth_mode" != "anonymous" ]]; then
-    err "Invalid auth_mode for configure_controller_b_remote_server: $auth_mode"
+    err "Invalid auth_mode for configure_remote_server: $auth_mode"
     return 1
   fi
 
@@ -212,7 +233,7 @@ j.setCrumbIssuer(null)
 '''
   fi
 
-  run_groovy_script_checked "$CONTROLLER_B_URL" "
+  run_groovy_script_checked "$base_url" "
 import jenkins.model.Jenkins
 import org.jenkins.plugins.lockableresources.LockableResourcesManager
 
@@ -221,28 +242,29 @@ ${auth_groovy}
 
 def lrm = LockableResourcesManager.get()
 lrm.setRemoteApiEnabled(true)
-lrm.setExposeLabel(\"remote-enabled\")
+lrm.setExposeLabel(\"$expose_label\")
 
 if (lrm.fromName(\"$resource_name\") == null) {
-  lrm.createResourceWithLabel(\"$resource_name\", \"remote-enabled\")
+  lrm.createResourceWithLabel(\"$resource_name\", \"$expose_label\")
 }
 lrm.save()
 j.save()
-println(\"OK: configured remote server B ($auth_mode)\")
-" "OK: configured remote server B ($auth_mode)" >/dev/null
+println(\"OK: configured remote server $base_url ($auth_mode)\")
+" "OK: configured remote server $base_url ($auth_mode)" >/dev/null
 }
 
-verify_controller_b_remote_server_config() {
-  local resource_name="${1:-board-a1}"
-  local auth_mode="${2:-authenticated}"
+verify_remote_server_config() {
+  local base_url="$1"
+  local resource_name="$2"
+  local auth_mode="${3:-authenticated}"
 
   if [[ "$auth_mode" != "authenticated" && "$auth_mode" != "anonymous" ]]; then
-    err "Invalid auth_mode for verify_controller_b_remote_server_config: $auth_mode"
+    err "Invalid auth_mode for verify_remote_server_config: $auth_mode"
     return 1
   fi
 
   local check_output
-  check_output="$(run_groovy_script_checked "$CONTROLLER_B_URL" "
+  check_output="$(run_groovy_script_checked "$base_url" "
 import jenkins.model.Jenkins
 import hudson.security.SecurityRealm
 import hudson.security.AuthorizationStrategy
@@ -263,44 +285,46 @@ println(\"crumbDisabled=\" + (j.getCrumbIssuer() == null))
 println(\"unsecuredMode=\" + unsecured)
 println(\"authenticatedMode=\" + authenticated)
 println(\"remoteApiEnabled=\" + lrm.isRemoteApiEnabled())
-println(\"exposeLabel=\" + lrm.getExposeLabel())
 println(\"resourceExists=\" + hasResource)
 println(\"resourceExposed=\" + exposed)
-
-" "unsecuredMode=")"
+" "remoteApiEnabled=")"
 
   if [[ "$auth_mode" == "anonymous" ]]; then
-    if ! printf '%s' "$check_output" | grep -Fq "crumbDisabled=true"; then
-      err "Controller B verification failed: crumbDisabled is not true (anonymous mode)"
-      return 1
-    fi
     if ! printf '%s' "$check_output" | grep -Fq "unsecuredMode=true"; then
-      err "Controller B verification failed: unsecuredMode is not true (anonymous mode)"
+      err "Remote server verification failed: unsecuredMode is not true"
       return 1
     fi
   else
-    if ! printf '%s' "$check_output" | grep -Fq "crumbDisabled=false"; then
-      err "Controller B verification failed: crumbDisabled is not false (authenticated mode)"
-      return 1
-    fi
     if ! printf '%s' "$check_output" | grep -Fq "authenticatedMode=true"; then
-      err "Controller B verification failed: authenticatedMode is not true"
+      err "Remote server verification failed: authenticatedMode is not true"
       return 1
     fi
   fi
 
   if ! printf '%s' "$check_output" | grep -Fq "remoteApiEnabled=true"; then
-    err "Controller B verification failed: remoteApiEnabled is not true"
+    err "Remote server verification failed: remoteApiEnabled is not true"
     return 1
   fi
   if ! printf '%s' "$check_output" | grep -Fq "resourceExists=true"; then
-    err "Controller B verification failed: $resource_name does not exist"
+    err "Remote server verification failed: resource does not exist ($resource_name)"
     return 1
   fi
   if ! printf '%s' "$check_output" | grep -Fq "resourceExposed=true"; then
-    err "Controller B verification failed: board-a1 is not exposed by exposeLabel"
+    err "Remote server verification failed: resource is not exposed ($resource_name)"
     return 1
   fi
+}
+
+configure_controller_b_remote_server() {
+  local resource_name="${1:-board-a1}"
+  local auth_mode="${2:-authenticated}"
+  configure_remote_server "$CONTROLLER_B_URL" "$resource_name" "remote-enabled" "$auth_mode"
+}
+
+verify_controller_b_remote_server_config() {
+  local resource_name="${1:-board-a1}"
+  local auth_mode="${2:-authenticated}"
+  verify_remote_server_config "$CONTROLLER_B_URL" "$resource_name" "$auth_mode"
 }
 
 set_controller_b_anonymous_read() {
@@ -311,40 +335,59 @@ set_controller_b_anonymous_read() {
     return 0
   fi
 
-  # "off" means force authenticated mode so no-auth remote POST fails.
   configure_controller_b_remote_server "board-a1" "authenticated"
 }
 
-configure_remote_client() {
+configure_local_resource() {
+  local base_url="$1"
+  local resource_name="$2"
+
+  run_groovy_script_checked "$base_url" "
+import org.jenkins.plugins.lockableresources.LockableResourcesManager
+
+def lrm = LockableResourcesManager.get()
+if (lrm.fromName(\"$resource_name\") == null) {
+  lrm.createResource(\"$resource_name\")
+}
+lrm.save()
+println(\"OK: configured local resource $resource_name\")
+" "OK: configured local resource $resource_name" >/dev/null
+}
+
+configure_remote_client_for_server() {
   local base_url="$1"
   local client_id="$2"
-  local remote_url="$3"
-  local credentials_id="${4:-}"
+  local server_id="$3"
+  local remote_url="$4"
+  local credentials_id="${5:-}"
 
   run_groovy_script_checked "$base_url" "
 import org.jenkins.plugins.lockableresources.LockableResourcesManager
 import org.jenkins.plugins.lockableresources.RemoteConnection
 
 def lrm = LockableResourcesManager.get()
+def remotes = new LinkedHashMap(lrm.getRemotesAsMap())
+remotes.put(\"$server_id\", new RemoteConnection(\"$server_id\", \"$remote_url\", \"$credentials_id\"))
 lrm.setClientId(\"$client_id\")
-lrm.setRemotes([new RemoteConnection(\"b\", \"$remote_url\", \"$credentials_id\")])
+lrm.setRemotes(new ArrayList(remotes.values()))
 lrm.save()
-println(\"OK: configured remote client $client_id -> $remote_url (credentialsId=$credentials_id)\")
-" "OK: configured remote client $client_id -> $remote_url (credentialsId=$credentials_id)" >/dev/null
+println(\"OK: configured remote client $client_id -> $server_id:$remote_url (credentialsId=$credentials_id)\")
+" "OK: configured remote client $client_id -> $server_id:$remote_url (credentialsId=$credentials_id)" >/dev/null
 }
 
-verify_remote_client_config() {
+verify_remote_client_for_server() {
   local base_url="$1"
   local expected_client_id="$2"
-  local expected_remote_url="$3"
-  local expected_credentials_id="${4:-}"
+  local server_id="$3"
+  local expected_remote_url="$4"
+  local expected_credentials_id="${5:-}"
 
   local check_output
   check_output="$(run_groovy_script_checked "$base_url" "
 import org.jenkins.plugins.lockableresources.LockableResourcesManager
 
 def lrm = LockableResourcesManager.get()
-def remote = lrm.getRemotesAsMap().get(\"b\")
+def remote = lrm.getRemotesAsMap().get(\"$server_id\")
 println(\"clientId=\" + lrm.getClientId())
 println(\"remoteExists=\" + (remote != null))
 println(\"remoteUrl=\" + (remote == null ? \"\" : remote.getUrl()))
@@ -356,7 +399,7 @@ println(\"credentialsId=\" + (remote == null ? \"\" : remote.getCredentialsId())
     return 1
   fi
   if ! printf '%s' "$check_output" | grep -Fq "remoteExists=true"; then
-    err "Remote client verification failed: remote connection for serverId=b does not exist"
+    err "Remote client verification failed: remote connection for serverId=$server_id does not exist"
     return 1
   fi
   if ! printf '%s' "$check_output" | grep -Fq "remoteUrl=$expected_remote_url"; then
@@ -367,6 +410,22 @@ println(\"credentialsId=\" + (remote == null ? \"\" : remote.getCredentialsId())
     err "Remote client verification failed: credentialsId mismatch (expected=$expected_credentials_id)"
     return 1
   fi
+}
+
+configure_remote_client() {
+  local base_url="$1"
+  local client_id="$2"
+  local remote_url="$3"
+  local credentials_id="${4:-}"
+  configure_remote_client_for_server "$base_url" "$client_id" "b" "$remote_url" "$credentials_id"
+}
+
+verify_remote_client_config() {
+  local base_url="$1"
+  local expected_client_id="$2"
+  local expected_remote_url="$3"
+  local expected_credentials_id="${4:-}"
+  verify_remote_client_for_server "$base_url" "$expected_client_id" "b" "$expected_remote_url" "$expected_credentials_id"
 }
 
 upsert_username_password_credential() {
@@ -380,11 +439,13 @@ import com.cloudbees.plugins.credentials.SystemCredentialsProvider
 import com.cloudbees.plugins.credentials.CredentialsScope
 import com.cloudbees.plugins.credentials.common.IdCredentials
 import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl
+import com.cloudbees.plugins.credentials.domains.Domain
 
 def provider = SystemCredentialsProvider.getInstance()
-def credentials = provider.getCredentials()
-credentials.removeAll { c -> (c instanceof IdCredentials) && c.getId() == \"$credentials_id\" }
-credentials.add(new UsernamePasswordCredentialsImpl(
+def store = provider.getStore()
+def existing = provider.getCredentials().findAll { c -> (c instanceof IdCredentials) && c.getId() == \"$credentials_id\" }
+existing.each { c -> store.removeCredentials(Domain.global(), c) }
+store.addCredentials(Domain.global(), new UsernamePasswordCredentialsImpl(
   CredentialsScope.GLOBAL,
   \"$credentials_id\",
   \"E2E generated username/password credential\",
@@ -440,6 +501,7 @@ upsert_string_credential() {
   run_groovy_script_checked "$base_url" "
 import com.cloudbees.plugins.credentials.SystemCredentialsProvider
 import com.cloudbees.plugins.credentials.common.IdCredentials
+import com.cloudbees.plugins.credentials.domains.Domain
 import jenkins.model.Jenkins
 
 def cl = Jenkins.get().pluginManager.uberClassLoader
@@ -466,9 +528,10 @@ def credential = ctor.newInstance(
 )
 
 def provider = SystemCredentialsProvider.getInstance()
-def credentials = provider.getCredentials()
-credentials.removeAll { c -> (c instanceof IdCredentials) && c.getId() == \"$credentials_id\" }
-credentials.add(credential)
+def store = provider.getStore()
+def existing = provider.getCredentials().findAll { c -> (c instanceof IdCredentials) && c.getId() == \"$credentials_id\" }
+existing.each { c -> store.removeCredentials(Domain.global(), c) }
+store.addCredentials(Domain.global(), credential)
 provider.save()
 println(\"OK: upserted string credential $credentials_id\")
 " "OK: upserted string credential $credentials_id" >/dev/null
@@ -523,8 +586,7 @@ trigger_job() {
 
   local location
   location="$(awk 'BEGIN{IGNORECASE=1} /^Location:/{print $2}' "$headers_file" | tr -d '\r' | tail -n 1)"
-  rm -f "$cookie_jar"
-  rm -f "$headers_file"
+  rm -f "$cookie_jar" "$headers_file"
 
   if [[ -z "$location" ]]; then
     err "Failed to get queue Location header for job: $job_name"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ローカル開発用: lockable-resources-plugin を 3 コンテナで起動する
+# ローカル開発用: lockable-resources-plugin を 4 コンテナで起動する
 # 使い方: ./start.sh [--clean]
 #   --clean : Jenkins home ボリュームを削除してから起動（初期化）
 set -euo pipefail
@@ -22,7 +22,7 @@ for arg in "$@"; do
   [[ "$arg" == "--clean" ]] && CLEAN=true
 done
 
-JENKINS_HOME_DIRS=(jha jhb jhc)
+JENKINS_HOME_DIRS=(jha jhb jhc jhd)
 LEGACY_JENKINS_HOME_DIRS=(jh8081 jh8082 jh8083)
 
 # ---------------------------------------------------------------------------
@@ -88,6 +88,12 @@ for jh in "${JENKINS_HOME_DIRS[@]}"; do
   fi
 done
 
+# root 所有のまま残ると Jenkins コンテナが起動ループするため、Docker 経由で権限を補正する。
+echo "[INFO] Ensuring Jenkins home directory ownership (uid/gid 1000) ..."
+for jh in "${JENKINS_HOME_DIRS[@]}"; do
+  docker run --rm -v "$SCRIPT_DIR/$jh:/target" alpine:3.20 sh -c 'chown -R 1000:1000 /target' >/dev/null
+done
+
 # ---------------------------------------------------------------------------
 # 6. Docker イメージをビルド
 # ---------------------------------------------------------------------------
@@ -108,11 +114,12 @@ docker compose up -d
 # ---------------------------------------------------------------------------
 echo ""
 echo "[INFO] Waiting for Jenkins instances to become ready ..."
-for node in a b c; do
+for node in a b c d; do
   case "$node" in
     a) port=8081 ;;
     b) port=8082 ;;
     c) port=8083 ;;
+    d) port=8084 ;;
   esac
 
   ready=false
@@ -132,13 +139,14 @@ done
 
 echo ""
 echo "----------------------------------------------------------------------"
-echo " Jenkins 3-controller dev environment"
+echo " Jenkins 4-controller dev environment"
 echo "----------------------------------------------------------------------"
 echo "  http://localhost:8081/jenkins/  (admin / admin)"
 echo "  http://localhost:8082/jenkins/  (admin / admin)"
 echo "  http://localhost:8083/jenkins/  (admin / admin)"
+echo "  http://localhost:8084/jenkins/  (admin / admin)"
 echo ""
 echo " Logs  : docker compose logs -f"
 echo " Stop  : ./stop.sh"
-echo " Clean : ./start.sh --clean   (removes jha-jhc directories)"
+echo " Clean : ./start.sh --clean   (removes jha-jhd directories)"
 echo "----------------------------------------------------------------------"
