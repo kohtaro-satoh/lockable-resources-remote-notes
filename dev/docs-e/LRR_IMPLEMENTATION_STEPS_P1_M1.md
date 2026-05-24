@@ -24,11 +24,11 @@ It breaks the implementation into feature-scoped commits for later traceability.
 
 Notes:
 - Date: 2026-05-09
-- Commit: 739d6da (※ after rebase, e4f70c3 is the base point. Final update planned after M1 completion.)
+- Commit: 739d6da (after rebase, the base point remained 739d6da through M1 closure.)
 - Memo: Ran `$HOME/.local/apache-maven-3.9.9/bin/mvn test` and confirmed BUILD SUCCESS (Tests run: 238, Failures: 0, Errors: 0, Skipped: 1, Total time: 13:42).
-  As of 2026-05-14, after cherry-picking PR #1028 (NodesMirror package fix) onto master and rebasing the feature branch, confirmed BUILD SUCCESS on a cold build (Tests run: 238, Failures: 0, Errors: 0, Skipped: 1).
+  As of 2026-05-14, also confirmed BUILD SUCCESS on a cold build (Tests run: 238, Failures: 0, Errors: 0, Skipped: 1).
   As of 2026-05-19, after implementing Step 6c, ran `$HOME/.local/apache-maven-3.9.9/bin/mvn test` again and confirmed BUILD SUCCESS (Tests run: 274, Failures: 0, Errors: 0, Skipped: 1, Total time: 13:37).
-  - PR #1028 is not yet merged upstream, so it was cherry-picked onto local master (commit `e4f70c3`) as a workaround.
+  - Note: Current M1 PR base is directly on upstream/master (no cherry-pick).
   - Skipped: 1 is `LockStepInversePrecedenceTest#lockInverseOrderWithLabel`. Skipped with `@Disabled` due to existing bug JENKINS-40787 / GitHub #861 (inversePrecedence not applied for label-based locks, causing hang). Unrelated to M1 implementation.
 
 ---
@@ -52,7 +52,7 @@ Completion criteria:
 
 Notes:
 - Date: 2026-05-09
-- Commit: 5456a78
+- Commit: d087498
 - Changed files:
   - src/main/java/.../RemoteConnection.java (new)
   - src/main/java/.../LockableResourcesManager.java (edited)
@@ -88,7 +88,7 @@ Completion criteria:
 
 Notes:
 - Date: 2026-05-10
-- Commit: d40c5dc
+- Commit: 5b453dd
 - Changed files:
   - src/main/java/.../remote/RemoteClientDefaults.java (new)
   - src/main/java/.../remote/RemoteAcquireState.java (new)
@@ -133,7 +133,7 @@ Completion criteria:
 
 Notes:
 - Date: 2026-05-10
-- Commit: fb25b42
+- Commit: 6c251fd
 - Changed files:
   - src/main/java/.../remote/RemoteApiClient.java (edited: heartbeat/release + optional Authorization header)
   - src/main/java/.../LockStepExecution.java (edited: remote enqueue/poll/heartbeat/release flow)
@@ -162,7 +162,7 @@ Completion criteria:
 
 Notes:
 - Date: 2026-05-10
-- Commit: fb25b42
+- Commit: 6c251fd
 - Changed files:
   - src/main/java/.../LockStep.java (edited: added serverId DataBoundSetter)
   - src/main/java/.../LockStepExecution.java (edited: remote flow wired via serverId branch)
@@ -245,7 +245,7 @@ Completion criteria:
 
 Notes:
 - Date: 2026-05-14 (amended with code review fixes on 2026-05-16)
-- Commit: 8a8d816
+- Commit: 05f09ba
 - Changed files:
   - src/main/java/.../remote/RemoteLockState.java (new)
   - src/main/java/.../remote/RemoteLockRecord.java (new)
@@ -309,7 +309,7 @@ Completion criteria:
 
 Notes:
 - Date: 2026-05-16
-- Commit: f89330a
+- Commit: ee1bb05
 - Changed files:
   - src/main/java/.../remote/RemoteLockRecord.java (edited)
   - src/main/java/.../remote/RemoteLockManager.java (edited)
@@ -352,7 +352,7 @@ Completion criteria:
 
 Notes:
 - Date: 2026-05-17
-- Commit: c2e9112
+- Commit: 59d2709
 - Changed files:
   - src/main/java/.../LockableResource.java (edited: added getRemoteLockClientId())
   - src/main/resources/.../LockableResourcesRootAction/tableResources/table.jelly (edited: added remote lock case)
@@ -408,7 +408,7 @@ Completion criteria:
 
 Notes:
 - Date: 2026-05-19
-- Commit: 71de798
+- Commit: 7e2d00e
 - Changed files:
   - src/main/resources/.../LockableResourcesManager/config.jelly (edited)
   - src/main/resources/.../LockableResourcesManager/config.properties (edited)
@@ -472,7 +472,7 @@ Completion criteria:
 
 Notes:
 - Date: 2026-05-19
-- Commit: plugin `28e1fc9`, docs-j `6b8ebda`
+- Commit: plugin `c704822`, notes-doc sync `6b8ebda`
 - Changed files:
   - src/main/java/.../LockStepExecution.java (edited: credentials resolution + Authorization generation)
   - src/main/java/.../remote/RemoteApiClient.java (edited if needed)
@@ -505,7 +505,7 @@ Completion criteria:
 
 Notes:
 - Date: 2026-05-23
-- Commit: plugin `3a111a0`
+- Commit: plugin `5acb822`
 - Changed files:
   - src/main/java/.../remote/RemoteLockManager.java (edited)
   - src/test/java/.../remote/RemoteLockManagerTest.java (new)
@@ -553,7 +553,7 @@ Completion criteria:
 
 Notes:
 - Date: 2026-05-17
-- Commits: 0ea83df, ecb11f4, cf47eb2
+- Commits: f4b1ccb, 93ab6be, 2879e9a
 - Changed files:
   - src/test/java/.../actions/RemoteApiV1ActionTest.java (new)
   - src/test/java/.../LockStepRemoteTest.java (new)
@@ -637,11 +637,11 @@ Notes:
   - 2026-05-18: Added Scenario Details (Sequence + Checkpoints) to reports. Each checkpoint outputs API/Action, Expected, Actual, and Result.
   - 2026-05-18: Fixed markdown table corruption in Scenario Details (separated Sequence and Checkpoints generation, then combined at end).
   - 2026-05-18: Translated report body to English (Summary / Scenario details / checkpoint descriptions).
-  - 2026-05-18: Plugin-side fix committed (`ade9bb7`): `RemoteApiV1Action` acquire routing fix, `RemoteApiClient` acquire path canonicalization, corresponding test updates.
+  - 2026-05-18: Plugin-side fix committed (`3d5fddf`): `RemoteApiV1Action` acquire routing fix, `RemoteApiClient` acquire path canonicalization, corresponding test updates.
   - 2026-05-23: Renamed compose service/container names from `jenkins-8081/2/3` to `jenkins-a/b/c` and updated references in `common.sh`, `start.sh`, `fail-closed.sh`, and `README.md`.
   - 2026-05-23: Root-caused peer-basic 403 by checking Controller B logs: `No valid crumb was included ... /remote/v1/acquire/ ... Returning 403`.
   - 2026-05-23: Updated E2E harness to API-token-backed Basic auth. Scenario now issues a Controller-B `admin` API token and stores it as the password field in Controller A/C username-password credentials.
-  - 2026-05-23: Added/updated `dev/docs-j/E2E_TEST_SPECIFICATION.md` to reflect authenticated mode (API token), 5 fail-closed cases, and `jenkins-a/b/c` naming.
+  - 2026-05-23: Added/updated E2E specifications (`dev/docs-j/E2E_TEST_SPECIFICATION.md` and `dev/docs-e/E2E_TEST_SPECIFICATION.md`) to reflect authenticated mode (API token), 5 fail-closed cases, and `jenkins-a/b/c` naming.
 
 E2E verification checklist (3 controllers):
 - [x] Remote lock from 8081 → 8082 is acquired
@@ -877,7 +877,7 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 ## Current Status
 
 - Start date: 2026-05-09
-- **Plugin-side M1 implementation: Steps 0–8 complete ✅** (Last verified: 2026-05-23, plugin HEAD `3a111a0`, BUILD SUCCESS via `./stabilize-build.sh` (`mvn test`) / 278 tests / Failures: 0 / Errors: 0 / Skipped: 1)
+- **Plugin-side M1 implementation: Steps 0–8 complete ✅** (Last verified: 2026-05-23, plugin HEAD `5acb822`, BUILD SUCCESS via `./stabilize-build.sh` (`mvn test`) / 278 tests / Failures: 0 / Errors: 0 / Skipped: 1)
 - **Notes-side operational assets: Step 9 complete ✅** (2026-05-23, README / E2E spec / tracker synchronized)
 - **Test stabilization: Final procedure confirmed ✅** (2026-05-23, BUILD SUCCESS confirmed on re-run)
 - Next action: No remaining work in M1 scope
@@ -886,7 +886,6 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 
 ### Branch maintenance notes
 
-- PR #1028 (NodesMirror package fix) cherry-picked onto current master (commit `e4f70c3`)
-- Feature branch rebased on this cherry-pick-applied master (2026-05-16)
-- Once #1028 is merged into upstream master, drop the cherry-pick commit and rebase again
+- M1 PR base branch is `feature/1025-remote-lockable-resources-p1-m1` (upstream/master based, no cherry-pick)
+- Old branch `feature/1025-remote-lockable-resources-p1-m1-old` is scheduled for deletion (temporarily kept for history comparison)
 - Notes-side M1 sync commit: `1ac2932`; `.gitignore` cleanup commit: `037e395`

@@ -24,11 +24,11 @@
 
 記録:
 - 日付: 2026-05-09
-- コミット: 739d6da（※ rebase 後の基点は `e4f70c3` のまま。M1 クローズ時点も同一）
+- コミット: 739d6da（※ rebase 後の基点は `739d6da` のまま。M1 クローズ時点も同一）
 - メモ: $HOME/.local/apache-maven-3.9.9/bin/mvn test を実行し BUILD SUCCESS（Tests run: 238, Failures: 0, Errors: 0, Skipped: 1, Total time: 13:42）を確認。
-  2026-05-14 時点で PR #1028 cherry-pick（NodesMirror パッケージ修正）を master に適用後、feature ブランチを rebase し cold build でも BUILD SUCCESS（Tests run: 238, Failures: 0, Errors: 0, Skipped: 1）を確認。
+  2026-05-14 時点で cold build でも BUILD SUCCESS（Tests run: 238, Failures: 0, Errors: 0, Skipped: 1）を確認。
   2026-05-19 時点で Step 6c 実装後に再度 `$HOME/.local/apache-maven-3.9.9/bin/mvn test` を実行し BUILD SUCCESS（Tests run: 274, Failures: 0, Errors: 0, Skipped: 1, Total time: 13:37）を確認。
-  - PR #1028 は upstream 未マージのため、ローカル master に cherry-pick（コミット `e4f70c3`）して対処中。
+  - 補足: 現在の M1 PR ベースは upstream/master 直系（cherry-pick なし）。
   - Skipped: 1 は `LockStepInversePrecedenceTest#lockInverseOrderWithLabel`。JENKINS-40787 / GitHub #861 の既存バグ（ラベルベースロックで inversePrecedence が適用されずハングする）により `@Disabled` でスキップ中。M1 実装とは無関係。
 
 ---
@@ -52,7 +52,7 @@
 
 記録:
 - 日付: 2026-05-09
-- コミット: 5456a78
+- コミット: d087498
 - 変更ファイル:
   - src/main/java/.../RemoteConnection.java (新規)
   - src/main/java/.../LockableResourcesManager.java (編集)
@@ -88,7 +88,7 @@
 
 記録:
 - 日付: 2026-05-10
-- コミット: d40c5dc
+- コミット: 5b453dd
 - 変更ファイル:
   - src/main/java/.../remote/RemoteClientDefaults.java (新規)
   - src/main/java/.../remote/RemoteAcquireState.java (新規)
@@ -133,7 +133,7 @@
 
 記録:
 - 日付: 2026-05-10
-- コミット: fb25b42
+- コミット: 6c251fd
 - 変更ファイル:
   - src/main/java/.../remote/RemoteApiClient.java (編集: heartbeat/release + optional Authorization header)
   - src/main/java/.../LockStepExecution.java (編集: remote enqueue/poll/heartbeat/release フロー)
@@ -162,7 +162,7 @@
 
 記録:
 - 日付: 2026-05-10
-- コミット: fb25b42
+- コミット: 6c251fd
 - 変更ファイル:
   - src/main/java/.../LockStep.java (編集: serverId DataBoundSetter 追加)
   - src/main/java/.../LockStepExecution.java (編集: serverId 分岐による remote フロー接続)
@@ -245,7 +245,7 @@
 
 記録:
 - 日付: 2026-05-14（2026-05-16 コードレビュー修正を amend）
-- コミット: 8a8d816
+- コミット: 05f09ba
 - 変更ファイル:
   - src/main/java/.../remote/RemoteLockState.java (新規)
   - src/main/java/.../remote/RemoteLockRecord.java (新規)
@@ -309,7 +309,7 @@
 
 記録:
 - 日付: 2026-05-16
-- コミット: f89330a
+- コミット: ee1bb05
 - 変更ファイル:
   - src/main/java/.../remote/RemoteLockRecord.java (編集)
   - src/main/java/.../remote/RemoteLockManager.java (編集)
@@ -352,7 +352,7 @@
 
 記録:
 - 日付: 2026-05-17
-- コミット: c2e9112
+- コミット: 59d2709
 - 変更ファイル:
   - src/main/java/.../LockableResource.java (編集: getRemoteLockClientId() 追加)
   - src/main/resources/.../LockableResourcesRootAction/tableResources/table.jelly (編集: remote lock ケース追加)
@@ -408,7 +408,7 @@
 
 記録:
 - 日付: 2026-05-19
-- コミット: 71de798
+- コミット: 7e2d00e
 - 変更ファイル:
   - src/main/resources/.../LockableResourcesManager/config.jelly (編集)
   - src/main/resources/.../LockableResourcesManager/config.properties (編集)
@@ -472,7 +472,7 @@
 
 記録:
 - 日付: 2026-05-19
-- コミット: plugin `28e1fc9`, docs-j `6b8ebda`
+- コミット: plugin `c704822`, docs-j `6b8ebda`
 - 変更ファイル:
   - src/main/java/.../LockStepExecution.java (編集: credentials 解決 + Authorization 生成)
   - src/main/java/.../remote/RemoteApiClient.java (必要に応じて編集)
@@ -505,7 +505,7 @@
 
 記録:
 - 日付: 2026-05-23
-- コミット: plugin `3a111a0`
+- コミット: plugin `5acb822`
 - 変更ファイル:
   - src/main/java/.../remote/RemoteLockManager.java (編集)
   - src/test/java/.../remote/RemoteLockManagerTest.java (新規)
@@ -553,7 +553,7 @@
 
 記録:
 - 日付: 2026-05-17
-- コミット: 0ea83df, ecb11f4, cf47eb2
+- コミット: f4b1ccb, 93ab6be, 2879e9a
 - 変更ファイル:
   - src/test/java/.../actions/RemoteApiV1ActionTest.java (新規)
   - src/test/java/.../LockStepRemoteTest.java (新規)
@@ -637,11 +637,11 @@
   - 2026-05-18: レポートに Scenario Details（Sequence + Checkpoints）を追加。各チェックポイントに API/Action・Expected・Actual・Result を出力するよう更新。
   - 2026-05-18: Scenario Details の markdown table 崩れを修正（Sequence と Checkpoints を分離生成して最終合成）。
   - 2026-05-18: レポート本文を英語化（Summary/Scenario details/checkpoint descriptions）。
-  - 2026-05-18: plugin 側修正をコミット（`ade9bb7`）: `RemoteApiV1Action` の acquire ルーティング整理、`RemoteApiClient` の acquire path canonical 化、対応テスト更新。
+  - 2026-05-18: plugin 側修正をコミット（`3d5fddf`）: `RemoteApiV1Action` の acquire ルーティング整理、`RemoteApiClient` の acquire path canonical 化、対応テスト更新。
   - 2026-05-23: compose service/container 名を `jenkins-8081/2/3` から `jenkins-a/b/c` へ変更し、`common.sh` / `start.sh` / `fail-closed.sh` / `README.md` の参照先も追従。
   - 2026-05-23: `peer-basic` の 403 を切り分け。Controller B ログで `No valid crumb was included ... /remote/v1/acquire/ ... Returning 403` を確認。
   - 2026-05-23: E2E ハーネスを API トークン運用へ変更。Controller B の `admin` API token をシナリオで発行し、Controller A/C の username/password credentials（password 側）に設定して Basic 認証で remote API を呼び出す形へ更新。
-  - 2026-05-23: `dev/docs-j/E2E_TEST_SPECIFICATION.md` を作成し、認証必須（APIトークン）/ fail-closed 5ケース / compose 命名（a/b/c）へ内容更新。
+  - 2026-05-23: `dev/docs-j/E2E_TEST_SPECIFICATION.md` / `dev/docs-e/E2E_TEST_SPECIFICATION.md` を更新し、認証必須（APIトークン）/ fail-closed 5ケース / compose 命名（a/b/c）へ内容更新。
 
 E2E 確認チェック（3 controller）:
 - [x] 8081 -> 8082 の remote lock が取得できる
@@ -668,6 +668,8 @@ Step8 最終状態（2026-05-23）:
 - `dev/jenkins-env/lib/common.sh`
 - `dev/jenkins-env/docker-compose.yml`
 - `dev/jenkins-env/README.md`
+- `dev/jenkins-env/start.sh`
+- `dev/jenkins-env/stop.sh`
 - `dev/jenkins-env/scenarios/fail-closed.sh`
 - `dev/jenkins-env/scenarios/mutual-peer.sh`
 - `dev/jenkins-env/scenarios/fan-in-contention.sh`
@@ -886,7 +888,7 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 ## 現在ステータス
 
 - 開始日: 2026-05-09
-- **plugin 側 M1 実装: Step 0〜8 完了 ✅**（最終確認: 2026-05-23、plugin HEAD `3a111a0`、`./stabilize-build.sh` 経由で `mvn test` BUILD SUCCESS / 278件 / Failures: 0 / Errors: 0 / Skipped: 1）
+- **plugin 側 M1 実装: Step 0〜8 完了 ✅**（最終確認: 2026-05-23、plugin HEAD `5acb822`、`./stabilize-build.sh` 経由で `mvn test` BUILD SUCCESS / 278件 / Failures: 0 / Errors: 0 / Skipped: 1）
 - **notes 側運用資産: Step 9 完了 ✅**（2026-05-23、README / E2E spec / 本手順書の同期完了）
 - **テスト安定化: 最終版手順 確定済み ✅**（2026-05-23、再実行で BUILD SUCCESS を確認）
 - 次アクション: M1 スコープの残件なし
@@ -895,7 +897,6 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 
 ### ブランチ整理メモ
 
-- 現 master に PR #1028（NodesMirror パッケージ修正）を cherry-pick 済み（コミット `e4f70c3`）
-- feature ブランチは この cherry-pick 済み master で rebase 済み（2026-05-16）
-- 本家 master に #1028 が取り込まれ次第、cherry-pick コミットを drop して rebase し直す
+- M1 PR ベースブランチは `feature/1025-remote-lockable-resources-p1-m1`（upstream/master ベース、cherry-pick なし）
+- 旧ブランチ `feature/1025-remote-lockable-resources-p1-m1-old` は削除予定（履歴比較用に一時退避）
 - notes 側の M1 同期コミットは `1ac2932`、`.gitignore` 整理は `037e395`
