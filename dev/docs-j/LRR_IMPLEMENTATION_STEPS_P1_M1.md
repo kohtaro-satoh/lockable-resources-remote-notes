@@ -891,12 +891,16 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 - **plugin 側 M1 実装: Step 0〜8 完了 ✅**（最終確認: 2026-05-23、plugin HEAD `5acb822`、`./stabilize-build.sh` 経由で `mvn test` BUILD SUCCESS / 278件 / Failures: 0 / Errors: 0 / Skipped: 1）
 - **notes 側運用資産: Step 9 完了 ✅**（2026-05-23、README / E2E spec / 本手順書の同期完了）
 - **テスト安定化: 最終版手順 確定済み ✅**（2026-05-23、再実行で BUILD SUCCESS を確認）
-- 次アクション: M1 スコープの残件なし
-- ブロッカー: なし
-- 最新ビルド: 合計実行時間 14:28、全テスト正常終了（ログ: `dev/reports/20260523135413-mvn-test.log`）
+- **最新レポート更新済み ✅**（2026-05-24、`PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh` 成功、ログ/レポートを更新）
+- 次アクション: PR #1035 のマージ待ち後、最新 master を取り込んで設定画面コードの conflict を解消し、M1 PR を作成
+- ブロッカー: PR #1035（設定画面コードの競合可能性）
+- 最新ビルド: `dev/reports/20260524100611-mvn-test.log`（BUILD SUCCESS）
+- 最新E2E: `dev/reports/20260524105443-e2e-test.md`（pass=10 fail=0 skip=0）
 
 ### ブランチ整理メモ
 
 - M1 PR ベースブランチは `feature/1025-remote-lockable-resources-p1-m1`（upstream/master ベース、cherry-pick なし）
 - 旧ブランチ `feature/1025-remote-lockable-resources-p1-m1-old` は削除予定（履歴比較用に一時退避）
 - notes 側の M1 同期コミットは `1ac2932`、`.gitignore` 整理は `037e395`
+- 2026-05-24: notes 側ステータス同期コミット `56563d9`（手順書文言同期 + 最新テストレポート差し替え）
+- issue #1025 に「#1035 マージ待ち → master 基準で conflict 解消後に PR」をコメント済み

@@ -880,12 +880,16 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 - **Plugin-side M1 implementation: Steps 0–8 complete ✅** (Last verified: 2026-05-23, plugin HEAD `5acb822`, BUILD SUCCESS via `./stabilize-build.sh` (`mvn test`) / 278 tests / Failures: 0 / Errors: 0 / Skipped: 1)
 - **Notes-side operational assets: Step 9 complete ✅** (2026-05-23, README / E2E spec / tracker synchronized)
 - **Test stabilization: Final procedure confirmed ✅** (2026-05-23, BUILD SUCCESS confirmed on re-run)
-- Next action: No remaining work in M1 scope
-- Blockers: None
-- Latest build: Total time 14:28, all tests passed (log: `dev/reports/20260523135413-mvn-test.log`)
+- **Latest report refresh complete ✅** (2026-05-24, `PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh` succeeded and logs/reports were refreshed)
+- Next action: wait for PR #1035 to merge, then rebase on latest master, resolve the expected config-page conflict, and open the M1 PR
+- Blocker: PR #1035 (possible overlap in configuration page code)
+- Latest build: `dev/reports/20260524100611-mvn-test.log` (BUILD SUCCESS)
+- Latest E2E: `dev/reports/20260524105443-e2e-test.md` (pass=10 fail=0 skip=0)
 
 ### Branch maintenance notes
 
 - M1 PR base branch is `feature/1025-remote-lockable-resources-p1-m1` (upstream/master based, no cherry-pick)
 - Old branch `feature/1025-remote-lockable-resources-p1-m1-old` is scheduled for deletion (temporarily kept for history comparison)
 - Notes-side M1 sync commit: `1ac2932`; `.gitignore` cleanup commit: `037e395`
+- 2026-05-24: notes-side status sync commit `56563d9` (tracker wording sync + latest test report refresh)
+- Added an issue #1025 comment: wait for #1035 merge, then resolve conflicts on master baseline before opening PR
