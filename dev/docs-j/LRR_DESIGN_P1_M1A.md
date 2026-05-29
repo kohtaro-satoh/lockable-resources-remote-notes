@@ -59,7 +59,6 @@
 | 認証 | `credentialsId` から username/password（API token）を解決し、Authorization ヘッダを付与 |
 
 **今後の拡張予定（M2 以降）:**
-- Delegated mode（`forcedServerId` による透過的ルーティング）
 - GET /resources と B-side ページのリモートビュー
 
 ---
@@ -71,7 +70,7 @@ flowchart TD
   A["lock 呼び出し"] --> D{"serverId 引数\nあり?"}
   D -- あり --> E["Peer mode\n指定 serverId の remote へ"]
   D -- なし --> F["ローカル mode\n既存の単一 Jenkins 挙動"]
-  D -. 参考 .-> N["Delegated mode は M2 で実装予定"]
+  D -. 参考 .-> N["Delegated mode は M1A スコープに含む"]
 
   E --> G["lockRequest を生成して /acquire へ送信"]
   G --> H["GET /acquire/:lockId で state と lockEnvVars を取得"]
@@ -83,10 +82,11 @@ flowchart TD
 - 接続先選択後、lock 意味論パラメータは `lockRequest` として remote に渡す。
 - `ACQUIRED` 時の `lockEnvVars` を使って local と同等の body 実行コンテキストを構築する。
 
-### Delegated mode（M2 以降 / M1A には含まれない）
+### Delegated mode（M1A 対象）
 
-- `forcedServerId` は Controller 側設定として維持する。
-- ただし M1A では peer mode が対象であり、DSL 契約には持ち込まない。
+- `forcedServerId` は Controller 側設定として有効。
+- `forcedServerId` が設定されている場合、routing は controller 側設定に従う。
+- ただし DSL の lock 意味論には持ち込まない（`lockRequest` には含めない）。
 
 ---
 

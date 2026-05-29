@@ -59,7 +59,6 @@ From the pipeline author's perspective, lock semantics remain equivalent to loca
 | Authentication | Resolve username/password (API token) via `credentialsId` and send Authorization header |
 
 **Planned future extensions (M2+):**
-- Delegated mode (transparent routing with `forcedServerId`)
 - `GET /resources` and remote view on the B-side page
 
 ---
@@ -71,7 +70,7 @@ flowchart TD
   A["lock invocation"] --> D{"serverId argument\npresent?"}
   D -- yes --> E["Peer mode\nroute to specified remote serverId"]
   D -- no --> F["Local mode\nexisting single-controller behavior"]
-  D -. reference .-> N["Delegated mode is planned for M2"]
+  D -. reference .-> N["Delegated mode is in scope for M1A"]
 
   E --> G["Build lockRequest and send to /acquire"]
   G --> H["GET /acquire/:lockId to read state and lockEnvVars"]
@@ -83,10 +82,11 @@ flowchart TD
 - After endpoint selection, lock-semantics parameters are passed as `lockRequest`.
 - On `ACQUIRED`, `lockEnvVars` is applied to build a local-equivalent body execution context.
 
-### Delegated Mode (M2+ / out of M1A)
+### Delegated Mode (in M1A)
 
-- `forcedServerId` remains a controller-side setting.
-- M1A targets peer mode only, and delegated routing is not part of this DSL contract.
+- `forcedServerId` is active as a controller-side setting.
+- When `forcedServerId` is configured, routing follows the controller-side setting.
+- It is still outside DSL lock semantics (and not included in `lockRequest`).
 
 ---
 
