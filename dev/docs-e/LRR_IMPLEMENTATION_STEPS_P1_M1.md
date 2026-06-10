@@ -874,6 +874,43 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 - Avoid changes spanning multiple steps in one commit
 - Update the step definition in this file whenever a spec change is introduced
 
+## 2026-06-10–11 addendum: master rebase (m1a branch) and build/startup stabilization
+
+After PR #1035 was merged into upstream and master advanced, we prepared `feature/1025-remote-lockable-resources-p1-m1a`, which follows the current master, to carry M1 forward. We also applied a permanent fix for the local build/startup instability that surfaced during this work (the VS Code Java extension conflicting over `target/`).
+
+### Timeline
+
+1. **Rebase prerequisite established (2026-06-10)**
+   - PR #1035 (Manage Jenkins page redesign) was merged upstream, advancing `origin/master` to `863ea4d` (which now includes #1035).
+   - The M1 branch `feature/1025-remote-lockable-resources-p1-m1` (based on old master `739d6da`) would conflict with the configuration page / LR table UI as-is.
+
+2. **Created the m1a branch**
+   - Branched `feature/1025-remote-lockable-resources-p1-m1a` from the already-rebased branch prepared on 2026-06-09 (M1's 14 commits replayed onto current master).
+   - Verified the conflict resolution: it integrates the remote-lock (`remoteLockedBy`) case into the #1035-redesigned status-column `j:choose` — a sound change whose only difference from the M1 version is the two files `tableResources/table.jelly` and `table.properties`. Confirmed no behavioral difference.
+
+3. **Test follow-up fix (plugin `e8b8431`)**
+   - Two `Remote: clientId` display UI tests (`LockableResourcesRootActionTest`) failed.
+   - Investigation showed the production code was correct (`LOCKED by Remote: client-jenkins-a` rendered in the served HTML); the cause was that #1035's tabbed UI moved the resources table into a non-active tab, so it is no longer included in `asNormalizedText()` (visible text only).
+   - Switched the assertions to `page.getWebResponse().getContentAsString()` (served HTML). Full `mvn test` passes with 326 tests, BUILD SUCCESS (Skipped 1 is the known bug JENKINS-40787).
+
+4. **Root cause of the build instability identified**
+   - The repeated `mvn test` / hpi build failures (vanished class files, missing Extension index, surefire "Unresolved compilation problems") were confirmed to be caused by the VS Code Java extension (jdt.ls) writing ECJ compiler output into the same `target/` directory used by the CLI Maven.
+
+5. **stabilize-build.sh updated (notes `0786ae3` / report `a7ee167`)**
+   - Default behavior changed to "build the plugin HEAD in an isolated worktree (under `/tmp`)", permanently avoiding the jdt.ls conflict. In-place builds are available via `--in-place` (requires stopping the Java extension). Failed runs keep the worktree for inspection. Expected test count updated from 271 to 326.
+   - A full run after the change produced BUILD SUCCESS (326 tests). Log: `dev/reports/20260610231428-mvn-test.log`.
+
+6. **start.sh startup failure fixed (2026-06-11, notes `11668d9`)**
+   - `PLUGIN_DIR=../../../lockable-resources-plugin ./start.sh --clean` left Jenkins hanging on the "getting ready" page.
+   - The cause was a broken hpi produced by the same jdt.ls / `target/` conflict. Its inner jar lacked `META-INF/annotations` (the Extension index), so no `@Extension` was registered (`LockableResourcesManager` had no descriptor) and the startup initializer failed.
+   - Fix: start.sh now also builds the hpi in an isolated worktree by default (`--in-place-build` restores the old behavior), and a guard verifies the Extension index inside the hpi before baking it into the Docker image, failing fast on a broken hpi.
+   - Verified controller startup (`--clean` / normal), stop, and restart for all 4 controllers; all four show `lockable-resources` active with zero SEVERE log entries.
+
+### Commits added/changed in this episode
+
+- plugin `feature/1025-remote-lockable-resources-p1-m1a`: `e8b8431` (adapt tests to #1035 tabbed UI)
+- notes `main`: `0786ae3` (stabilize-build.sh worktree build) / `a7ee167` (add m1a mvn test report) / `11668d9` (start.sh worktree build + hpi verification)
+
 ## Current Status
 
 - Start date: 2026-05-09
@@ -881,9 +918,11 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 - **Notes-side operational assets: Step 9 complete ✅** (2026-05-23, README / E2E spec / tracker synchronized)
 - **Test stabilization: Final procedure confirmed ✅** (2026-05-23, BUILD SUCCESS confirmed on re-run)
 - **Latest report refresh complete ✅** (2026-05-24, `PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh` succeeded and logs/reports were refreshed)
-- Next action: wait for PR #1035 to merge, then rebase on latest master, resolve the expected config-page conflict, and open the M1 PR
-- Blocker: PR #1035 (possible overlap in configuration page code)
-- Latest build: `dev/reports/20260524100611-mvn-test.log` (BUILD SUCCESS)
+- **master rebase (m1a branch) complete ✅** (2026-06-10, `feature/1025-remote-lockable-resources-p1-m1a`, HEAD `e8b8431`, all 326 tests BUILD SUCCESS)
+- **Local build/startup stabilization complete ✅** (2026-06-10–11, stabilize-build.sh and start.sh switched to isolated-worktree builds; startup/stop/restart verified)
+- Next action: push m1a (not yet done); decide whether to open the M1 PR or start M1A implementation
+- Blocker: resolved (PR #1035 merged, conflicts resolved)
+- Latest build: `dev/reports/20260610231428-mvn-test.log` (BUILD SUCCESS / 326 tests)
 - Latest E2E: `dev/reports/20260524105443-e2e-test.md` (pass=10 fail=0 skip=0)
 
 ### Branch maintenance notes
@@ -893,3 +932,5 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 - Notes-side M1 sync commit: `1ac2932`; `.gitignore` cleanup commit: `037e395`
 - 2026-05-24: notes-side status sync commit `56563d9` (tracker wording sync + latest test report refresh)
 - Added an issue #1025 comment: wait for #1035 merge, then resolve conflicts on master baseline before opening PR
+- 2026-06-10: prepared `feature/1025-remote-lockable-resources-p1-m1a` following current master (`863ea4d`, includes #1035) — same functionality as M1, 14 rebased commits + test follow-up `e8b8431`. m1a is the starting branch for M1A implementation.
+- Related branches: `origin/feature/1025-remote-lockable-resources-p1-m1-rebased` (m1a's base, created 2026-06-09) / `feature/1025-remote-lockable-resources-p1-m1` (the old-master-based M1) kept for history

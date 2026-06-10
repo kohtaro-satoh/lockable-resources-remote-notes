@@ -885,6 +885,43 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 - ステップ跨ぎの変更は避ける
 - 仕様変更が入ったらこのファイルのステップ定義も更新する
 
+## 2026-06-10〜11 追記: master rebase 対応（m1a ブランチ）とビルド/起動安定化
+
+PR #1035 が upstream にマージされ master が更新されたことを受け、M1 を現行 master へ追従させた `feature/1025-remote-lockable-resources-p1-m1a` を整備した。あわせて、作業中に顕在化したローカルビルド/起動の不安定要因（VS Code Java 拡張と `target/` の競合）を恒久対策した。
+
+### 経緯
+
+1. **rebase 前提の確定（2026-06-10）**
+   - upstream で PR #1035（Manage Jenkins ページ刷新）がマージされ、`origin/master` が #1035 を含む `863ea4d` に更新。
+   - M1 ブランチ `feature/1025-remote-lockable-resources-p1-m1`（旧 master `739d6da` ベース）はそのままでは設定画面 / LR テーブル UI で conflict する状態。
+
+2. **m1a ブランチ作成**
+   - 2026-06-09 に用意済みだった現 master への rebase 済みブランチ（M1 の 14 コミットを再適用したもの）を起点に `feature/1025-remote-lockable-resources-p1-m1a` を作成。
+   - conflict 解消内容を検証: #1035 で再構成された status 列の `j:choose` に remote lock（`remoteLockedBy`）分岐を統合する妥当な内容で、M1 版との差分は `tableResources/table.jelly` と `table.properties` の 2 ファイルのみ。機能差なしと確認。
+
+3. **テスト追従修正（plugin `e8b8431`）**
+   - `Remote: clientId` 表示の UI テスト 2 件（`LockableResourcesRootActionTest`）が失敗。
+   - 切り分けの結果、製品コードは正常で（配信 HTML に `LOCKED by Remote: client-jenkins-a` が描画済み）、#1035 のタブ UI でリソーステーブルが非アクティブタブへ移ったため `asNormalizedText()`（可視テキストのみ）に含まれなくなったことが原因と判明。
+   - アサーションを `page.getWebResponse().getContentAsString()`（配信 HTML）に変更。全件 `mvn test` で 326 件 BUILD SUCCESS（Skipped 1 は既知バグ JENKINS-40787）。
+
+4. **ビルド不安定の根本原因特定**
+   - `mvn test` / hpi ビルドの連続失敗（クラスファイル消失、Extension index 欠落、surefire の「Unresolved compilation problems」）は、VS Code の Java 拡張（jdt.ls）が CLI Maven と同じ `target/` に ECJ コンパイル結果を書き込む競合が原因と確定。
+
+5. **stabilize-build.sh の改修（notes `0786ae3` / レポート `a7ee167`）**
+   - デフォルトを「plugin HEAD の隔離 worktree（`/tmp` 配下）でビルド」に変更し、jdt.ls 競合を恒久回避。リポジトリ直下ビルドは `--in-place`（Java 拡張停止が前提）。失敗時は調査用に worktree を保持。期待テスト件数を 271 → 326 に更新。
+   - 改修後のフル実行で BUILD SUCCESS（326 件）。ログ: `dev/reports/20260610231428-mvn-test.log`。
+
+6. **start.sh 起動障害の修正（2026-06-11、notes `11668d9`）**
+   - `PLUGIN_DIR=../../../lockable-resources-plugin ./start.sh --clean` で Jenkins が「起動待ち」ページのままハングする事象が発生。
+   - 原因は同じ jdt.ls / `target/` 競合で生成された壊れた hpi。内部 jar に `META-INF/annotations`（Extension index）が無く、`@Extension` が一切登録されず（`LockableResourcesManager` の descriptor 不在）起動時 initializer が失敗していた。
+   - 対策: start.sh の hpi ビルドもデフォルトで隔離 worktree 化（`--in-place-build` で従来動作）。さらに Docker イメージへ焼き込む前に hpi 内の Extension index を検証するガードを追加し、壊れた hpi はエラーで停止するようにした。
+   - 4 コントローラの起動（`--clean` / 通常）・停止・再起動を検証し、4 台とも `lockable-resources` が active・SEVERE ログ 0 件を確認。
+
+### この経緯で追加 / 変更したコミット
+
+- plugin `feature/1025-remote-lockable-resources-p1-m1a`: `e8b8431`（テストを #1035 タブ UI に追従）
+- notes `main`: `0786ae3`（stabilize-build.sh を worktree ビルド化）/ `a7ee167`（m1a の mvn test レポート追加）/ `11668d9`（start.sh を worktree ビルド化 + hpi 検証）
+
 ## 現在ステータス
 
 - 開始日: 2026-05-09
@@ -892,9 +929,11 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 - **notes 側運用資産: Step 9 完了 ✅**（2026-05-23、README / E2E spec / 本手順書の同期完了）
 - **テスト安定化: 最終版手順 確定済み ✅**（2026-05-23、再実行で BUILD SUCCESS を確認）
 - **最新レポート更新済み ✅**（2026-05-24、`PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh` 成功、ログ/レポートを更新）
-- 次アクション: PR #1035 のマージ待ち後、最新 master を取り込んで設定画面コードの conflict を解消し、M1 PR を作成
-- ブロッカー: PR #1035（設定画面コードの競合可能性）
-- 最新ビルド: `dev/reports/20260524100611-mvn-test.log`（BUILD SUCCESS）
+- **master rebase 対応（m1a ブランチ）完了 ✅**（2026-06-10、`feature/1025-remote-lockable-resources-p1-m1a`、HEAD `e8b8431`、全 326 件 BUILD SUCCESS）
+- **ローカルビルド/起動の安定化完了 ✅**（2026-06-10〜11、stabilize-build.sh と start.sh を隔離 worktree ビルド化、起動/停止/再起動を検証）
+- 次アクション: m1a を push（未実施）。M1 PR 作成 もしくは M1A 実装着手の判断
+- ブロッカー: 解消済み（PR #1035 はマージ済み、conflict 解消済み）
+- 最新ビルド: `dev/reports/20260610231428-mvn-test.log`（BUILD SUCCESS / 326 件）
 - 最新E2E: `dev/reports/20260524105443-e2e-test.md`（pass=10 fail=0 skip=0）
 
 ### ブランチ整理メモ
@@ -904,3 +943,5 @@ $HOME/.local/apache-maven-3.9.9/bin/mvn test
 - notes 側の M1 同期コミットは `1ac2932`、`.gitignore` 整理は `037e395`
 - 2026-05-24: notes 側ステータス同期コミット `56563d9`（手順書文言同期 + 最新テストレポート差し替え）
 - issue #1025 に「#1035 マージ待ち → master 基準で conflict 解消後に PR」をコメント済み
+- 2026-06-10: 現行 master（#1035 含む `863ea4d`）へ追従した `feature/1025-remote-lockable-resources-p1-m1a` を整備（M1 と同一機能、rebase 済み 14 コミット + テスト追従 `e8b8431`）。m1a が M1A 実装の起点ブランチ。
+- 関連ブランチ: `origin/feature/1025-remote-lockable-resources-p1-m1-rebased`（m1a の起点、2026-06-09 作成）/ `feature/1025-remote-lockable-resources-p1-m1`（旧 master ベースの M1）は履歴として残置
