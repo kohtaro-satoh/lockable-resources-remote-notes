@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # ローカル開発用: lockable-resources-plugin を 4 コンテナで起動する
-# 使い方: ./start.sh [--clean]
-#   --clean : Jenkins home ボリュームを削除してから起動（初期化）
+# 使い方: ./start.sh [--clean] [--in-place-build]
+#   --clean          : Jenkins home ボリュームを削除してから起動（初期化）
+#   --in-place-build : PLUGIN_DIR 直下で hpi をビルドする（既定は隔離 worktree）
+#
+# 既定では PLUGIN_DIR のコミット済み HEAD を隔離 worktree（/tmp 配下）でビルドする。
+# VS Code の Java 拡張 (jdt.ls) がリポジトリ直下の target/ に ECJ コンパイル結果を
+# 書き込むため、リポジトリ直下で mvn package すると Extension index 欠落の壊れた
+# hpi が生成され、Jenkins が「起動待ち」のままハングする（2026-06-11 に実害確認）。
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,8 +24,10 @@ else
 fi
 
 CLEAN=false
+IN_PLACE_BUILD=false
 for arg in "$@"; do
   [[ "$arg" == "--clean" ]] && CLEAN=true
+  [[ "$arg" == "--in-place-build" ]] && IN_PLACE_BUILD=true
 done
 
 JENKINS_HOME_DIRS=(jha jhb jhc jhd)
@@ -38,20 +46,66 @@ echo "[INFO] Plugin dir: $PLUGIN_DIR"
 echo "[INFO] Maven     : $MVN"
 
 # ---------------------------------------------------------------------------
-# 2. プラグインをビルド
+# 2. プラグインをビルド（既定: 隔離 worktree / --in-place-build で従来動作）
 # ---------------------------------------------------------------------------
+BUILD_DIR="$PLUGIN_DIR"
+WORKTREE_DIR=""
+
+cleanup_worktree() {
+  [[ -z "$WORKTREE_DIR" ]] && return 0
+  git -C "$PLUGIN_DIR" worktree remove --force "$WORKTREE_DIR" >/dev/null 2>&1 || true
+  rm -rf "$(dirname "$WORKTREE_DIR")"
+}
+
+if ! $IN_PLACE_BUILD; then
+  HEAD_DESC="$(git -C "$PLUGIN_DIR" log -1 --format='%h %s')"
+  if [[ -n "$(git -C "$PLUGIN_DIR" status --porcelain)" ]]; then
+    echo "[WARN] Plugin repo has uncommitted changes. Worktree build uses committed HEAD only."
+    echo "       Use --in-place-build to build the working tree as-is (stop the VS Code Java extension first)."
+  fi
+  WORKTREE_DIR="$(mktemp -d -t lrr-env-build-XXXXXX)/plugin"
+  git -C "$PLUGIN_DIR" worktree add --detach "$WORKTREE_DIR" HEAD >/dev/null
+  trap cleanup_worktree EXIT
+  BUILD_DIR="$WORKTREE_DIR"
+  echo "[INFO] Build mode: isolated worktree (HEAD: ${HEAD_DESC})"
+else
+  echo "[INFO] Build mode: in-place ($PLUGIN_DIR)"
+  echo "[WARN] Make sure the VS Code Java extension (jdt.ls) is not running on this repo."
+fi
+
 echo ""
 echo "[INFO] Building lockable-resources plugin (mvn package -DskipTests) ..."
-(cd "$PLUGIN_DIR" && "$MVN" package -DskipTests -q)
+(cd "$BUILD_DIR" && "$MVN" package -DskipTests -q)
 
 # ---------------------------------------------------------------------------
 # 3. ビルド成果物を Docker ビルドコンテキストへコピー
 # ---------------------------------------------------------------------------
-HPI_SRC="$(ls "$PLUGIN_DIR/target/lockable-resources"*.hpi 2>/dev/null | head -1 || true)"
+HPI_SRC="$(ls "$BUILD_DIR/target/lockable-resources"*.hpi 2>/dev/null | head -1 || true)"
 if [[ -z "$HPI_SRC" ]]; then
-  echo "[ERROR] HPI not found in $PLUGIN_DIR/target/. Build may have failed."
+  echo "[ERROR] HPI not found in $BUILD_DIR/target/. Build may have failed."
   exit 1
 fi
+
+# hpi 健全性チェック: 内部 jar に Extension index (META-INF/annotations/hudson.Extension)
+# が無い hpi は @Extension が一切登録されず、Jenkins が起動待ちのままハングする。
+if command -v python3 >/dev/null 2>&1; then
+  if ! python3 - "$HPI_SRC" <<'PYEOF'
+import io, sys, zipfile
+hpi = zipfile.ZipFile(sys.argv[1])
+inner = zipfile.ZipFile(io.BytesIO(hpi.read("WEB-INF/lib/lockable-resources.jar")))
+sys.exit(0 if any(n.endswith("META-INF/annotations/hudson.Extension.txt") for n in inner.namelist()) else 1)
+PYEOF
+  then
+    echo "[ERROR] Built hpi is missing the Extension annotation index (broken build)."
+    echo "        Cause is usually an IDE (VS Code jdt.ls) writing into the plugin's target/."
+    echo "        Re-run without --in-place-build, or stop the IDE and rebuild."
+    exit 1
+  fi
+  echo "[INFO] HPI sanity check passed (Extension index present)"
+else
+  echo "[WARN] python3 not found; skipping hpi Extension index check"
+fi
+
 cp "$HPI_SRC" "$SCRIPT_DIR/docker/lockable-resources.hpi"
 echo "[INFO] Copied: $HPI_SRC -> docker/lockable-resources.hpi"
 
