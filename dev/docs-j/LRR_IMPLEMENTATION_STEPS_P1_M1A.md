@@ -282,13 +282,13 @@ M1（最小 peer mode）を「`lock(...)` の透過 remote ラッパー」とし
 - `variable` 未指定時に `lockEnvVars=null` でも body が正常に実行できること
 - `mvn test` 全件 BUILD SUCCESS
 
-- [ ] 実装完了
-- [ ] `mvn test` 確認完了
-- [ ] コミット済み
+- [x] 実装完了
+- [x] `mvn test` 確認完了
+- [x] コミット済み
 
 記録:
-- 日付:
-- コミット:
+- 日付: 2026-06-11
+- コミット: b5bac87
 - 変更ファイル:
   - src/main/java/.../remote/RemoteLockRecord.java (編集)
   - src/main/java/.../remote/RemoteLockManager.java (編集)
@@ -296,10 +296,9 @@ M1（最小 peer mode）を「`lock(...)` の透過 remote ラッパー」とし
   - src/main/java/.../remote/RemoteAcquireStatus.java (編集)
   - src/main/java/.../remote/RemoteApiClient.java (編集)
   - src/main/java/.../LockStepExecution.java (編集)
-  - src/test/java/.../remote/RemoteApiClientTest.java (編集)
-  - src/test/java/.../actions/RemoteApiV1ActionTest.java (編集)
+  - src/test/java/.../remote/RemoteAcquireStatusTest.java (編集)
   - src/test/java/.../LockStepRemoteTest.java (編集)
-- 確認結果:
+- 確認結果: Tests run: 336, Failures: 0, Errors: 0, Skipped: 1 — BUILD SUCCESS (LockStepRemoteTest: 9/9 pass)
 
 ---
 

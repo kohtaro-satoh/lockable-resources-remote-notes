@@ -283,13 +283,13 @@ Completion criteria:
 - When `variable` is not set, `lockEnvVars=null` still allows body execution
 - `mvn test` full run: BUILD SUCCESS
 
-- [ ] Implementation complete
-- [ ] `mvn test` verification complete
-- [ ] Committed
+- [x] Implementation complete
+- [x] `mvn test` verification complete
+- [x] Committed
 
 Notes:
-- Date:
-- Commit:
+- Date: 2026-06-11
+- Commit: `50857c1`
 - Changed files:
   - src/main/java/.../remote/RemoteLockRecord.java (edited)
   - src/main/java/.../remote/RemoteLockManager.java (edited)
@@ -297,10 +297,9 @@ Notes:
   - src/main/java/.../remote/RemoteAcquireStatus.java (edited)
   - src/main/java/.../remote/RemoteApiClient.java (edited)
   - src/main/java/.../LockStepExecution.java (edited)
-  - src/test/java/.../remote/RemoteApiClientTest.java (edited)
-  - src/test/java/.../actions/RemoteApiV1ActionTest.java (edited)
+  - src/test/java/.../remote/RemoteAcquireStatusTest.java (edited)
   - src/test/java/.../LockStepRemoteTest.java (edited)
-- Verification:
+- Verification: Tests run: 336, Failures: 0, Errors: 0, Skipped: 1 — BUILD SUCCESS (LockStepRemoteTest: 9/9 pass)
 
 ---
 
