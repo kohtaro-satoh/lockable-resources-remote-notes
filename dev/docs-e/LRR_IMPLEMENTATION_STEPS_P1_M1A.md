@@ -369,13 +369,13 @@ Completion criteria:
 - `forcedServerId` can be saved and reloaded through the settings UI
 - `mvn test` full run: BUILD SUCCESS
 
-- [ ] Implementation complete
-- [ ] `mvn test` verification complete
-- [ ] Committed
+- [x] Implementation complete
+- [x] `mvn test` verification complete
+- [x] Committed
 
 Notes:
-- Date:
-- Commit:
+- Date: 2026-06-11
+- Commit: `48f0dca`
 - Changed files:
   - src/main/java/.../LockableResourcesManager.java (edited)
   - src/main/java/.../LockStepExecution.java (edited)
@@ -384,7 +384,7 @@ Notes:
   - src/main/resources/.../LockableResourcesManager/help-forcedServerId.html (new)
   - src/test/java/.../LockStepRemoteTest.java (edited)
   - src/test/java/.../LockableResourcesManagerRemoteConnectionTest.java (edited)
-- Verification:
+- Verification: LockStepRemoteTest 11/11 pass, LockableResourcesManagerRemoteConnectionTest 12/12 pass — BUILD SUCCESS
 
 ---
 

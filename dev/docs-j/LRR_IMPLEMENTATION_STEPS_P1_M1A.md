@@ -367,13 +367,13 @@ forcedServerId が未設定かつ step.serverId が指定されている場合:
 - UI で `forcedServerId` を設定・保存・再読み込みできること
 - `mvn test` 全件 BUILD SUCCESS
 
-- [ ] 実装完了
-- [ ] `mvn test` 確認完了
-- [ ] コミット済み
+- [x] 実装完了
+- [x] `mvn test` 確認完了
+- [x] コミット済み
 
 記録:
-- 日付:
-- コミット:
+- 日付: 2026-06-11
+- コミット: aff099f
 - 変更ファイル:
   - src/main/java/.../LockableResourcesManager.java (編集)
   - src/main/java/.../LockStepExecution.java (編集)
@@ -382,7 +382,7 @@ forcedServerId が未設定かつ step.serverId が指定されている場合:
   - src/main/resources/.../LockableResourcesManager/help-forcedServerId.html (新規)
   - src/test/java/.../LockStepRemoteTest.java (編集)
   - src/test/java/.../LockableResourcesManagerRemoteConnectionTest.java (編集)
-- 確認結果:
+- 確認結果: LockStepRemoteTest 11/11 pass, LockableResourcesManagerRemoteConnectionTest 12/12 pass — BUILD SUCCESS
 
 ---
 
