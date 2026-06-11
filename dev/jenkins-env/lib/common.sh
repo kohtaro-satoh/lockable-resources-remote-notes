@@ -763,7 +763,7 @@ if (lrm.fromName(\"$resource_name\") == null) {
 } else {
   def r = lrm.fromName(\"$resource_name\")
   def existingLabels = r.getLabels() ?: \"\"
-  def newLabels = (existingLabels.split(/\s+/) + [\"$expose_label\", \"$label_name\"]).unique().join(\" \").trim()
+  def newLabels = (existingLabels.tokenize() + [\"$expose_label\", \"$label_name\"]).unique().join(\" \").trim()
   r.setLabels(newLabels)
 }
 lrm.save()
