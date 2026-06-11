@@ -201,18 +201,18 @@ M1（最小 peer mode）を「`lock(...)` の透過 remote ラッパー」とし
 - resource + extra の同時取得ができること
 - `mvn test` 全件 BUILD SUCCESS
 
-- [ ] 実装完了
-- [ ] `mvn test` 確認完了
-- [ ] コミット済み
+- [x] 実装完了
+- [x] `mvn test` 確認完了
+- [x] コミット済み
 
 記録:
-- 日付:
-- コミット:
+- 日付: 2026-06-11
+- コミット: `9a08b8f`
 - 変更ファイル:
-  - src/main/java/.../remote/RemoteLockRecord.java (編集)
-  - src/main/java/.../remote/RemoteLockManager.java (編集)
-  - src/test/java/.../remote/RemoteLockManagerTest.java (編集)
-- 確認結果:
+  - src/main/java/.../remote/RemoteLockRecord.java (編集: RemoteLockRequest 保持 + acquiredResourceNames)
+  - src/main/java/.../remote/RemoteLockManager.java (編集: label/quantity/extra 対応取得ロジック)
+  - src/test/java/.../remote/RemoteLockManagerTest.java (編集: 10 テスト追加)
+- 確認結果: Tests run: 336, Failures: 0, Errors: 0, Skipped: 1 — BUILD SUCCESS
 
 ---
 

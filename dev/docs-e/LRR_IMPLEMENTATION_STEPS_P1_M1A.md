@@ -199,18 +199,18 @@ Completion criteria:
 - resource + extra simultaneous acquisition works; if any extra resource is busy, stays `QUEUED`
 - `mvn test` full run: BUILD SUCCESS
 
-- [ ] Implementation complete
-- [ ] `mvn test` verification complete
-- [ ] Committed
+- [x] Implementation complete
+- [x] `mvn test` verification complete
+- [x] Committed
 
 Notes:
-- Date:
-- Commit:
+- Date: 2026-06-11
+- Commit: `e18f982`
 - Changed files:
-  - src/main/java/.../remote/RemoteLockRecord.java (edited)
-  - src/main/java/.../remote/RemoteLockManager.java (edited)
-  - src/test/java/.../remote/RemoteLockManagerTest.java (edited)
-- Verification:
+  - src/main/java/.../remote/RemoteLockRecord.java (edited: holds RemoteLockRequest + acquiredResourceNames)
+  - src/main/java/.../remote/RemoteLockManager.java (edited: label/quantity/extra acquisition logic)
+  - src/test/java/.../remote/RemoteLockManagerTest.java (edited: 10 new tests)
+- Verification: Tests run: 336, Failures: 0, Errors: 0, Skipped: 1 — BUILD SUCCESS
 
 ---
 
