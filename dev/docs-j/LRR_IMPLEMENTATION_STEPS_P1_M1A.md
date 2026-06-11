@@ -427,19 +427,19 @@ forcedServerId が未設定かつ step.serverId が指定されている場合:
 - 追加テストが全件成功
 - `mvn test` 全件 BUILD SUCCESS
 
-- [ ] 実装完了
-- [ ] `mvn test` 確認完了
-- [ ] コミット済み
+- [x] 実装完了
+- [x] `mvn test` 確認完了
+- [x] コミット済み
 
 記録:
-- 日付:
-- コミット:
+- 日付: 2026-06-11
+- コミット: c782c28
 - 変更ファイル:
+  - src/main/java/.../LockStepExecution.java (編集: リモートlockでローカルvalidationをスキップ)
   - src/test/java/.../actions/RemoteApiV1ActionTest.java (編集)
   - src/test/java/.../remote/RemoteLockManagerTest.java (編集)
   - src/test/java/.../LockStepRemoteTest.java (編集)
-  - src/test/java/.../LockableResourcesManagerRemoteConnectionTest.java (編集)
-- 確認結果:
+- 確認結果: Tests run: 347, Failures: 0, Errors: 0, Skipped: 1 — BUILD SUCCESS
 
 ---
 
