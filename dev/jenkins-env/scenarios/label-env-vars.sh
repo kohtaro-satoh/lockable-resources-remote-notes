@@ -37,7 +37,7 @@ pipeline {
   stages {
     stage("S08-LabelEnvVars") {
       steps {
-        lock(label: 'hw', quantity: 1, variable: 'HW_LOCK', serverId: 'b') {
+        lock(label: 'hw', resource: null, quantity: 1, variable: 'HW_LOCK', serverId: 'b') {
           echo "HW_LOCK=\${env.HW_LOCK}"
           echo "HW_LOCK0=\${env.HW_LOCK0}"
         }
