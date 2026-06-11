@@ -470,29 +470,38 @@ forcedServerId が未設定かつ step.serverId が指定されている場合:
 実装内容:
 - `dev/jenkins-env/scenarios/label-env-vars.sh` (新規)
 - `dev/jenkins-env/scenarios/delegated-mode.sh` (新規)
-- `dev/jenkins-env/run-e2e.sh` (編集: 新シナリオ S08, S09 を登録)
-- `dev/jenkins-env/lib/common.sh` (編集: forcedServerId 設定ヘルパー関数を追加)
-- `dev/docs-j/E2E_TEST_SPECIFICATION.md` (編集: S08, S09 シナリオ定義を追記)
+- `dev/jenkins-env/run-e2e.sh` (編集: M1A_SCENARIOS・S08/S09 ID・m1a-series オプション追加)
+- `dev/jenkins-env/lib/common.sh` (編集: configure_forced_server_id / configure_forced_server_id_empty / configure_label_resource ヘルパー追加)
+- `dev/docs-j/E2E_TEST_SPECIFICATION.md` → `dev/docs-j/E2E_TEST_SPECIFICATION_P1_M1.md` (rename)
+- `dev/docs-j/E2E_TEST_SPECIFICATION_P1_M1A.md` (新規: M1A シナリオ仕様 S08, S09)
+- 英語版対応: `dev/docs-e/` 側も同様に rename + 新規作成
 
 完了条件:
 - `./run-e2e.sh --only label-env-vars` が PASS（lockEnvVars 展開確認）
 - `./run-e2e.sh --only delegated-mode` が PASS（forcedServerId ルーティング確認）
 - `./run-e2e.sh --only all` が全 PASS（既存 10 + 新規 2 = 12 シナリオ）
 
-- [ ] 実装完了
-- [ ] E2E 確認完了
-- [ ] コミット済み
+- [x] 実装完了
+- [x] E2E 確認完了
+- [x] コミット済み
 
 記録:
-- 日付:
-- コミット:
+- 日付: 2026-06-11
+- コミット (notes リポジトリ):
+  - `25f1bee`: docs: E2E_TEST_SPECIFICATION を P1_M1 に rename、M1A 仕様書新規作成
+  - `550fa71`: e2e: S08 label-env-vars・S09 delegated-mode シナリオ追加、run-e2e.sh・common.sh 更新
+  - `7193457`: fix(e2e): configure_label_resource の Groovy `split()` → `tokenize()` 修正
+    （`String[].unique()` が Groovy で MissingMethodException になる不具合）
 - 変更ファイル:
+  - dev/docs-j/E2E_TEST_SPECIFICATION_P1_M1.md (rename)
+  - dev/docs-j/E2E_TEST_SPECIFICATION_P1_M1A.md (新規)
+  - dev/docs-e/E2E_TEST_SPECIFICATION_P1_M1.md (rename)
+  - dev/docs-e/E2E_TEST_SPECIFICATION_P1_M1A.md (新規)
   - dev/jenkins-env/scenarios/label-env-vars.sh (新規)
   - dev/jenkins-env/scenarios/delegated-mode.sh (新規)
   - dev/jenkins-env/run-e2e.sh (編集)
   - dev/jenkins-env/lib/common.sh (編集)
-  - dev/docs-j/E2E_TEST_SPECIFICATION.md (編集)
-- 確認結果:
+- 確認結果: `./run-e2e.sh` PASS — S01〜S09 + D01〜D03 全 12 シナリオ成功
 
 ---
 
@@ -521,6 +530,8 @@ forcedServerId が未設定かつ step.serverId が指定されている場合:
 
 - プラン作成日: 2026-06-11
 - 起点ブランチ HEAD: `e8b8431`（M1A 実装の起点、全 326 件テスト成功確認済み）
-- **Step 0: 完了 ✅**
-- Step 1〜6: 未着手
-- 次アクション: Step 1 実装着手（`RemoteLockRequest` DTO + lockRequest wire 形式変更）
+- **Step 0〜6: 全完了 ✅**
+- plugin 側最終コミット: `c782c28`（Step 5、347 件テスト成功）
+- notes 側最終コミット: `7193457`（E2E fix）
+- E2E: `./run-e2e.sh` PASS（S01〜S09 + D01〜D03、12 シナリオ全成功）
+- 次アクション: PR 作成 / push（ユーザーの指示待ち）
