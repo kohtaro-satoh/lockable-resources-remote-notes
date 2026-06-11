@@ -714,3 +714,59 @@ scenario_not_implemented() {
   log "[SKIP] Scenario '$name' is not implemented yet (initial scaffold)."
   return 10
 }
+
+# ---------------------------------------------------------------------------
+# M1A helpers
+# ---------------------------------------------------------------------------
+
+configure_forced_server_id() {
+  local base_url="$1"
+  local forced_server_id="$2"
+
+  run_groovy_script_checked "$base_url" "
+import org.jenkins.plugins.lockableresources.LockableResourcesManager
+
+def lrm = LockableResourcesManager.get()
+lrm.setForcedServerId(\"$forced_server_id\")
+lrm.save()
+println(\"OK: forcedServerId set to '$forced_server_id' on $base_url\")
+" "OK: forcedServerId set to" >/dev/null
+}
+
+configure_forced_server_id_empty() {
+  local base_url="$1"
+
+  run_groovy_script_checked "$base_url" "
+import org.jenkins.plugins.lockableresources.LockableResourcesManager
+
+def lrm = LockableResourcesManager.get()
+lrm.setForcedServerId(\"\")
+lrm.save()
+println(\"OK: forcedServerId cleared on $base_url\")
+" "OK: forcedServerId cleared" >/dev/null
+}
+
+configure_label_resource() {
+  local base_url="$1"
+  local resource_name="$2"
+  local label_name="$3"
+  local expose_label="${4:-remote-enabled}"
+
+  run_groovy_script_checked "$base_url" "
+import org.jenkins.plugins.lockableresources.LockableResourcesManager
+
+def lrm = LockableResourcesManager.get()
+lrm.setRemoteApiEnabled(true)
+lrm.setExposeLabel(\"$expose_label\")
+if (lrm.fromName(\"$resource_name\") == null) {
+  lrm.createResourceWithLabel(\"$resource_name\", \"$expose_label $label_name\".trim())
+} else {
+  def r = lrm.fromName(\"$resource_name\")
+  def existingLabels = r.getLabels() ?: \"\"
+  def newLabels = (existingLabels.split(/\s+/) + [\"$expose_label\", \"$label_name\"]).unique().join(\" \").trim()
+  r.setLabels(newLabels)
+}
+lrm.save()
+println(\"OK: label resource $resource_name ($label_name) on $base_url\")
+" "OK: label resource $resource_name" >/dev/null
+}

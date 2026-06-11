@@ -24,6 +24,10 @@ S_SCENARIOS=(
   "three-way-mesh"
   "fail-closed"
 )
+M1A_SCENARIOS=(
+  "label-env-vars"
+  "delegated-mode"
+)
 D_SCENARIOS=(
   "fan-in-4"
   "chain-4"
@@ -37,6 +41,8 @@ ALL_SCENARIOS=(
   "skip-if-locked"
   "three-way-mesh"
   "fail-closed"
+  "label-env-vars"
+  "delegated-mode"
   "fan-in-4"
   "chain-4"
   "diamond"
@@ -50,6 +56,8 @@ declare -A SCENARIO_IDS=(
   ["skip-if-locked"]="S05"
   ["three-way-mesh"]="S06"
   ["fail-closed"]="S07"
+  ["label-env-vars"]="S08"
+  ["delegated-mode"]="S09"
   ["fan-in-4"]="D01"
   ["chain-4"]="D02"
   ["diamond"]="D03"
@@ -69,8 +77,9 @@ Options:
   --only <name>         Run specific scenario or group.
                         mutual-peer | fan-in-contention | server-self-use |
                         mixed-local-remote | skip-if-locked | three-way-mesh |
-                        fail-closed | fan-in-4 | chain-4 | diamond |
-                        s-series | d-series | all
+                        fail-closed | label-env-vars | delegated-mode |
+                        fan-in-4 | chain-4 | diamond |
+                        s-series | m1a-series | d-series | all
   -h, --help            Show this help.
 USAGE
 }
@@ -112,7 +121,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 is_valid_only=false
-for allowed in all s-series d-series "${ALL_SCENARIOS[@]}"; do
+for allowed in all s-series m1a-series d-series "${ALL_SCENARIOS[@]}"; do
   if [[ "$ONLY" == "$allowed" ]]; then
     is_valid_only=true
     break
@@ -215,6 +224,9 @@ select_scenarios() {
       ;;
     s-series)
       printf '%s\n' "${S_SCENARIOS[@]}"
+      ;;
+    m1a-series)
+      printf '%s\n' "${M1A_SCENARIOS[@]}"
       ;;
     d-series)
       printf '%s\n' "${D_SCENARIOS[@]}"
