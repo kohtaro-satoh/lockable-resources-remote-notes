@@ -28,6 +28,12 @@ M1A_SCENARIOS=(
   "label-env-vars"
   "delegated-mode"
 )
+M1B_SCENARIOS=(
+  "extra-resources"
+  "heartbeat-resilience"
+  "priority-ordering"
+  "stale-admin-release"
+)
 D_SCENARIOS=(
   "fan-in-4"
   "chain-4"
@@ -43,6 +49,10 @@ ALL_SCENARIOS=(
   "fail-closed"
   "label-env-vars"
   "delegated-mode"
+  "extra-resources"
+  "heartbeat-resilience"
+  "priority-ordering"
+  "stale-admin-release"
   "fan-in-4"
   "chain-4"
   "diamond"
@@ -58,6 +68,10 @@ declare -A SCENARIO_IDS=(
   ["fail-closed"]="S07"
   ["label-env-vars"]="S08"
   ["delegated-mode"]="S09"
+  ["extra-resources"]="S10"
+  ["heartbeat-resilience"]="S11"
+  ["priority-ordering"]="S12"
+  ["stale-admin-release"]="S13"
   ["fan-in-4"]="D01"
   ["chain-4"]="D02"
   ["diamond"]="D03"
@@ -78,8 +92,10 @@ Options:
                         mutual-peer | fan-in-contention | server-self-use |
                         mixed-local-remote | skip-if-locked | three-way-mesh |
                         fail-closed | label-env-vars | delegated-mode |
+                        extra-resources | heartbeat-resilience |
+                        priority-ordering | stale-admin-release |
                         fan-in-4 | chain-4 | diamond |
-                        s-series | m1a-series | d-series | all
+                        s-series | m1a-series | m1b-series | d-series | all
   -h, --help            Show this help.
 USAGE
 }
@@ -121,7 +137,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 is_valid_only=false
-for allowed in all s-series m1a-series d-series "${ALL_SCENARIOS[@]}"; do
+for allowed in all s-series m1a-series m1b-series d-series "${ALL_SCENARIOS[@]}"; do
   if [[ "$ONLY" == "$allowed" ]]; then
     is_valid_only=true
     break
@@ -227,6 +243,9 @@ select_scenarios() {
       ;;
     m1a-series)
       printf '%s\n' "${M1A_SCENARIOS[@]}"
+      ;;
+    m1b-series)
+      printf '%s\n' "${M1B_SCENARIOS[@]}"
       ;;
     d-series)
       printf '%s\n' "${D_SCENARIOS[@]}"
