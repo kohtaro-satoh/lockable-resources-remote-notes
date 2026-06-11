@@ -122,21 +122,25 @@ M1（最小 peer mode）を「`lock(...)` の透過 remote ラッパー」とし
 - `LockStepExecution` が全 `LockStep` フィールドを `RemoteLockRequest` 経由で渡せること
 - `mvn test` 全件 BUILD SUCCESS（既存 326 件 + 新規テスト）
 
-- [ ] 実装完了
-- [ ] `mvn test` 確認完了
-- [ ] コミット済み
+- [x] 実装完了
+- [x] `mvn test` 確認完了
+- [x] コミット済み
 
 記録:
-- 日付:
-- コミット:
+- 日付: 2026-06-11
+- コミット: `19a0703`
 - 変更ファイル:
   - src/main/java/.../remote/RemoteLockRequest.java (新規)
-  - src/main/java/.../remote/RemoteApiClient.java (編集)
-  - src/main/java/.../LockStepExecution.java (編集)
-  - src/main/java/.../actions/RemoteApiV1Action.java (編集)
-  - src/test/java/.../remote/RemoteApiClientTest.java (編集)
-  - src/test/java/.../actions/RemoteApiV1ActionTest.java (編集)
-- 確認結果:
+  - src/main/java/.../remote/RemoteLockRecord.java (編集: `@NonNull` → `@CheckForNull` on resourceName)
+  - src/main/java/.../remote/RemoteApiClient.java (編集: enqueueAcquire シグネチャ変更 + buildLockRequestJson 追加)
+  - src/main/java/.../remote/RemoteLockManager.java (編集: enqueue シグネチャ変更 + label-only FAILED対応)
+  - src/main/java/.../LockStepExecution.java (編集: resolveRemoteDisplayTarget + RemoteLockRequest.from 使用)
+  - src/main/java/.../actions/RemoteApiV1Action.java (編集: lockRequest ネストパース)
+  - src/test/java/.../remote/RemoteApiClientTest.java (編集: enqueueAcquire 呼び出し更新)
+  - src/test/java/.../actions/RemoteApiV1ActionTest.java (編集: lockRequest ネスト形式テスト)
+  - src/test/java/.../remote/RemoteLockManagerTest.java (編集: enqueue 呼び出し更新)
+  - src/test/java/.../actions/LockableResourcesRootActionTest.java (編集: enqueue 呼び出し更新)
+- 確認結果: Tests run: 326, Failures: 0, Errors: 0, Skipped: 1 — BUILD SUCCESS (19:57)
 
 ---
 

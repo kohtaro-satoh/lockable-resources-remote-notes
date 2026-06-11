@@ -122,21 +122,25 @@ Completion criteria:
 - `LockStepExecution` passes all `LockStep` fields via `RemoteLockRequest`
 - `mvn test` full run: BUILD SUCCESS (existing 326 + new tests)
 
-- [ ] Implementation complete
-- [ ] `mvn test` verification complete
-- [ ] Committed
+- [x] Implementation complete
+- [x] `mvn test` verification complete
+- [x] Committed
 
 Notes:
-- Date:
-- Commit:
+- Date: 2026-06-11
+- Commit: `b383685`
 - Changed files:
   - src/main/java/.../remote/RemoteLockRequest.java (new)
-  - src/main/java/.../remote/RemoteApiClient.java (edited)
-  - src/main/java/.../LockStepExecution.java (edited)
-  - src/main/java/.../actions/RemoteApiV1Action.java (edited)
-  - src/test/java/.../remote/RemoteApiClientTest.java (edited)
-  - src/test/java/.../actions/RemoteApiV1ActionTest.java (edited)
-- Verification:
+  - src/main/java/.../remote/RemoteLockRecord.java (edited: `@NonNull` → `@CheckForNull` on resourceName)
+  - src/main/java/.../remote/RemoteApiClient.java (edited: enqueueAcquire signature + buildLockRequestJson)
+  - src/main/java/.../remote/RemoteLockManager.java (edited: enqueue signature + label-only FAILED handling)
+  - src/main/java/.../LockStepExecution.java (edited: resolveRemoteDisplayTarget + RemoteLockRequest.from)
+  - src/main/java/.../actions/RemoteApiV1Action.java (edited: lockRequest nested parse)
+  - src/test/java/.../remote/RemoteApiClientTest.java (edited: enqueueAcquire call sites updated)
+  - src/test/java/.../actions/RemoteApiV1ActionTest.java (edited: lockRequest nested format tests)
+  - src/test/java/.../remote/RemoteLockManagerTest.java (edited: enqueue call site updated)
+  - src/test/java/.../actions/LockableResourcesRootActionTest.java (edited: enqueue call sites updated)
+- Verification: Tests run: 326, Failures: 0, Errors: 0, Skipped: 1 — BUILD SUCCESS (19:57)
 
 ---
 
