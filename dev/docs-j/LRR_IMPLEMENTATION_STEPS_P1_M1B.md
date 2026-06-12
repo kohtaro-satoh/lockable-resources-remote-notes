@@ -648,4 +648,4 @@ M1B 追加作業として回収する。
 - plugin HEAD: `7551d67`（mvn test **360 件 / 0 失敗**）
 - E2E: 全 16 シナリオ 16/16 PASS（`dev/reports/20260612110631-e2e-test.md`）
 - 設計の現行真実: `LRR_DESIGN_P1_M1B.md`、E2E 仕様: `E2E_TEST_SPECIFICATION_P1_M1B.md`
-- レビュー指摘の残: 4-6 の部分解消（timeout なしの充足不可能要求）のみ
+- レビュー指摘: **全クローズ**（4-6 は透過等価により設計どおりとしてクローズ、設計書 §5 に明記）

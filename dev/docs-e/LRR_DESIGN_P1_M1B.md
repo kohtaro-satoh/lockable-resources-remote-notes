@@ -191,6 +191,32 @@ A remote-side mirror of `QueuedContextStruct` (local waiters):
 `remoteQueueEntries` is transient (lost on Jenkins restart). This matches the
 lifecycle of remote locks themselves (`remoteLockedBy`) and stays consistent (§7).
 
+### Unsatisfiable requests (design decision — closed, review finding 4-6)
+
+A request that **can never be satisfied** — e.g. `label` + `quantity` exceeding
+the total number of resources — stays QUEUED indefinitely when
+`timeoutForAllocateResource` is not set (as long as the client keeps polling).
+
+This is **intended behavior**, not an open issue (decided 2026-06-12):
+
+- Local `lock()` behaves identically. `getAvailableResources()` only checks
+  "is it free right now"; no satisfiability check against the total exists.
+  Locally, too, an over-total request waits until the job is aborted.
+- Under the transparent-equivalence premise (§1), having only the remote side
+  "helpfully" fail such requests would **break equivalence**. Resources can be
+  added later, so "unsatisfiable against the current total" does not mean
+  "unsatisfiable forever" — also exactly as local.
+- The remedy for not wanting to wait is also identical to local: set
+  `timeoutForAllocateResource` (works remotely as of M1B; `LOCK_WAIT_TIMEOUT`
+  → FAILED on expiry).
+- The dead-client case is recovered by poll-liveness expiry (`QUEUE_EXPIRED`, §6).
+
+> **Do not reopen**: the idea of "the server should detect unsatisfiable
+> requests and fail them immediately" is rejected under the transparent-
+> equivalence principle because it creates a divergence from local. Anyone
+> wanting that behavior should propose it upstream as a change to local
+> lock() itself.
+
 ---
 
 ## 6. Client Resilience (heartbeat / poll)
@@ -398,3 +424,6 @@ client ceasing to poll is `FAILED` + `errorCode: "QUEUE_EXPIRED"` (§6).
 - 2026-06-12: M1B follow-up reflected. Moved QUEUED poll-liveness expiry
   (QUEUE_EXPIRED, §6), the dedicated RemoteUse permission (§8), and
   forcedServerId validation (drift #4 recovered) into the included scope.
+- 2026-06-12: Documented the handling of unsatisfiable requests (review 4-6)
+  in §5 as by-design under transparent equivalence and closed it, with a
+  do-not-reopen note.

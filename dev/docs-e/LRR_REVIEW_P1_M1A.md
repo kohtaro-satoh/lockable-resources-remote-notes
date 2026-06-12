@@ -24,7 +24,7 @@ status of each finding:
 | 4-3 local waiters not woken | ✅ Resolved (automatic with the unified queue) |
 | 4-4 no TTL on QUEUED | ✅ Resolved (M1B follow-up F-2: GET polls as the liveness signal; QUEUE_EXPIRED after 60s of silence) |
 | 4-5 release/tick race | ✅ Structurally eliminated (tick promotion removed; queue operations unified under syncResources) |
-| 4-6 unsatisfiable requests stay QUEUED forever | △ Partially resolved (with a timeout set, FAILED via LOCK_WAIT_TIMEOUT; without one, unchanged) |
+| 4-6 unsatisfiable requests stay QUEUED forever | ✅ Closed as by-design under transparent equivalence (local lock() behaves identically; FAILED with a timeout set; dead clients recovered via QUEUE_EXPIRED. Stated in `LRR_DESIGN_P1_M1B.md` §5; decided 2026-06-12) |
 | 5-1 permission model | ✅ Resolved (M1B follow-up F-3: dedicated RemoteUse permission gates the remote API, implied by ADMINISTER) |
 | 5-2 anonymous requests | ✅ Re-decided as intended behavior (empty credentialsId = legitimate use case for no-auth servers; M1B decision 1-c) |
 | Drift #3 exposeLabel Javadoc | ✅ Resolved |

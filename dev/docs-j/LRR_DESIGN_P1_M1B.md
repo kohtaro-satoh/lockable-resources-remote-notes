@@ -186,6 +186,30 @@ proceedNextContext():
 `remoteQueueEntries` は transient（Jenkins 再起動で消える）。
 remote lock 自体（`remoteLockedBy`）と同じライフサイクルであり、整合する（§7）。
 
+### 充足不可能な要求の扱い（設計判断・クローズ済み、レビュー 4-6）
+
+`label` + `quantity` が総リソース数を超えるなど**永遠に充足できない要求**は、
+`timeoutForAllocateResource` 未指定であれば QUEUED に留まり続ける
+（client が poll を続ける限り）。
+
+これは**意図された挙動**であり、未解決の問題ではない（2026-06-12 決定）:
+
+- local `lock()` も同一挙動である。`getAvailableResources()` は「現在空いて
+  いるか」だけを見ており、総数に対する充足可能性チェックは存在しない。
+  local でも総数超過の要求はジョブ abort まで待ち続ける。
+- 透過等価の大前提（§1）に照らすと、remote 側だけ「気を利かせて」FAILED に
+  倒すことは**むしろ等価性を壊す**。リソースは後から追加され得るため、
+  「現時点の総数では充足不可能」は「永遠に充足不可能」を意味しない点も
+  local と同じ。
+- 待ちたくない場合の手段も local と同一: `timeoutForAllocateResource` を指定
+  する（M1B で remote でも機能する。超過時 `LOCK_WAIT_TIMEOUT` で FAILED）。
+- client が消滅したケースは poll 生存失効（`QUEUE_EXPIRED`、§6）が回収する。
+
+> **再議論しないこと**: 「充足不可能要求を server 側で検出して即 FAILED に
+> すべきでは」という案は、local との非等価を生むため透過等価の原則下では
+> 採用しない。挙動を変えたい場合は upstream の local lock() 側の変更として
+> 提案するのが筋である。
+
 ---
 
 ## 6. クライアント耐障害性（heartbeat / poll）
@@ -382,3 +406,5 @@ client の poll 途絶による失効は `FAILED` + `errorCode: "QUEUE_EXPIRED"`
 - 2026-06-12: M1B 追補を反映。QUEUED の poll 生存失効（QUEUE_EXPIRED、§6）、
   専用 RemoteUse 権限（§8）、forcedServerId バリデーション（ドリフト #4 回収）を
   「含む」に移動。
+- 2026-06-12: 充足不可能要求の扱い（レビュー 4-6）を「透過等価により設計どおり」
+  として §5 に明記しクローズ。再議論防止の注記付き。

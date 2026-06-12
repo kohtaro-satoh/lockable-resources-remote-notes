@@ -23,7 +23,7 @@
 | 4-3 local 待機者を起こさない | ✅ 解消（統一キューで自動解決） |
 | 4-4 QUEUED の TTL なし | ✅ 解消（M1B 追補 F-2: GET poll を生存シグナルとし 60 秒途絶で QUEUE_EXPIRED 失効） |
 | 4-5 release と tick の競合 | ✅ 構造的に消滅（tick 昇格を廃止、キュー操作は syncResources 下に統一） |
-| 4-6 充足不可能要求が永遠に QUEUED | △ 部分解消（timeout 指定時は LOCK_WAIT_TIMEOUT で FAILED。timeout なしは従来通り） |
+| 4-6 充足不可能要求が永遠に QUEUED | ✅ 透過等価により設計どおりとしてクローズ（local lock() も同一挙動。timeout 指定で FAILED、client 消滅は QUEUE_EXPIRED が回収。`LRR_DESIGN_P1_M1B.md` §5 に明記、2026-06-12 決定） |
 | 5-1 権限モデル | ✅ 解消（M1B 追補 F-3: 専用 RemoteUse 権限で remote API をゲート、ADMINISTER に implied） |
 | 5-2 匿名リクエスト | ✅ 意図的挙動として再決定（空 credentialsId = 認証不要サーバー向けの正規ユースケース。M1B 決定 1-c） |
 | ドリフト #3 exposeLabel Javadoc | ✅ 解消 |
