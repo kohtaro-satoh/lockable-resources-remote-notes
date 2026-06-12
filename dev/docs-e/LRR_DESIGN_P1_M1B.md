@@ -427,3 +427,11 @@ client ceasing to poll is `FAILED` + `errorCode: "QUEUE_EXPIRED"` (§6).
 - 2026-06-12: Documented the handling of unsatisfiable requests (review 4-6)
   in §5 as by-design under transparent equivalence and closed it, with a
   do-not-reopen note.
+- 2026-06-12 (M1C): Resolved the M1B review finding C-1 — the **label-based extra**
+  that §4 declared "supported" was silently dropped by the M1B implementation. The
+  immediate-acquire and queue-promotion paths were unified behind a single selector
+  resolver, making the implementation match §4 as written. Also unified the
+  empty-exposeLabel behaviour across both paths, made the server accept extra-only
+  requests (local-equivalent), and serialized `release()` under `syncResources`
+  (structurally eliminating the orphan-lock race C-2). See the M1C resolution table
+  in `LRR_REVIEW_P1_M1B.md`.

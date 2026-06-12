@@ -8,17 +8,21 @@
 
 ---
 
-## M1C での解消状況（追記用プレースホルダ）
+## M1C での解消状況（2026-06-12 追記）
 
-本レビューの指摘を受けて M1C（M1B 問題解決サイクル）を実施する。各指摘の現況は M1C 完了時にここへ追記する。
+本レビューの指摘を受けて M1C（M1B 問題解決サイクル）を実施。plugin ブランチ
+`feature/1025-remote-lockable-resources-p1-m1c`（m1b ベース）。
 
 | 指摘 | M1C での状況 |
 |---|---|
-| C-1 ラベル extra サイレント欠落 | （未着手） |
-| C-2 release() の QUEUED 昇格競合（孤児ロック） | （未着手） |
-| M-1 onResume QUEUED 再開で displayTarget 劣化 | （未着手） |
-| M-2 extra-only リクエストの client/server 非対称 | （未着手） |
-| M-3 consecutivePollFailures が onResume でリセットされない | （未着手） |
+| C-1 ラベル extra サイレント欠落 | ✅ 解消（`3f1e78a`。統一セレクタリゾルバ `validateRemoteSelectors` / `resolveRemoteAvailable` で即時取得・キュー昇格の両経路を一本化。label-extra を exposeLabel フィルタ + quantity + 重複なしでアトミック取得。空 exposeLabel 時の即時/キュー経路の挙動差も解消。E2E S14 + ユニット 7 件） |
+| C-2 release() の QUEUED 昇格競合（孤児ロック） | ✅ 解消（`3f1e78a`。`release()` を `syncResources` 下に入れ、QUEUED は terminal 化してから unqueue。昇格を構造的に排除。ユニット `releasingQueuedRecordPreventsLaterPromotion`） |
+| M-1 onResume QUEUED 再開で displayTarget 劣化 | ⏸ 後送り（表示のみ・機能影響なし。リソース名永続化が必要なため別途） |
+| M-2 extra-only リクエストの client/server 非対称 | ✅ 解消（`5296b50`。server が extra-only を受理（local lock() と等価）。ユニット + HTTP テスト） |
+| M-3 consecutivePollFailures が onResume でリセットされない | ✅ 解消（`5296b50`。onResume で 0 リセット） |
+
+**検証:** `stabilize-build.sh`（worktree）で **mvn test 370 件 / 0 失敗 / 1 skip**（既知 JENKINS-40787）。
+`dev/reports/20260612192153-mvn-test.log`。E2E S14 はシナリオ定義済み（`m1c-series`）、実行は未。
 
 ---
 

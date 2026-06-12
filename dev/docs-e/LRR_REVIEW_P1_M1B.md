@@ -8,18 +8,22 @@
 
 ---
 
-## Resolution Status in M1C (placeholder for later)
+## Resolution Status in M1C (added 2026-06-12)
 
-M1C (the M1B problem-solving cycle) is executed in response to this review.
-The status of each finding will be filled in here when M1C completes.
+M1C (the M1B problem-solving cycle) was executed in response to this review.
+Plugin branch `feature/1025-remote-lockable-resources-p1-m1c` (based on m1b).
 
 | Finding | Status in M1C |
 |---|---|
-| C-1 label-based extra silently dropped | (not started) |
-| C-2 release() races queue promotion (orphan lock) | (not started) |
-| M-1 onResume QUEUED resume degrades displayTarget | (not started) |
-| M-2 extra-only request client/server asymmetry | (not started) |
-| M-3 consecutivePollFailures not reset on onResume | (not started) |
+| C-1 label-based extra silently dropped | ✅ Resolved (`3f1e78a`. A unified selector resolver (`validateRemoteSelectors` / `resolveRemoteAvailable`) drives both the immediate-acquire and queue-promotion paths; label-extra is acquired atomically with exposeLabel filtering, quantity, and overlap-free allocation. The empty-exposeLabel divergence between the two paths is also fixed. E2E S14 + 7 unit tests) |
+| C-2 release() races queue promotion (orphan lock) | ✅ Resolved (`3f1e78a`. `release()` runs under `syncResources` and terminal-marks a QUEUED record before unqueueing, structurally excluding promotion. Unit `releasingQueuedRecordPreventsLaterPromotion`) |
+| M-1 onResume QUEUED resume degrades displayTarget | ⏸ Deferred (display-only, no functional impact; needs resource-name persistence) |
+| M-2 extra-only request client/server asymmetry | ✅ Resolved (`5296b50`. The server now accepts extra-only requests, matching local lock(). Unit + HTTP tests) |
+| M-3 consecutivePollFailures not reset on onResume | ✅ Resolved (`5296b50`. Reset to 0 on onResume) |
+
+**Verification:** `stabilize-build.sh` (worktree) — **mvn test 370 / 0 failures / 1 skip**
+(known JENKINS-40787). `dev/reports/20260612192153-mvn-test.log`. E2E S14 is defined
+(`m1c-series`) but not yet executed.
 
 ---
 
