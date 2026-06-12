@@ -6,7 +6,7 @@ This document defines the design and specification of the E2E tests executed by
 > **About this unification:** This document consolidates the former
 > `E2E_TEST_SPECIFICATION_P1_M1.md` / `_P1_M1A.md` / `_P1_M1B.md` (2026-06-12).
 > Every test item is annotated with the milestone that introduced it
-> (**P1M1** / **P1M1A** / **P1M1B**).
+> (**P1M1** / **P1M1A** / **P1M1B** / **P1M1C**).
 
 ---
 
@@ -30,6 +30,7 @@ lockable-resources-plugin:
 | 11 | Heartbeat resilience (job continues through failures; normal release afterwards) | P1M1B |
 | 12 | Unified queue priority (remote waiters' priority applies across local waiters) | P1M1B |
 | 13 | STALE admin release (STALE transition → fail-close hold → Force Release → waiter wakes) | P1M1B |
+| 14 | Atomic acquisition of label-based extra (main + label-extra under a single lease) | P1M1C |
 
 ---
 
@@ -52,6 +53,7 @@ lockable-resources-plugin:
 | S11 | `heartbeat-resilience` | Heartbeat fault injection | Job continuation through heartbeat failures | a, b | P1M1B |
 | S12 | `priority-ordering` | local/remote priority contention | Unified queue priority dispatch | a, b | P1M1B |
 | S13 | `stale-admin-release` | Ghost lease → STALE → admin release | STALE transition, fail-close hold, Force Release | b | P1M1B |
+| S14 | `extra-label-resources` | resource + label-based extra atomic acquire | label-extra acquired under one lease (C-1 regression) | a, b | P1M1C |
 | D01 | `fan-in-4` | A, B, C contend for D's resource | 4-client → 1-server queue stability | a, b, c, d | P1M1 |
 | D02 | `chain-4` | A→B, B→C, C→D (independent chain) | n parallel one-way relays | a, b, c, d | P1M1 |
 | D03 | `diamond` | A→(B+C), B→D, C→D (diamond dependency) | No deadlock under indirect shared dependency | a, b, c, d | P1M1 |
@@ -199,6 +201,15 @@ sequenceDiagram
     W->>W: wakes, runs the body → SUCCESS
 ```
 
+#### S14 extra-label-resources [P1M1C]
+
+```mermaid
+flowchart LR
+  A[Controller A] -- "lock(resource: R1, extra: [[label: GPU, quantity: 1]], variable: 'S14RES', serverId: 'b')" --> B[(B: R1 + GPU-labelled resource)]
+  B -- "single lease locks R1 AND the label-resolved resource (atomic)" --> A
+  B -- "lockEnvVars: {S14RES: 'R1,GPU1', S14RES0: R1, S14RES1: GPU1}" --> A
+```
+
 #### D01 fan-in-4 [P1M1]
 
 ```mermaid
@@ -288,8 +299,9 @@ configure_label_resource(base_url, resource_name, label_name)    # added in P1M1
                         fail-closed | label-env-vars | delegated-mode |
                         extra-resources | heartbeat-resilience |
                         priority-ordering | stale-admin-release |
+                        extra-label-resources |
                         fan-in-4 | chain-4 | diamond |
-                        s-series | m1a-series | m1b-series | d-series | all
+                        s-series | m1a-series | m1b-series | m1c-series | d-series | all
 -h, --help            Show help
 ```
 
@@ -298,13 +310,14 @@ configure_label_resource(base_url, resource_name, label_name)    # added in P1M1
 | `s-series` | S01–S07 (P1M1) |
 | `m1a-series` | S08–S09 (P1M1A) |
 | `m1b-series` | S10–S13 (P1M1B) |
+| `m1c-series` | S14 (P1M1C) |
 | `d-series` | D01–D03 (P1M1; jenkins-d must be running) |
-| `all` | S01–S13 + D01–D03 |
+| `all` | S01–S14 + D01–D03 |
 
 ### Execution order (all)
 
 ```
-S01 → S02 → S03 → S04 → S05 → S06 → S07 → S08 → S09 → S10 → S11 → S12 → S13 → D01 → D02 → D03
+S01 → S02 → S03 → S04 → S05 → S06 → S07 → S08 → S09 → S10 → S11 → S12 → S13 → S14 → D01 → D02 → D03
 ```
 
 ---
@@ -364,6 +377,7 @@ JENKINS-50260), so `lock(label:...)` alone fails with
 | S11 A→B | `s11-a-for-b` | A | B admin API token | P1M1B |
 | S12 A→B | `s12-a-for-b` | A | B admin API token | P1M1B |
 | S13 (direct curl) | none (uses the API token directly) | - | B admin API token | P1M1B |
+| S14 A→B | `s14-a-for-b` | A | B admin API token | P1M1C |
 | D01 A,B,C→D | `d01-for-d` | A, B, C | D admin API token | P1M1 |
 | D02 A→B | `d02-a-for-b` | A | B admin API token | P1M1 |
 | D02 B→C | `d02-b-for-c` | B | C admin API token | P1M1 |
@@ -787,6 +801,58 @@ S13 alone takes roughly 70–90 seconds.
 
 ---
 
+## S14: extra-label-resources — Atomic Acquisition of label-based extra [P1M1C]
+
+### Test intent
+
+A remote lock whose `extra` list contains a **label-based entry** must actually
+lock the label-resolved resource (verification of M1B review finding **C-1**).
+
+Under M1B, label-based extra entries were **silently dropped** server-side: only
+the main resource was locked while the body ran (a fail-open partial lock). This
+scenario proves directly that a label-extra is acquired **atomically with the
+main resource under a single lease**.
+
+1. Both the main resource (R1) and the label-resolved resource (GPU) are acquired
+2. Both resources' `remoteLockedBy` carry the **same lockId** (single lease = atomic)
+3. The `variable` joined value contains both resources, comma-separated
+4. Release frees both resources together
+
+### B-side setup
+
+- R1: a public resource via `configure_remote_server` (label `remote-enabled`).
+- GPU: via `configure_label_resource`, carrying `[remote-enabled, <GPU_LABEL>]`
+  (both exposed and label-matchable). `GPU_LABEL` is timestamp-uniqued.
+
+### Pipeline
+
+Scripted pipeline (see [pipeline notation](#pipeline-notation-lesson-from-p1m1b)).
+
+| Job | controller | Body |
+|---|---|---|
+| `s14-extra-label` | A | `lock(resource: R1, extra: [[label: GPU_LABEL, quantity: 1]], variable: 'S14RES', serverId: 'b') { echo + sleep 8 }` |
+
+### Checkpoints
+
+| ID | Check | Expected |
+|---|---|---|
+| CP01 | Build result | `SUCCESS` |
+| CP02 | During the body, R1 and GPU have the same non-null `remoteLockedBy` on B (**core of C-1**: the label-extra is not dropped and is acquired under one lease) | `true` |
+| CP03 | `S14RES` contains both R1 and GPU, comma-separated | `true` |
+| CP04 | `S14RES0` / `S14RES1` individual variables present | `true` |
+| CP05 | Both R1 and GPU released after completion | `true` |
+| CP06 | `Remote lock acquired on` appears in the console | `true` |
+
+### Output files
+
+```
+reports/<runId>-e2e-test/extra-label-resources/console.txt
+reports/<runId>-e2e-test/extra-label-resources/summary.txt
+reports/<runId>-e2e-test/extra-label-resources/scenario-details.md
+```
+
+---
+
 ## D01: fan-in-4 — Four-Controller Contention [P1M1]
 
 ### Test intent
@@ -923,3 +989,6 @@ The report records:
   P1M1B). Updated the environment, run-e2e.sh contract, and naming conventions
   to the current state. The English edition now mirrors the Japanese original
   in full (per-scenario details for the P1M1 scenarios added).
+- 2026-06-12: Defined the M1C scenario S14 (extra-label-resources), a regression
+  for M1B review finding C-1. Added the `m1c-series` group; runnable in isolation
+  via `--only extra-label-resources`.

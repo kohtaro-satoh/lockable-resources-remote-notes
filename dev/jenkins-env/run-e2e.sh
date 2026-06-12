@@ -34,6 +34,9 @@ M1B_SCENARIOS=(
   "priority-ordering"
   "stale-admin-release"
 )
+M1C_SCENARIOS=(
+  "extra-label-resources"
+)
 D_SCENARIOS=(
   "fan-in-4"
   "chain-4"
@@ -53,6 +56,7 @@ ALL_SCENARIOS=(
   "heartbeat-resilience"
   "priority-ordering"
   "stale-admin-release"
+  "extra-label-resources"
   "fan-in-4"
   "chain-4"
   "diamond"
@@ -72,6 +76,7 @@ declare -A SCENARIO_IDS=(
   ["heartbeat-resilience"]="S11"
   ["priority-ordering"]="S12"
   ["stale-admin-release"]="S13"
+  ["extra-label-resources"]="S14"
   ["fan-in-4"]="D01"
   ["chain-4"]="D02"
   ["diamond"]="D03"
@@ -94,8 +99,9 @@ Options:
                         fail-closed | label-env-vars | delegated-mode |
                         extra-resources | heartbeat-resilience |
                         priority-ordering | stale-admin-release |
+                        extra-label-resources |
                         fan-in-4 | chain-4 | diamond |
-                        s-series | m1a-series | m1b-series | d-series | all
+                        s-series | m1a-series | m1b-series | m1c-series | d-series | all
   -h, --help            Show this help.
 USAGE
 }
@@ -137,7 +143,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 is_valid_only=false
-for allowed in all s-series m1a-series m1b-series d-series "${ALL_SCENARIOS[@]}"; do
+for allowed in all s-series m1a-series m1b-series m1c-series d-series "${ALL_SCENARIOS[@]}"; do
   if [[ "$ONLY" == "$allowed" ]]; then
     is_valid_only=true
     break
@@ -246,6 +252,9 @@ select_scenarios() {
       ;;
     m1b-series)
       printf '%s\n' "${M1B_SCENARIOS[@]}"
+      ;;
+    m1c-series)
+      printf '%s\n' "${M1C_SCENARIOS[@]}"
       ;;
     d-series)
       printf '%s\n' "${D_SCENARIOS[@]}"
