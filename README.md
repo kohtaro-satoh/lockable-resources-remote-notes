@@ -45,6 +45,8 @@ Reviews / レビュー:
 
 - [LRR_REVIEW_P1_M1A](dev/docs-e/LRR_REVIEW_P1_M1A.md) ([j](dev/docs-j/LRR_REVIEW_P1_M1A.md)) —
   full review at M1A completion; the findings drove the M1B redesign
+- [LRR_REVIEW_P1_M1B](dev/docs-e/LRR_REVIEW_P1_M1B.md) ([j](dev/docs-j/LRR_REVIEW_P1_M1B.md)) —
+  full review at M1B completion; findings C-1 / C-2 drive the M1C cycle
 
 Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/docs-j/design-00/)
 
