@@ -35,7 +35,10 @@ M1B superseded them).
 | M1 (minimal peer mode) | [e](dev/docs-e/LRR_DESIGN_P1_M1.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1.md) |
 | M1A (transparent lockRequest) | [e](dev/docs-e/LRR_DESIGN_P1_M1A.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1A.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1A.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1A.md) |
 | M1B (transparent equivalence) | [e](dev/docs-e/LRR_DESIGN_P1_M1B.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1B.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1B.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1B.md) |
-| **M1C (M1B review fixes)** | [e](dev/docs-e/LRR_DESIGN_P1_M1C.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1C.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1C.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1C.md) |
+| M1C (M1B review fixes) | [e](dev/docs-e/LRR_DESIGN_P1_M1C.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1C.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1C.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1C.md) |
+| **M1D (true bridging)** | [e](dev/docs-e/LRR_DESIGN_P1_M1D.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1D.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1D.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1D.md) |
+
+Per-cycle result summaries: [LRR_RESULT_P1_M1C](dev/docs-e/LRR_RESULT_P1_M1C.md) ([j](dev/docs-j/LRR_RESULT_P1_M1C.md)).
 
 E2E test specification (unified across milestones; each test item is tagged
 P1M1 / P1M1A / P1M1B):
@@ -63,11 +66,14 @@ Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/doc
 
 ## Status / 現況
 
-- **Phase 1 / M1C complete** (2026-06-12): resolved the M1B-completion review
-  findings (C-1 label-based extra silently dropped; C-2 release/promotion race;
-  M-2/M-3; M-1 deferred) plus follow-up F-1 (label unspecified quantity = all,
-  the last extra/label non-equivalence since M1A). 375 unit tests passing;
-  E2E 18/18 PASS (S14/S15 added).
+- **Phase 1 / M1D in progress** (2026-06-13): "true bridging" — route the server
+  through lock()'s canonical resolution + share env-var generation so per-feature
+  residue (property env vars, ephemeral, resourceSelectStrategy) is eliminated at
+  once; exposure (exposeLabel) separated into a public `RemoteResourceExposurePolicy`
+  ExtensionPoint. See LRR_DESIGN_P1_M1D.
+- Phase 1 / M1C complete (2026-06-12): resolved the M1B-completion review findings
+  (C-1/C-2/M-2/M-3; M-1 deferred) plus follow-up F-1 (label unspecified quantity =
+  all). 375 unit tests; E2E 18/18 PASS (S14/S15). See LRR_RESULT_P1_M1C.
 - Phase 1 / M1B complete, including follow-ups F-1–F-3 (2026-06-12): all 8 steps
   + 3 follow-up items, 360 unit tests, 16/16 E2E.
 - Plugin branches (kept local; push/PR planned after final polishing):
