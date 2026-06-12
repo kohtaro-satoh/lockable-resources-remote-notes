@@ -677,5 +677,5 @@ tests via the `queuePollExpiryMs` system property (default stays 60s).
 - **Steps 0–8 + follow-ups F-1–F-3: ALL COMPLETE ✅** (2026-06-12)
 - Plugin HEAD: `7551d67` (mvn test: **360 tests / 0 failures**)
 - E2E: all 16 scenarios 16/16 PASS (`dev/reports/20260612110631-e2e-test.md`)
-- Current design truth: `LRR_DESIGN_P1_M1B.md`; E2E spec: `E2E_TEST_SPECIFICATION_P1_M1B.md`
+- Current design truth: `LRR_DESIGN_P1_M1B.md`; E2E spec: `E2E_TEST_SPECIFICATION.md` (unified)
 - Review findings: **all closed** (4-6 closed as by-design under transparent equivalence; stated in the design spec §5)

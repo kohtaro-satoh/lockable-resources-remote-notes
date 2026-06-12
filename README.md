@@ -30,11 +30,16 @@ Per-milestone specs and progress trackers. **The newest milestone is the current
 truth**; older milestone documents are historical snapshots (with banners where
 M1B superseded them).
 
-| Milestone | Design spec | Implementation steps | E2E test spec |
-|---|---|---|---|
-| M1 (minimal peer mode) | [e](dev/docs-e/LRR_DESIGN_P1_M1.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1.md) | [e](dev/docs-e/E2E_TEST_SPECIFICATION_P1_M1.md) / [j](dev/docs-j/E2E_TEST_SPECIFICATION_P1_M1.md) |
-| M1A (transparent lockRequest) | [e](dev/docs-e/LRR_DESIGN_P1_M1A.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1A.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1A.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1A.md) | [e](dev/docs-e/E2E_TEST_SPECIFICATION_P1_M1A.md) / [j](dev/docs-j/E2E_TEST_SPECIFICATION_P1_M1A.md) |
-| **M1B (transparent equivalence)** | [e](dev/docs-e/LRR_DESIGN_P1_M1B.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1B.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1B.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1B.md) | [e](dev/docs-e/E2E_TEST_SPECIFICATION_P1_M1B.md) / [j](dev/docs-j/E2E_TEST_SPECIFICATION_P1_M1B.md) |
+| Milestone | Design spec | Implementation steps |
+|---|---|---|
+| M1 (minimal peer mode) | [e](dev/docs-e/LRR_DESIGN_P1_M1.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1.md) |
+| M1A (transparent lockRequest) | [e](dev/docs-e/LRR_DESIGN_P1_M1A.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1A.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1A.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1A.md) |
+| **M1B (transparent equivalence)** | [e](dev/docs-e/LRR_DESIGN_P1_M1B.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1B.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1B.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1B.md) |
+
+E2E test specification (unified across milestones; each test item is tagged
+P1M1 / P1M1A / P1M1B):
+
+- [E2E_TEST_SPECIFICATION](dev/docs-e/E2E_TEST_SPECIFICATION.md) ([j](dev/docs-j/E2E_TEST_SPECIFICATION.md))
 
 Reviews / レビュー:
 
