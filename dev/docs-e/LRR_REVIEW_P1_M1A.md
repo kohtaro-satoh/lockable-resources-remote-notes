@@ -22,13 +22,13 @@ status of each finding:
 | 4-1 instant death on one failure | ✅ Resolved (poll retry budget + heartbeat warn-and-continue; proven by E2E S11. BodyExecution retention made unnecessary by adopting option B) |
 | 4-2 queue semantics divergence | ✅ Resolved (unified LRM queue bridge; proven by E2E S12) |
 | 4-3 local waiters not woken | ✅ Resolved (automatic with the unified queue) |
-| 4-4 no TTL on QUEUED | ⏳ Open (post-M1B work) |
+| 4-4 no TTL on QUEUED | ✅ Resolved (M1B follow-up F-2: GET polls as the liveness signal; QUEUE_EXPIRED after 60s of silence) |
 | 4-5 release/tick race | ✅ Structurally eliminated (tick promotion removed; queue operations unified under syncResources) |
 | 4-6 unsatisfiable requests stay QUEUED forever | △ Partially resolved (with a timeout set, FAILED via LOCK_WAIT_TIMEOUT; without one, unchanged) |
-| 5-1 permission model | ⏳ Open (must be addressed before an upstream PR) |
+| 5-1 permission model | ✅ Resolved (M1B follow-up F-3: dedicated RemoteUse permission gates the remote API, implied by ADMINISTER) |
 | 5-2 anonymous requests | ✅ Re-decided as intended behavior (empty credentialsId = legitimate use case for no-auth servers; M1B decision 1-c) |
 | Drift #3 exposeLabel Javadoc | ✅ Resolved |
-| Drift #4 forcedServerId validation | ⏳ Open (M1B Step 1-d was planned only; carried over) |
+| Drift #4 forcedServerId validation | ✅ Resolved (M1B follow-up F-1: doCheckForcedServerId + save-time warning) |
 | Drift #10 empty README | ✅ Resolved (indexed README in place) |
 
 ---

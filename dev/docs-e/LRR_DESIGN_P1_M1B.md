@@ -230,6 +230,36 @@ HTTP 404 / 410 received:
 | Transient outage (during body) | Heartbeat warning only, job continues |
 | Successful poll | Counter resets |
 
+### QUEUED expiry via poll liveness (M1B follow-up, review finding 4-4)
+
+On the server, `GET /acquire/{lockId}` itself acts as the liveness signal for
+QUEUED records:
+
+```text
+GET /acquire/{lockId} received → update record.lastPolledAt
+Periodic scan (1-second tick):
+  QUEUED and no poll within the expiry window (= STALE threshold, 60s)
+    → FAILED (errorCode: QUEUE_EXPIRED) + removed from the LRM queue
+```
+
+- **Consistent with fail-close**: STALE is never auto-released because it
+  *holds a resource*. A QUEUED record holds no resource — only a queue slot —
+  so automatic expiry is safe.
+- The window equals the client's poll retry budget (~60s), so "the server
+  gives up" never precedes "the client gives up".
+- Expiry is serialized against queue promotion via `syncResources`, so an
+  entry cannot be promoted and expired concurrently (eliminates a race of the
+  same shape as review finding 4-5).
+- No client changes: a poll arriving after expiry sees `FAILED` +
+  `QUEUE_EXPIRED` (or 404 after the terminal TTL) and terminates per the
+  existing rules.
+- Known residue: if the resource frees up within the ~60s between client death
+  and expiry, an unattended ACQUIRED can appear; it is recovered via STALE
+  (60s later) → admin Force Release.
+- The expiry window is overridable via the system property
+  `org.jenkins.plugins.lockableresources.remote.RemoteLockManager.queuePollExpiryMs`
+  (for tests).
+
 ---
 
 ## 7. Restart Semantics (onResume / fail-close)
@@ -279,6 +309,24 @@ STALE is the visualization of "cannot be released automatically and safely";
 the release decision is delegated to a human (the admin). This completes the
 fail-close design.
 
+### Dedicated permission: RemoteUse (M1B follow-up, review finding 5-1)
+
+All four remote API endpoints (acquire / poll / heartbeat / release) require
+the dedicated **Lockable Resources / RemoteUse** permission instead of
+`Jenkins.READ`:
+
+- `REMOTE` (display name RemoteUse) joins the plugin's existing
+  PermissionGroup (alongside UNLOCK / RESERVE / STEAL / VIEW / QUEUE / CONFIGURE).
+- Implied by `ADMINISTER`, so small setups using an admin token keep working
+  with no configuration change.
+- Under Matrix Authorization etc., grant it explicitly to the machine users
+  whose API tokens remote client controllers use as `credentialsId` — making
+  **remote clients auditable in the authorization matrix**.
+- Unprivileged access gets 403 (consistent with the 403 returned while
+  `remoteApiEnabled=false`).
+- Granularity: one permission for all four endpoints (a remote client always
+  uses all of them; splitting would only invite misconfiguration).
+
 ---
 
 ## 9. State List (Corrected to Match Implementation)
@@ -292,7 +340,7 @@ stateDiagram-v2
     [*] --> ACQUIRED : POST /acquire (immediate)
     [*] --> SKIPPED : skipIfLocked=true and busy
     QUEUED --> ACQUIRED : promoted from the LRM queue
-    QUEUED --> FAILED : LOCK_WAIT_TIMEOUT / server error
+    QUEUED --> FAILED : LOCK_WAIT_TIMEOUT / QUEUE_EXPIRED / server error
     ACQUIRED --> STALE : heartbeats stop (threshold exceeded)
     STALE --> ACQUIRED : heartbeats resume
     ACQUIRED --> [*] : release
@@ -308,7 +356,8 @@ stateDiagram-v2
 | `STALE` | Heartbeats stopped; pending admin review | (Server-internal state. The client keeps operating as for ACQUIRED) |
 
 Timeouts (`timeoutForAllocateResource` exceeded) are expressed as `FAILED` +
-`errorCode: "LOCK_WAIT_TIMEOUT"` (no `EXPIRED` state).
+`errorCode: "LOCK_WAIT_TIMEOUT"` (no `EXPIRED` state). Expiry caused by the
+client ceasing to poll is `FAILED` + `errorCode: "QUEUE_EXPIRED"` (§6).
 
 ---
 
@@ -326,6 +375,9 @@ Timeouts (`timeoutForAllocateResource` exceeded) are expressed as `FAILED` +
 | onResume | QUEUED resume / ACQUIRED cleanup |
 | STALE admin release | Force Release UI + endpoint |
 | Restart constraint documentation | Rationale and operational assumption for the transient design (§7) |
+| QUEUED poll-liveness expiry [follow-up] | QUEUE_EXPIRED after 60s without GET polls (review 4-4) |
+| Dedicated permission [follow-up] | RemoteUse permission gates the remote API (review 5-1) |
+| forcedServerId validation [follow-up] | doCheckForcedServerId + save-time warning (drift #4, recovers Step 1-d) |
 
 ### Excluded (out of M1B scope)
 
@@ -333,9 +385,6 @@ Timeouts (`timeoutForAllocateResource` exceeded) are expressed as `FAILED` +
 |---|---|
 | Propagating resource-property env vars (`VAR0_<PROP>`) | Declared unsupported (additive extension candidate) |
 | Persisting `remoteLockedBy` | Transient in Phase 1; mitigated operationally |
-| Dedicated permission model (splitting off READ) | Must be addressed before an upstream PR (review finding 5-1) |
-| TTL / liveness checks for QUEUED records | Review finding 4-4; post-M1B work |
-| Save-time validation of `forcedServerId` | Review drift #4. Not implemented in M1B (planned Step 1-d carried over) |
 | `GET /resources` remote view | M3 |
 | User-configurable polling/heartbeat intervals | Phase 2 |
 
@@ -346,3 +395,6 @@ Timeouts (`timeoutForAllocateResource` exceeded) are expressed as `FAILED` +
 - 2026-06-12: Initial version. Defines the M1B (transparent equivalence) design
   based on the M1A review (`LRR_REVIEW_P1_M1A.md`) and the 2026-06-11 decisions.
   Corrected the state list to match the implementation.
+- 2026-06-12: M1B follow-up reflected. Moved QUEUED poll-liveness expiry
+  (QUEUE_EXPIRED, §6), the dedicated RemoteUse permission (§8), and
+  forcedServerId validation (drift #4 recovered) into the included scope.

@@ -21,13 +21,13 @@
 | 4-1 1 回の通信失敗で即死 | ✅ 解消（poll リトライ予算 + heartbeat 警告継続。E2E S11 で実証。BodyExecution 保持は B 案採用により不要化） |
 | 4-2 キュー意味論の乖離 | ✅ 解消（LRM 統一キューブリッジ。E2E S12 で実証） |
 | 4-3 local 待機者を起こさない | ✅ 解消（統一キューで自動解決） |
-| 4-4 QUEUED の TTL なし | ⏳ 未解消（M1B 後の課題） |
+| 4-4 QUEUED の TTL なし | ✅ 解消（M1B 追補 F-2: GET poll を生存シグナルとし 60 秒途絶で QUEUE_EXPIRED 失効） |
 | 4-5 release と tick の競合 | ✅ 構造的に消滅（tick 昇格を廃止、キュー操作は syncResources 下に統一） |
 | 4-6 充足不可能要求が永遠に QUEUED | △ 部分解消（timeout 指定時は LOCK_WAIT_TIMEOUT で FAILED。timeout なしは従来通り） |
-| 5-1 権限モデル | ⏳ 未解消（upstream PR 前に要対応） |
+| 5-1 権限モデル | ✅ 解消（M1B 追補 F-3: 専用 RemoteUse 権限で remote API をゲート、ADMINISTER に implied） |
 | 5-2 匿名リクエスト | ✅ 意図的挙動として再決定（空 credentialsId = 認証不要サーバー向けの正規ユースケース。M1B 決定 1-c） |
 | ドリフト #3 exposeLabel Javadoc | ✅ 解消 |
-| ドリフト #4 forcedServerId バリデーション | ⏳ 未解消（M1B Step 1-d は計画のみで繰り越し） |
+| ドリフト #4 forcedServerId バリデーション | ✅ 解消（M1B 追補 F-1: doCheckForcedServerId + 保存時警告） |
 | ドリフト #10 README 空 | ✅ 解消（索引付き README 整備） |
 
 ---

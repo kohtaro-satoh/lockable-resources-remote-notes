@@ -588,6 +588,68 @@ additions and reports are `adf3429`.
 
 ---
 
+### Follow-up: Recovering the 3 Remaining M1B Items
+
+**Purpose:**
+Recover the three items left open after Step 8 (carried-over Step 1-d,
+review finding 4-4, review finding 5-1) as M1B follow-up work.
+
+#### F-1. forcedServerId save-time validation (recovers Step 1-d, drift #4)
+
+- `LockableResourcesManager.doCheckForcedServerId()`: form validation returning
+  FormValidation.warning for values not present in remotes
+- Post-binding consistency check + warning log added to `configure()`
+  (form field order binds forcedServerId before remotes, making a setter-time
+  check unreliable — the post-binding check is the correct place)
+- Added `warning.forcedServerIdNotConfigured` to `Messages.properties`
+- 3 tests (empty/null OK, mismatch WARNING, match OK + trim)
+
+#### F-2. QUEUED record poll-liveness expiry (review finding 4-4)
+
+- Added `RemoteLockRecord.lastPolledAt`; `GET /acquire/{lockId}` updates it via
+  `RemoteLockManager.touchPoll()` (polls = liveness signal)
+- Added a QUEUED branch to `maybeScanStale()`: when no poll within the window
+  (= STALE threshold 60s; overridable via the `queuePollExpiryMs` system
+  property) → `FAILED` (`QUEUE_EXPIRED`) + `unqueueRemote()`
+- Expiry and promotion are serialized via `syncResources` (no concurrent race)
+- No client changes: a post-expiry poll sees FAILED+QUEUE_EXPIRED or 404 and
+  terminates per the existing rules
+- 2 tests (expiry on silence + expired entry must not grab the resource /
+  survival while polling + promotion)
+
+#### F-3. Dedicated RemoteUse permission (review finding 5-1)
+
+- Added `LockableResourcesRootAction.REMOTE` (display name RemoteUse) to the
+  existing PermissionGroup (implied by ADMINISTER)
+- Replaced `checkPermission(Jenkins.READ)` with `checkPermission(REMOTE)` on
+  all 4 endpoints of `RemoteApiV1Action`
+- Operations: grant explicitly to the machine users whose API tokens remote
+  clients use as credentialsId → remote clients become auditable in the
+  authorization matrix
+- 1 test (READ only → AccessDeniedException on all endpoints; user holding
+  REMOTE → acquire 202)
+
+#### Completion criteria
+
+- All 3 implemented + tested, one commit each
+- Full `mvn test` (stabilize-build.sh) BUILD SUCCESS
+- Full 16-scenario E2E regression PASS (the existing environment uses admin
+  tokens = ADMINISTER-implied, so it should pass unchanged)
+
+- [x] Implementation complete (commits: `1664ac1` F-1 / `fc4e550` F-2 / `7551d67` F-3)
+- [x] `mvn test` confirmed (**360 tests / 0 failures / BUILD SUCCESS**, +6:
+  LockableResourcesManagerRemoteConnectionTest 15 / RemoteLockManagerTest 20 /
+  RemoteApiV1ActionTest 8. `dev/reports/20260612104846-mvn-test.log`)
+- [x] E2E regression confirmed (**all 16 scenarios 16/16 PASS**, `--clean-start`,
+  `dev/reports/20260612110631-e2e-test.md`. Confirmed the existing auth setup
+  (admin token = ADMINISTER-implied) passes unchanged with the RemoteUse
+  permission change in the HPI)
+
+Notes: Implemented 2026-06-12. The F-2 expiry window was made shrinkable for
+tests via the `queuePollExpiryMs` system property (default stays 60s).
+
+---
+
 ## Test Execution Policy (M1B)
 
 1. After each step, verify with `mvn test -Dtest=<target tests>`
@@ -612,7 +674,8 @@ additions and reports are `adf3429`.
 
 - Plan created: 2026-06-11
 - Starting branch: `feature/1025-remote-lockable-resources-p1-m1a` (starting HEAD: `c782c28`)
-- **Steps 0–8: ALL COMPLETE ✅** (2026-06-12)
-- Plugin HEAD: `64981dd` (mvn test: 354 tests / 0 failures)
-- E2E: all 16 scenarios 16/16 PASS (`dev/reports/20260612011822-e2e-test.md`)
+- **Steps 0–8 + follow-ups F-1–F-3: ALL COMPLETE ✅** (2026-06-12)
+- Plugin HEAD: `7551d67` (mvn test: **360 tests / 0 failures**)
+- E2E: all 16 scenarios 16/16 PASS (`dev/reports/20260612110631-e2e-test.md`)
 - Current design truth: `LRR_DESIGN_P1_M1B.md`; E2E spec: `E2E_TEST_SPECIFICATION_P1_M1B.md`
+- Remaining review finding: only the partial resolution of 4-6 (unsatisfiable requests without a timeout)

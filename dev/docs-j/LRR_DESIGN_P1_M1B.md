@@ -223,6 +223,31 @@ HTTP 404 / 410 を受信:
 | 一時的な接続断（body 中） | heartbeat 警告のみ、ジョブ継続 |
 | 成功 poll | カウンタリセット |
 
+### QUEUED の poll 生存シグナル失効（M1B 追補、レビュー 4-4）
+
+server 側では `GET /acquire/{lockId}` 自体を QUEUED レコードの生存シグナルとする:
+
+```text
+GET /acquire/{lockId} 受信 → record.lastPolledAt を更新
+定期スキャン（1 秒 tick）:
+  QUEUED かつ poll 途絶が失効しきい値（= STALE しきい値、60 秒）超過
+    → FAILED（errorCode: QUEUE_EXPIRED）+ LRM キューから除去
+```
+
+- **fail-close と矛盾しない**: STALE が自動解放されないのは「リソースを保持して
+  いる」から。QUEUED はリソースを持たず、キュー上の順番だけなので自動失効できる。
+- しきい値は client の poll リトライ予算（~60 秒）と同じため、「server が諦める
+  のは client が諦めた後」の関係が成立する。
+- 失効は LRM キュー昇格処理と `syncResources` で直列化されており、
+  「昇格と失効が同時に起きる」競合はない（レビュー 4-5 と同型の競合を排除）。
+- client は無改修: 失効後の poll は `FAILED` + `QUEUE_EXPIRED`（または terminal
+  TTL 経過後の 404）を受けて既存の規則どおりエラー終了する。
+- 既知の残余: client 消滅から失効までの ~60 秒間にリソースが空くと、無人の
+  ACQUIRED が生まれ得る。これは 60 秒後の STALE → 管理者 Force Release で回収する。
+- 失効しきい値はシステムプロパティ
+  `org.jenkins.plugins.lockableresources.remote.RemoteLockManager.queuePollExpiryMs`
+  で上書き可能（テスト用途）。
+
 ---
 
 ## 7. 再起動セマンティクス（onResume / fail-close）
@@ -271,6 +296,22 @@ heartbeat 途絶 → STALE 遷移（自動解放はしない）
 STALE は「自動で安全に解放できない」状態の可視化であり、
 解放判断は人間（管理者）に委ねる。これが fail-close 設計の完成形。
 
+### 専用 Permission: RemoteUse（M1B 追補、レビュー 5-1）
+
+remote API 全 4 エンドポイント（acquire / poll / heartbeat / release）は
+`Jenkins.READ` ではなく専用の **Lockable Resources / RemoteUse** 権限を要求する:
+
+- プラグイン既存の PermissionGroup（UNLOCK / RESERVE / STEAL / VIEW / QUEUE /
+  CONFIGURE と同列）に `REMOTE`（表示名 RemoteUse）を追加。
+- `ADMINISTER` に implied されるため、管理者トークン運用の小規模環境は
+  設定変更なしで動き続ける。
+- Matrix Authorization 等では、remote クライアントが `credentialsId` に使う
+  マシンユーザーへ明示的に付与する。**誰が remote クライアントかが権限表で
+  監査可能**になる。
+- 権限なしアクセスは 403（`remoteApiEnabled=false` 時の 403 と整合）。
+- 粒度は 4 エンドポイント共通の 1 権限（remote クライアントは必ず全部使うため、
+  分割は設定ミスの温床になるだけ）。
+
 ---
 
 ## 9. state 一覧（実装準拠に訂正）
@@ -284,7 +325,7 @@ stateDiagram-v2
     [*] --> ACQUIRED : POST /acquire（即時取得）
     [*] --> SKIPPED : skipIfLocked=true かつ busy
     QUEUED --> ACQUIRED : LRM キューから昇格
-    QUEUED --> FAILED : LOCK_WAIT_TIMEOUT / サーバーエラー
+    QUEUED --> FAILED : LOCK_WAIT_TIMEOUT / QUEUE_EXPIRED / サーバーエラー
     ACQUIRED --> STALE : heartbeat 途絶（しきい値超過）
     STALE --> ACQUIRED : heartbeat 再開
     ACQUIRED --> [*] : release
@@ -301,6 +342,7 @@ stateDiagram-v2
 
 timeout（`timeoutForAllocateResource` 超過）は `FAILED` +
 `errorCode: "LOCK_WAIT_TIMEOUT"` で表現する（`EXPIRED` state は使わない）。
+client の poll 途絶による失効は `FAILED` + `errorCode: "QUEUE_EXPIRED"`（§6）。
 
 ---
 
@@ -318,6 +360,9 @@ timeout（`timeoutForAllocateResource` 超過）は `FAILED` +
 | onResume | QUEUED 復帰 / ACQUIRED 後始末 |
 | STALE 管理者解放 | Force Release UI + エンドポイント |
 | 再起動制約の文書化 | transient 設計の理由と運用前提（§7） |
+| QUEUED の poll 生存失効【追補】 | GET 途絶 60 秒で QUEUE_EXPIRED（レビュー 4-4） |
+| 専用 Permission【追補】 | RemoteUse 権限で remote API をゲート（レビュー 5-1） |
+| forcedServerId バリデーション【追補】 | doCheckForcedServerId + 保存時警告（ドリフト #4、Step 1-d 回収） |
 
 ### 含まない（M1B スコープ外）
 
@@ -325,9 +370,6 @@ timeout（`timeoutForAllocateResource` 超過）は `FAILED` +
 |---|---|
 | リソースプロパティ env var（`VAR0_<PROP>`）の remote 伝搬 | 非対応と宣言（additive 拡張候補） |
 | `remoteLockedBy` の永続化 | Phase 1 は transient。運用前提で回避 |
-| 専用 Permission モデル（READ からの分離） | upstream PR 前に要対応（レビュー指摘 5-1） |
-| QUEUED レコードの TTL / 生存確認 | レビュー指摘 4-4。M1B 後の課題 |
-| `forcedServerId` の保存時バリデーション | レビュードリフト #4。M1B では未実装（計画 Step 1-d は繰り越し） |
 | `GET /resources` リモートビュー | M3 |
 | ユーザー設定可能なポーリング/heartbeat 間隔 | Phase 2 |
 
@@ -337,3 +379,6 @@ timeout（`timeoutForAllocateResource` 超過）は `FAILED` +
 
 - 2026-06-12: 初版作成。M1A レビュー（`LRR_REVIEW_P1_M1A.md`）と 2026-06-11 意思決定
   に基づき、M1B（透過等価化）の設計を定義。state 一覧を実装準拠に訂正。
+- 2026-06-12: M1B 追補を反映。QUEUED の poll 生存失効（QUEUE_EXPIRED、§6）、
+  専用 RemoteUse 権限（§8）、forcedServerId バリデーション（ドリフト #4 回収）を
+  「含む」に移動。
