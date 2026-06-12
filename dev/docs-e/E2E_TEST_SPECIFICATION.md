@@ -969,6 +969,7 @@ The report records:
 | 2026-06-11 | All 12 (P1M1 + P1M1A) | 11/12 (S08 was a scenario-script issue) | `dev/reports/20260611162303-e2e-test.md` |
 | 2026-06-12 | All 16 (incl. P1M1B, `--clean-start`) | **16/16 PASS** | `dev/reports/20260612011822-e2e-test.md` |
 | 2026-06-12 | All 16 (incl. M1B follow-ups F-1–F-3, `--clean-start`) | **16/16 PASS** | `dev/reports/20260612110631-e2e-test.md` |
+| 2026-06-12 | All 17 (incl. M1C / S14, `--clean-start`) | **17/17 PASS** | `dev/reports/20260612201703-e2e-test.md` |
 
 ---
 

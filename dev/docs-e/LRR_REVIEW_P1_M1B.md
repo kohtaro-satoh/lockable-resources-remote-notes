@@ -22,8 +22,10 @@ Plugin branch `feature/1025-remote-lockable-resources-p1-m1c` (based on m1b).
 | M-3 consecutivePollFailures not reset on onResume | ✅ Resolved (`5296b50`. Reset to 0 on onResume) |
 
 **Verification:** `stabilize-build.sh` (worktree) — **mvn test 370 / 0 failures / 1 skip**
-(known JENKINS-40787). `dev/reports/20260612192153-mvn-test.log`. E2E S14 is defined
-(`m1c-series`) but not yet executed.
+(known JENKINS-40787, `dev/reports/20260612192153-mvn-test.log`). **E2E
+`run-e2e.sh --clean-start` all 17 PASS 17/17** (incl. S14,
+`dev/reports/20260612201703-e2e-test.md`). Details in
+`LRR_IMPLEMENTATION_STEPS_P1_M1C.md` / `LRR_DESIGN_P1_M1C.md`.
 
 ---
 

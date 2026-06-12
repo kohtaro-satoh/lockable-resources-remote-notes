@@ -21,8 +21,9 @@
 | M-2 extra-only リクエストの client/server 非対称 | ✅ 解消（`5296b50`。server が extra-only を受理（local lock() と等価）。ユニット + HTTP テスト） |
 | M-3 consecutivePollFailures が onResume でリセットされない | ✅ 解消（`5296b50`。onResume で 0 リセット） |
 
-**検証:** `stabilize-build.sh`（worktree）で **mvn test 370 件 / 0 失敗 / 1 skip**（既知 JENKINS-40787）。
-`dev/reports/20260612192153-mvn-test.log`。E2E S14 はシナリオ定義済み（`m1c-series`）、実行は未。
+**検証:** `stabilize-build.sh`（worktree）で **mvn test 370 件 / 0 失敗 / 1 skip**（既知 JENKINS-40787、
+`dev/reports/20260612192153-mvn-test.log`）。**E2E `run-e2e.sh --clean-start` 全 17 件 17/17 PASS**
+（S14 含む、`dev/reports/20260612201703-e2e-test.md`）。詳細は `LRR_IMPLEMENTATION_STEPS_P1_M1C.md` / `LRR_DESIGN_P1_M1C.md`。
 
 ---
 

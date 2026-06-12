@@ -1268,6 +1268,7 @@ reports/<runId>-e2e-test/          ← シナリオ別アーティファクト
 | 2026-06-11 | 全 12 件（P1M1 + P1M1A） | 11/12（S08 はシナリオ記述問題） | `dev/reports/20260611162303-e2e-test.md` |
 | 2026-06-12 | 全 16 件（P1M1B 含む、`--clean-start`） | **16/16 PASS** | `dev/reports/20260612011822-e2e-test.md` |
 | 2026-06-12 | 全 16 件（M1B 追補 F-1〜F-3 込み、`--clean-start`） | **16/16 PASS** | `dev/reports/20260612110631-e2e-test.md` |
+| 2026-06-12 | 全 17 件（M1C / S14 込み、`--clean-start`） | **17/17 PASS** | `dev/reports/20260612201703-e2e-test.md` |
 
 ---
 

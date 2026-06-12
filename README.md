@@ -63,9 +63,9 @@ Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/doc
 
 ## Status / 現況
 
-- **Phase 1 / M1C in progress** (2026-06-12): resolving the M1B-completion review
+- **Phase 1 / M1C complete** (2026-06-12): resolved the M1B-completion review
   findings (C-1 label-based extra silently dropped; C-2 release/promotion race;
-  M-2/M-3). 370 unit tests passing; E2E S14 added (full-suite run in progress).
+  M-2/M-3; M-1 deferred). 370 unit tests passing; E2E 17/17 PASS (S14 added).
 - Phase 1 / M1B complete, including follow-ups F-1–F-3 (2026-06-12): all 8 steps
   + 3 follow-up items, 360 unit tests, 16/16 E2E.
 - Plugin branches (kept local; push/PR planned after final polishing):

@@ -115,10 +115,13 @@ Note: completed 2026-06-12. extra-only is local-lock()-equivalent.
 #### Done criteria
 
 - [x] scenario + registration + spec (j+e) (notes `109771f`)
-- [ ] **`run-e2e.sh --clean-start` all 17 PASS** (running / to be filled on completion)
-- [ ] save the report under `dev/reports/` and record the result
+- [x] **`run-e2e.sh --clean-start` all 17 PASS** (`dev/reports/20260612201703-e2e-test.md`, 2026-06-12)
+- [x] saved the report under `dev/reports/` and recorded the result
 
-Note: (full E2E result to be appended here on completion)
+Note: completed 2026-06-12. **All 17 scenarios 17/17 PASS (pass=17 fail=0 skip=0)**.
+S14 CP02 proved that main(R1) and the label-extra(GPU) are locked under the **same
+lease** (`8d4068ae…`) during the body and both released afterwards (the heart of
+C-1). All pre-existing scenarios (S10–S13, D01–D03 included) also passed (no regressions).
 
 ---
 

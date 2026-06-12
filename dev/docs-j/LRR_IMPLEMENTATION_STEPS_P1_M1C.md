@@ -109,10 +109,12 @@ extra-only 取得（202）。
 #### 完了条件
 
 - [x] シナリオ + 登録 + 仕様（j+e）（notes `109771f`）
-- [ ] **`run-e2e.sh --clean-start` 全 17 件 PASS**（実行中／完了後に追記）
-- [ ] レポートを `dev/reports/` に保存し結果を記録
+- [x] **`run-e2e.sh --clean-start` 全 17 件 PASS**（`dev/reports/20260612201703-e2e-test.md`、2026-06-12）
+- [x] レポートを `dev/reports/` に保存し結果を記録
 
-記録: （E2E 全件結果を完了後にここへ追記）
+記録: 2026-06-12 完了。**全 17 シナリオ 17/17 PASS（pass=17 fail=0 skip=0）**。
+S14 の CP02 で main(R1) と label-extra(GPU) が**同一 lease**（`8d4068ae…`）でロックされ、
+完了後に両方解放されることを実証（C-1 の核心）。S10〜S13・D01〜D03 含む既存全件も回帰クリア。
 
 ---
 
