@@ -123,6 +123,35 @@ S14 CP02 proved that main(R1) and the label-extra(GPU) are locked under the **sa
 lease** (`8d4068ae…`) during the body and both released afterwards (the heart of
 C-1). All pre-existing scenarios (S10–S13, D01–D03 included) also passed (no regressions).
 
+### Step 4 (follow-up F-1): label unspecified quantity = ALL matching
+
+A **long-standing non-equivalence** surfaced by extra investigation after the user
+noted "the extra problem hasn't been solved across M1A/M1B/M1C". `lock(label: X)`
+(no quantity) locks ALL matching locally ("0 = all") but the remote path defaulted
+to 1 since M1A (`claimSelector "?: 1"`, POST `optInt("quantity", 1)`). Like C-1/C-2
+it slipped through the verification layer because every test pinned an explicit quantity.
+
+**Implementation:**
+- `LockableResourcesManager.claimSelector`: for a label selector with `quantity<=0`,
+  `need` = the full exposed candidate pool size (equivalent to local
+  `getRequiredAmount` "0 = all"). `quantity > pool` stays QUEUED.
+- `RemoteApiV1Action` (POST /acquire): `optInt("quantity", 1)` → `0` for main and extra.
+
+**Tests:** unit (RemoteLockManagerTest) bare-label locks all / stays QUEUED until
+all free then all / bare-label-extra all / quantity>pool QUEUED; (RemoteApiV1ActionTest)
+POST without quantity locks all. E2E **S15 `label-quantity-all`** added (`m1c-series`).
+
+#### Done criteria
+
+- [x] Implemented
+- [x] `mvn test` green (**375 / 0 failures / 1 skip**, `dev/reports/20260612232116-mvn-test.log`)
+- [x] Committed (`2d88834`)
+- [x] Full regression incl. E2E S15 — **all 18 PASS 18/18** (`dev/reports/20260612233944-e2e-test.md`)
+
+Note: completed 2026-06-12. Resolves the last non-equivalent dimension of extra/label.
+S15 CP02 proved `lock(label)` (no quantity) locks all three pool resources under a
+**single lease** (`f37ff5e8…`) and releases them afterwards. mvn 375 and E2E 18/18 both clean.
+
 ---
 
 ## Test policy (M1C)
@@ -138,3 +167,5 @@ C-1). All pre-existing scenarios (S10–S13, D01–D03 included) also passed (no
 
 - 2026-06-12: Initial version. Implementation steps and step records for M1C
   (resolving C-1/C-2/M-2/M-3).
+- 2026-06-12: Added follow-up F-1 (label unspecified quantity = all) as Step 4 —
+  the last non-equivalent dimension of extra/label, surfaced by the user. E2E S15 added.

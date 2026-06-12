@@ -36,6 +36,7 @@ M1B_SCENARIOS=(
 )
 M1C_SCENARIOS=(
   "extra-label-resources"
+  "label-quantity-all"
 )
 D_SCENARIOS=(
   "fan-in-4"
@@ -57,6 +58,7 @@ ALL_SCENARIOS=(
   "priority-ordering"
   "stale-admin-release"
   "extra-label-resources"
+  "label-quantity-all"
   "fan-in-4"
   "chain-4"
   "diamond"
@@ -77,6 +79,7 @@ declare -A SCENARIO_IDS=(
   ["priority-ordering"]="S12"
   ["stale-admin-release"]="S13"
   ["extra-label-resources"]="S14"
+  ["label-quantity-all"]="S15"
   ["fan-in-4"]="D01"
   ["chain-4"]="D02"
   ["diamond"]="D03"
@@ -99,7 +102,7 @@ Options:
                         fail-closed | label-env-vars | delegated-mode |
                         extra-resources | heartbeat-resilience |
                         priority-ordering | stale-admin-release |
-                        extra-label-resources |
+                        extra-label-resources | label-quantity-all |
                         fan-in-4 | chain-4 | diamond |
                         s-series | m1a-series | m1b-series | m1c-series | d-series | all
   -h, --help            Show this help.

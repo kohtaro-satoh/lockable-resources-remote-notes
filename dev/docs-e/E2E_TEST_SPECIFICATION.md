@@ -31,6 +31,7 @@ lockable-resources-plugin:
 | 12 | Unified queue priority (remote waiters' priority applies across local waiters) | P1M1B |
 | 13 | STALE admin release (STALE transition → fail-close hold → Force Release → waiter wakes) | P1M1B |
 | 14 | Atomic acquisition of label-based extra (main + label-extra under a single lease) | P1M1C |
+| 15 | Label with unspecified quantity locks ALL matching (equivalent to local "0 = all") | P1M1C |
 
 ---
 
@@ -54,6 +55,7 @@ lockable-resources-plugin:
 | S12 | `priority-ordering` | local/remote priority contention | Unified queue priority dispatch | a, b | P1M1B |
 | S13 | `stale-admin-release` | Ghost lease → STALE → admin release | STALE transition, fail-close hold, Force Release | b | P1M1B |
 | S14 | `extra-label-resources` | resource + label-based extra atomic acquire | label-extra acquired under one lease (C-1 regression) | a, b | P1M1C |
+| S15 | `label-quantity-all` | label acquire with no quantity | all matching locked under one lease ("0 = all" equivalence) | a, b | P1M1C |
 | D01 | `fan-in-4` | A, B, C contend for D's resource | 4-client → 1-server queue stability | a, b, c, d | P1M1 |
 | D02 | `chain-4` | A→B, B→C, C→D (independent chain) | n parallel one-way relays | a, b, c, d | P1M1 |
 | D03 | `diamond` | A→(B+C), B→D, C→D (diamond dependency) | No deadlock under indirect shared dependency | a, b, c, d | P1M1 |
@@ -210,6 +212,14 @@ flowchart LR
   B -- "lockEnvVars: {S14RES: 'R1,GPU1', S14RES0: R1, S14RES1: GPU1}" --> A
 ```
 
+#### S15 label-quantity-all [P1M1C]
+
+```mermaid
+flowchart LR
+  A[Controller A] -- "lock(label: POOL, serverId: 'b')  // no quantity" --> B[(B: POOL1 + POOL2 + POOL3)]
+  B -- "single lease locks all three (0 = all)" --> A
+```
+
 #### D01 fan-in-4 [P1M1]
 
 ```mermaid
@@ -299,7 +309,7 @@ configure_label_resource(base_url, resource_name, label_name)    # added in P1M1
                         fail-closed | label-env-vars | delegated-mode |
                         extra-resources | heartbeat-resilience |
                         priority-ordering | stale-admin-release |
-                        extra-label-resources |
+                        extra-label-resources | label-quantity-all |
                         fan-in-4 | chain-4 | diamond |
                         s-series | m1a-series | m1b-series | m1c-series | d-series | all
 -h, --help            Show help
@@ -310,14 +320,14 @@ configure_label_resource(base_url, resource_name, label_name)    # added in P1M1
 | `s-series` | S01–S07 (P1M1) |
 | `m1a-series` | S08–S09 (P1M1A) |
 | `m1b-series` | S10–S13 (P1M1B) |
-| `m1c-series` | S14 (P1M1C) |
+| `m1c-series` | S14–S15 (P1M1C) |
 | `d-series` | D01–D03 (P1M1; jenkins-d must be running) |
-| `all` | S01–S14 + D01–D03 |
+| `all` | S01–S15 + D01–D03 |
 
 ### Execution order (all)
 
 ```
-S01 → S02 → S03 → S04 → S05 → S06 → S07 → S08 → S09 → S10 → S11 → S12 → S13 → S14 → D01 → D02 → D03
+S01 → S02 → S03 → S04 → S05 → S06 → S07 → S08 → S09 → S10 → S11 → S12 → S13 → S14 → S15 → D01 → D02 → D03
 ```
 
 ---
@@ -378,6 +388,7 @@ JENKINS-50260), so `lock(label:...)` alone fails with
 | S12 A→B | `s12-a-for-b` | A | B admin API token | P1M1B |
 | S13 (direct curl) | none (uses the API token directly) | - | B admin API token | P1M1B |
 | S14 A→B | `s14-a-for-b` | A | B admin API token | P1M1C |
+| S15 A→B | `s15-a-for-b` | A | B admin API token | P1M1C |
 | D01 A,B,C→D | `d01-for-d` | A, B, C | D admin API token | P1M1 |
 | D02 A→B | `d02-a-for-b` | A | B admin API token | P1M1 |
 | D02 B→C | `d02-b-for-c` | B | C admin API token | P1M1 |
@@ -853,6 +864,54 @@ reports/<runId>-e2e-test/extra-label-resources/scenario-details.md
 
 ---
 
+## S15: label-quantity-all — Unspecified-quantity label locks ALL [P1M1C]
+
+### Test intent
+
+`lock(label: X)` with **no quantity** must lock **every** matching resource
+(verification of the M1C follow-up fix).
+
+local `lock()` interprets `requiredNumber == null` (quantity 0/unspecified) as
+"0 = all" and acquires every resource carrying the label
+(`LockableResourcesManager.getRequiredAmount`). Since M1A the remote path instead
+defaulted to 1 (`claimSelector "?: 1"`, POST `optInt("quantity", 1)`), so
+`lock(label: X)` locked all locally but only one remotely. It **survived three
+cycles because every test pinned an explicit quantity**.
+
+### B-side setup
+
+Three exposed resources carrying `$POOL_LABEL` (timestamp-uniqued): POOL1 via
+`configure_remote_server` (auth + exposed), then POOL1–3 via
+`configure_label_resource` adding `[remote-enabled, $POOL_LABEL]`.
+
+### Pipeline
+
+Scripted pipeline; the point is to omit `quantity`.
+
+| Job | controller | Body |
+|---|---|---|
+| `s15-label-all` | A | `lock(label: POOL_LABEL, variable: 'S15RES', serverId: 'b') { echo + sleep 8 }` (no quantity) |
+
+### Checkpoints
+
+| ID | Check | Expected |
+|---|---|---|
+| CP01 | Build result | `SUCCESS` |
+| CP02 | During the body, POOL1/2/3 have the **same non-null** `remoteLockedBy` on B (all three = "0 = all" under one lease) | `true` |
+| CP03 | `S15RES` contains all three pool resources, comma-separated | `true` |
+| CP05 | All three released after completion | `true` |
+| CP06 | `Remote lock acquired on` appears in the console | `true` |
+
+### Output files
+
+```
+reports/<runId>-e2e-test/label-quantity-all/console.txt
+reports/<runId>-e2e-test/label-quantity-all/summary.txt
+reports/<runId>-e2e-test/label-quantity-all/scenario-details.md
+```
+
+---
+
 ## D01: fan-in-4 — Four-Controller Contention [P1M1]
 
 ### Test intent
@@ -970,6 +1029,7 @@ The report records:
 | 2026-06-12 | All 16 (incl. P1M1B, `--clean-start`) | **16/16 PASS** | `dev/reports/20260612011822-e2e-test.md` |
 | 2026-06-12 | All 16 (incl. M1B follow-ups F-1–F-3, `--clean-start`) | **16/16 PASS** | `dev/reports/20260612110631-e2e-test.md` |
 | 2026-06-12 | All 17 (incl. M1C / S14, `--clean-start`) | **17/17 PASS** | `dev/reports/20260612201703-e2e-test.md` |
+| 2026-06-12 | All 18 (incl. M1C follow-up / S15, `--clean-start`) | **18/18 PASS** | `dev/reports/20260612233944-e2e-test.md` |
 
 ---
 
@@ -993,3 +1053,6 @@ The report records:
 - 2026-06-12: Defined the M1C scenario S14 (extra-label-resources), a regression
   for M1B review finding C-1. Added the `m1c-series` group; runnable in isolation
   via `--only extra-label-resources`.
+- 2026-06-12: Added the M1C follow-up scenario S15 (label-quantity-all), proving a
+  label acquire with no quantity locks ALL matching resources ("0 = all",
+  local-equivalent). Added to `m1c-series`.

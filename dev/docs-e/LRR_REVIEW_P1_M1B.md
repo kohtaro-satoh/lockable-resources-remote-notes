@@ -20,11 +20,12 @@ Plugin branch `feature/1025-remote-lockable-resources-p1-m1c` (based on m1b).
 | M-1 onResume QUEUED resume degrades displayTarget | ⏸ Deferred (display-only, no functional impact; needs resource-name persistence) |
 | M-2 extra-only request client/server asymmetry | ✅ Resolved (`5296b50`. The server now accepts extra-only requests, matching local lock(). Unit + HTTP tests) |
 | M-3 consecutivePollFailures not reset on onResume | ✅ Resolved (`5296b50`. Reset to 0 on onResume) |
+| F-1 (found during M1C) label unspecified quantity = ALL | ✅ Resolved (`2d88834`. Not a finding of this review, but surfaced by the user's "extra unsolved across M1A/M1B/M1C" remark. Since M1A the remote path locked only 1 for a label with unspecified quantity — not equivalent to local "0 = all". `claimSelector` now locks the full pool; POST default 0. E2E S15 + 5 unit tests) |
 
-**Verification:** `stabilize-build.sh` (worktree) — **mvn test 370 / 0 failures / 1 skip**
-(known JENKINS-40787, `dev/reports/20260612192153-mvn-test.log`). **E2E
-`run-e2e.sh --clean-start` all 17 PASS 17/17** (incl. S14,
-`dev/reports/20260612201703-e2e-test.md`). Details in
+**Verification (final, after F-1):** `stabilize-build.sh` (worktree) — **mvn test
+375 / 0 failures / 1 skip** (known JENKINS-40787, `dev/reports/20260612232116-mvn-test.log`).
+**E2E `run-e2e.sh --clean-start` all 18 PASS 18/18** (incl. S14/S15,
+`dev/reports/20260612233944-e2e-test.md`). Details in
 `LRR_IMPLEMENTATION_STEPS_P1_M1C.md` / `LRR_DESIGN_P1_M1C.md`.
 
 ---

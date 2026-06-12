@@ -82,7 +82,8 @@ validateRemoteSelectors(req) -> errorCode | null      // structural validity (ex
 
 resolveRemoteAvailable(req) -> List<String> | null    // availability right now
     assign each selector to "free AND unclaimed AND (exposed, if label)" resources
-    a label selector greedily takes `quantity` (SEQUENTIAL)
+    a label selector greedily takes `quantity` (SEQUENTIAL);
+        **unspecified/0 means ALL matching** = local "0 = all" (M1C follow-up)
     claimedSet prevents **double-counting across selectors**
         (main label x1 + extra label x1 → two distinct resources)
     all selectors satisfied → return all names (atomic). any shortfall → null (QUEUED/SKIPPED)
@@ -104,6 +105,9 @@ resolveRemoteAvailable(req) -> List<String> | null    // availability right now
   and queue paths** (both: "nothing exposed = UNKNOWN_LABEL").
 - with `quantity` and de-duplication, multiple selectors requesting the same
   label are assigned **distinct resources**.
+- **unspecified/0 quantity = ALL matching** (local "0 = all" equivalence; M1C
+  follow-up). The remote path defaulted to 1 since M1A, which was not equivalent.
+  `quantity > pool` stays QUEUED (unsatisfiable), as local.
 
 ---
 
@@ -162,6 +166,7 @@ onResume (a restart is not a poll failure).
 |---|---|
 | Full label-extra implementation | unified selector resolver (§3): immediate/queue unified, atomic, de-duplicated, exposeLabel-filtered |
 | Unified empty-exposeLabel behaviour | both immediate and queue: "nothing exposed = UNKNOWN_LABEL" |
+| Label unspecified quantity = ALL [F-1] | `quantity<=0` locks all matching (local "0 = all"); POST default also 1→0 |
 | Serialized release | terminal-mark QUEUED under `syncResources` then unqueue (§4) |
 | Accept extra-only | server accepts no-main + extra (§5) |
 | Poll budget reset | `consecutivePollFailures = 0` on onResume (§6) |
@@ -181,3 +186,6 @@ onResume (a restart is not a poll failure).
 - 2026-06-12: Initial version. Defines M1C (doubling down on transparent
   equivalence) to resolve C-1/C-2/M-2/M-3 from the M1B-completion review
   (`LRR_REVIEW_P1_M1B.md`). M-1 deferred.
+- 2026-06-12 (M1C follow-up F-1): fixed label unspecified/0 quantity to mean "all
+  matching" (local "0 = all" equivalence) — a long-standing non-equivalence where
+  the remote path defaulted to 1 since M1A. Proven by §3 and §7, E2E S15, and unit tests.

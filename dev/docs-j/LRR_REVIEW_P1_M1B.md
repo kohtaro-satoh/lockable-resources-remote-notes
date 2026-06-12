@@ -20,10 +20,12 @@
 | M-1 onResume QUEUED 再開で displayTarget 劣化 | ⏸ 後送り（表示のみ・機能影響なし。リソース名永続化が必要なため別途） |
 | M-2 extra-only リクエストの client/server 非対称 | ✅ 解消（`5296b50`。server が extra-only を受理（local lock() と等価）。ユニット + HTTP テスト） |
 | M-3 consecutivePollFailures が onResume でリセットされない | ✅ 解消（`5296b50`。onResume で 0 リセット） |
+| F-1（M1C 追加検出）label quantity 未指定 = 全部 | ✅ 解消（`2d88834`。本レビューには無い指摘だが、ユーザーの「extra が M1A/M1B/M1C と未解決」指摘を機に発覚。M1A 以降 remote は label 未指定 quantity を 1 個に倒しており local "0 = all" と非等価だった。`claimSelector` で全プール取得＋POST 既定 0。E2E S15・ユニット 5 件） |
 
-**検証:** `stabilize-build.sh`（worktree）で **mvn test 370 件 / 0 失敗 / 1 skip**（既知 JENKINS-40787、
-`dev/reports/20260612192153-mvn-test.log`）。**E2E `run-e2e.sh --clean-start` 全 17 件 17/17 PASS**
-（S14 含む、`dev/reports/20260612201703-e2e-test.md`）。詳細は `LRR_IMPLEMENTATION_STEPS_P1_M1C.md` / `LRR_DESIGN_P1_M1C.md`。
+**検証（F-1 反映後の最終）:** `stabilize-build.sh`（worktree）で **mvn test 375 件 / 0 失敗 / 1 skip**
+（既知 JENKINS-40787、`dev/reports/20260612232116-mvn-test.log`）。**E2E `run-e2e.sh --clean-start`
+全 18 件 18/18 PASS**（S14/S15 含む、`dev/reports/20260612233944-e2e-test.md`）。
+詳細は `LRR_IMPLEMENTATION_STEPS_P1_M1C.md` / `LRR_DESIGN_P1_M1C.md`。
 
 ---
 
