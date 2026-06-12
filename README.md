@@ -34,7 +34,8 @@ M1B superseded them).
 |---|---|---|
 | M1 (minimal peer mode) | [e](dev/docs-e/LRR_DESIGN_P1_M1.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1.md) |
 | M1A (transparent lockRequest) | [e](dev/docs-e/LRR_DESIGN_P1_M1A.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1A.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1A.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1A.md) |
-| **M1B (transparent equivalence)** | [e](dev/docs-e/LRR_DESIGN_P1_M1B.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1B.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1B.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1B.md) |
+| M1B (transparent equivalence) | [e](dev/docs-e/LRR_DESIGN_P1_M1B.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1B.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1B.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1B.md) |
+| **M1C (M1B review fixes)** | [e](dev/docs-e/LRR_DESIGN_P1_M1C.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1C.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1C.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1C.md) |
 
 E2E test specification (unified across milestones; each test item is tagged
 P1M1 / P1M1A / P1M1B):
@@ -62,9 +63,12 @@ Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/doc
 
 ## Status / 現況
 
-- **Phase 1 / M1B complete, including follow-ups F-1–F-3** (2026-06-12):
-  all 8 steps + 3 follow-up items implemented,
-  360 unit tests passing, 16/16 E2E scenarios passing.
+- **Phase 1 / M1C in progress** (2026-06-12): resolving the M1B-completion review
+  findings (C-1 label-based extra silently dropped; C-2 release/promotion race;
+  M-2/M-3). 370 unit tests passing; E2E S14 added (full-suite run in progress).
+- Phase 1 / M1B complete, including follow-ups F-1–F-3 (2026-06-12): all 8 steps
+  + 3 follow-up items, 360 unit tests, 16/16 E2E.
 - Plugin branches (kept local; push/PR planned after final polishing):
-  - `feature/1025-remote-lockable-resources-p1-m1b` — M1B work (current, HEAD `02fcfae`)
+  - `feature/1025-remote-lockable-resources-p1-m1c` — M1C work (current, HEAD `5296b50`); branched from m1b.
+  - `feature/1025-remote-lockable-resources-p1-m1b` — M1B work (HEAD `02fcfae`)
   - `feature/1025-remote-lockable-resources-p1-m1a` — M1A only (HEAD `c782c28`); m1b is branched from here.
