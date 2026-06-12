@@ -7,6 +7,31 @@
 
 ---
 
+## M1B での解消状況（2026-06-12 追記）
+
+本レビューの指摘を受けて M1B（`LRR_DESIGN_P1_M1B.md`）を実施した。各指摘の現況:
+
+| 指摘 | M1B での状況 |
+|---|---|
+| 3-1 extra 欠落 | ✅ 解消（完全実装。E2E S10 で実証） |
+| 3-2 lockEnvVars 非等価 | ✅ 解消（カンマ結合。プロパティ env var は「非対応」と宣言） |
+| 3-3 再起動セマンティクス | ✅ 既知制約として文書化（transient は設計通り、運用前提を明記） |
+| 3-4 onResume 欠落 | ✅ 解消 |
+| 3-5 STALE 解放手段なし | ✅ 解消（Force Release UI。E2E S13 で実証） |
+| 4-1 1 回の通信失敗で即死 | ✅ 解消（poll リトライ予算 + heartbeat 警告継続。E2E S11 で実証。BodyExecution 保持は B 案採用により不要化） |
+| 4-2 キュー意味論の乖離 | ✅ 解消（LRM 統一キューブリッジ。E2E S12 で実証） |
+| 4-3 local 待機者を起こさない | ✅ 解消（統一キューで自動解決） |
+| 4-4 QUEUED の TTL なし | ⏳ 未解消（M1B 後の課題） |
+| 4-5 release と tick の競合 | ✅ 構造的に消滅（tick 昇格を廃止、キュー操作は syncResources 下に統一） |
+| 4-6 充足不可能要求が永遠に QUEUED | △ 部分解消（timeout 指定時は LOCK_WAIT_TIMEOUT で FAILED。timeout なしは従来通り） |
+| 5-1 権限モデル | ⏳ 未解消（upstream PR 前に要対応） |
+| 5-2 匿名リクエスト | ✅ 意図的挙動として再決定（空 credentialsId = 認証不要サーバー向けの正規ユースケース。M1B 決定 1-c） |
+| ドリフト #3 exposeLabel Javadoc | ✅ 解消 |
+| ドリフト #4 forcedServerId バリデーション | ⏳ 未解消（M1B Step 1-d は計画のみで繰り越し） |
+| ドリフト #10 README 空 | ✅ 解消（索引付き README 整備） |
+
+---
+
 ## 目次
 
 1. [総評](#1-総評)

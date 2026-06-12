@@ -3,6 +3,10 @@
 > **Source:** [jenkinsci/lockable-resources-plugin #1025](https://github.com/jenkinsci/lockable-resources-plugin/issues/1025)
 > **Design updates reflected:** Removed `cancel` endpoint, unified `requestId`/`leaseId` as `lockId`
 > **Scope:** Phase 1 M1A (transparent wrapper for peer mode)
+>
+> **⚠️ Updated by M1B:** Parts of this document (lockEnvVars separator, queue semantics,
+> state list, resilience/restart policy) were updated in M1B. See `LRR_DESIGN_P1_M1B.md`
+> for the current truth.
 
 ---
 
@@ -223,7 +227,7 @@ sequenceDiagram
   "errorCode": null,
   "message": null,
   "lockEnvVars": {
-    "LOCKED_RESOURCE": "resource1 resource2",
+    "LOCKED_RESOURCE": "resource1,resource2",
     "LOCKED_RESOURCE0": "resource1",
     "LOCKED_RESOURCE1": "resource2"
   }

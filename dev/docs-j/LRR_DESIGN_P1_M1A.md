@@ -3,6 +3,9 @@
 > **出典:** [jenkinsci/lockable-resources-plugin #1025](https://github.com/jenkinsci/lockable-resources-plugin/issues/1025)
 > **設計変更反映:** `cancel` エンドポイント廃止、`requestId`/`leaseId` を `lockId` に統一
 > **対象スコープ:** Phase 1 M1A（peer mode の透過ラッパー成立）
+>
+> **⚠️ M1B による更新あり:** 本書の一部（lockEnvVars 結合文字、キュー意味論、state 一覧、
+> 耐障害性・再起動方針）は M1B で更新された。現行真実は `LRR_DESIGN_P1_M1B.md` を参照。
 
 ---
 
@@ -223,7 +226,7 @@ sequenceDiagram
   "errorCode": null,
   "message": null,
   "lockEnvVars": {
-    "LOCKED_RESOURCE": "resource1 resource2",
+    "LOCKED_RESOURCE": "resource1,resource2",
     "LOCKED_RESOURCE0": "resource1",
     "LOCKED_RESOURCE1": "resource2"
   }
