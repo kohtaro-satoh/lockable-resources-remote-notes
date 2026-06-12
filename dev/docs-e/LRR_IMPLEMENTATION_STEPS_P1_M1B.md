@@ -150,7 +150,7 @@ Step 2 and beyond.
 
 - [x] Implementation complete (1-a / 1-b. **1-d NOT implemented — carried over**)
 - [x] `mvn test` confirmed (347 tests BUILD SUCCESS)
-- [x] Committed (`25fa4ae`)
+- [x] Committed (`456561f`)
 
 Notes: Implemented 2026-06-11 (1-a lockEnvVars comma join, 1-b exposeLabel
 Javadoc). 1-c (credentialsId) left unchanged (anonymous access is a legitimate
@@ -193,7 +193,7 @@ atomically over remote as well. In M1A, `extra` was ignored server-side.
 
 - [x] Implementation complete
 - [x] `mvn test` confirmed (352 tests BUILD SUCCESS, `dev/reports/20260612000923-mvn-test.log`)
-- [x] Committed (`42fa2c9`)
+- [x] Committed (`8f40a2c`)
 
 Notes: Implemented 2026-06-11. extra parsing + exposeLabel checks at the API
 boundary. Tests added to RemoteLockManagerTest/RemoteApiV1ActionTest.
@@ -308,7 +308,7 @@ private boolean shouldPickRemote(local, remote) {
 
 - [x] Implementation complete
 - [x] `mvn test` confirmed (352 tests BUILD SUCCESS, `dev/reports/20260612000923-mvn-test.log`)
-- [x] Committed (`4137a13`)
+- [x] Committed (`dc4c9f9`)
 
 Notes: Implemented 2026-06-11. New RemoteQueueEntry class; LRM gained
 queueRemote/unqueueRemote/lockForRemote/unlockRemoteResources and the
@@ -358,7 +358,7 @@ private static final int MAX_CONSECUTIVE_POLL_FAILURES = 20; // ≈60 seconds
 
 - [x] Implementation complete
 - [x] `mvn test` confirmed (352 tests BUILD SUCCESS, `dev/reports/20260612000923-mvn-test.log`)
-- [x] Committed (`8d45fbe`)
+- [x] Committed (`f13fdca`)
 
 Notes: Implemented 2026-06-11. Added the consecutivePollFailures counter, MAX=20
 (≈60s). 404/410 detected via RemoteApiException.getHttpStatus() → immediate
@@ -421,7 +421,7 @@ public void onResume() {
 
 - [x] Implementation complete
 - [x] `mvn test` confirmed (352 tests BUILD SUCCESS, `dev/reports/20260612000923-mvn-test.log`)
-- [x] Committed (`8d45fbe`)
+- [x] Committed (`f13fdca`)
 
 Notes: Implemented 2026-06-11. Restart while QUEUED → re-run startRemotePolling.
 Restart while ACQUIRED → releaseRemoteLockBestEffort + AbortException.
@@ -482,7 +482,7 @@ public boolean isRemoteLockStale() {
 
 - [x] Implementation complete
 - [x] `mvn test` confirmed (352 tests BUILD SUCCESS, `dev/reports/20260612000923-mvn-test.log`)
-- [x] Committed (`26bc69a`)
+- [x] Committed (`20ee709`)
 
 Notes: Implemented 2026-06-11. Added the remoteLockedBy != null case to
 table.jelly (with the UNLOCK permission check). Added doReleaseRemoteLock() to
@@ -523,7 +523,7 @@ Confirm all M1A tests still pass (regression).
 
 - [x] Implementation complete (2 LRM queue-bridge integration tests + 5 extra/API tests added)
 - [x] `mvn test` confirmed (354 tests BUILD SUCCESS, RemoteLockManagerTest 18 tests, `dev/reports/20260612002702-mvn-test.log`)
-- [x] Committed (`64981dd`)
+- [x] Committed (`ba670e7`)
 
 Notes: Added 2026-06-12. queuedEntryBecomesAcquiredWhenResourceFreed /
 releaseSchedulesQueueMaintenanceForLocalWaiters added to RemoteLockManagerTest.
@@ -546,7 +546,7 @@ Add scenarios to the E2E harness that substantiate M1B's safety claims.
 
 #### M1B regression check (2026-06-12)
 
-- `run-e2e.sh --clean-start` (4 containers freshly started with the HPI of HEAD `64981dd`): **11/12 PASS**
+- `run-e2e.sh --clean-start` (4 containers freshly started with the HPI of HEAD `ba670e7`): **11/12 PASS**
   - Report: `dev/reports/20260612004506-e2e-test.md`
   - Only S08 label-env-vars FAILed — not a plugin bug but a Declarative usage
     issue in the scenario script (Declarative treats the `@DataBoundConstructor`
@@ -581,10 +581,10 @@ via `--only m1b-series`).
 
 - [x] Implementation complete (S10–S13 all 4 scenarios PASS, 2026-06-12)
 - [x] E2E regression confirmed (**full 16-scenario regression 16/16 PASS**, `dev/reports/20260612011822-e2e-test.md`, 2026-06-12)
-- [x] Committed (notes repository `adf3429`)
+- [x] Committed (notes repository `1ef27e7`)
 
-Notes: Completed 2026-06-12. The S08 scenario fix is `db094e0`; the S10–S13
-additions and reports are `adf3429`.
+Notes: Completed 2026-06-12. The S08 scenario fix is `4f5ccab`; the S10–S13
+additions and reports are `1ef27e7`.
 
 ---
 
@@ -636,7 +636,7 @@ review finding 4-4, review finding 5-1) as M1B follow-up work.
 - Full 16-scenario E2E regression PASS (the existing environment uses admin
   tokens = ADMINISTER-implied, so it should pass unchanged)
 
-- [x] Implementation complete (commits: `1664ac1` F-1 / `fc4e550` F-2 / `7551d67` F-3)
+- [x] Implementation complete (commits: `0ddc184` F-1 / `b79a669` F-2 / `02fcfae` F-3)
 - [x] `mvn test` confirmed (**360 tests / 0 failures / BUILD SUCCESS**, +6:
   LockableResourcesManagerRemoteConnectionTest 15 / RemoteLockManagerTest 20 /
   RemoteApiV1ActionTest 8. `dev/reports/20260612104846-mvn-test.log`)
@@ -675,7 +675,7 @@ tests via the `queuePollExpiryMs` system property (default stays 60s).
 - Plan created: 2026-06-11
 - Starting branch: `feature/1025-remote-lockable-resources-p1-m1a` (starting HEAD: `c782c28`)
 - **Steps 0–8 + follow-ups F-1–F-3: ALL COMPLETE ✅** (2026-06-12)
-- Plugin HEAD: `7551d67` (mvn test: **360 tests / 0 failures**)
+- Plugin HEAD: `02fcfae` (mvn test: **360 tests / 0 failures**)
 - E2E: all 16 scenarios 16/16 PASS (`dev/reports/20260612110631-e2e-test.md`)
 - Current design truth: `LRR_DESIGN_P1_M1B.md`; E2E spec: `E2E_TEST_SPECIFICATION.md` (unified)
 - Review findings: **all closed** (4-6 closed as by-design under transparent equivalence; stated in the design spec §5)

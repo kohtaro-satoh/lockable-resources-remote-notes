@@ -128,7 +128,7 @@ Completion criteria:
 
 Notes:
 - Date: 2026-06-11
-- Commit: `b383685`
+- Commit: `19a0703`
 - Changed files:
   - src/main/java/.../remote/RemoteLockRequest.java (new)
   - src/main/java/.../remote/RemoteLockRecord.java (edited: `@NonNull` → `@CheckForNull` on resourceName)
@@ -205,7 +205,7 @@ Completion criteria:
 
 Notes:
 - Date: 2026-06-11
-- Commit: `e18f982`
+- Commit: `9a08b8f`
 - Changed files:
   - src/main/java/.../remote/RemoteLockRecord.java (edited: holds RemoteLockRequest + acquiredResourceNames)
   - src/main/java/.../remote/RemoteLockManager.java (edited: label/quantity/extra acquisition logic)
@@ -289,7 +289,7 @@ Completion criteria:
 
 Notes:
 - Date: 2026-06-11
-- Commit: `50857c1`
+- Commit: `b5bac87`
 - Changed files:
   - src/main/java/.../remote/RemoteLockRecord.java (edited)
   - src/main/java/.../remote/RemoteLockManager.java (edited)
@@ -375,7 +375,7 @@ Completion criteria:
 
 Notes:
 - Date: 2026-06-11
-- Commit: `48f0dca`
+- Commit: `aff099f`
 - Changed files:
   - src/main/java/.../LockableResourcesManager.java (edited)
   - src/main/java/.../LockStepExecution.java (edited)
@@ -435,7 +435,7 @@ Completion criteria:
 
 Notes:
 - Date: 2026-06-11
-- Commit: `b0d2eee`
+- Commit: `c782c28`
 - Changed files:
   - src/main/java/.../LockStepExecution.java (edited: skip local validation for remote locks)
   - src/test/java/.../actions/RemoteApiV1ActionTest.java (edited)
