@@ -674,8 +674,9 @@ tests via the `queuePollExpiryMs` system property (default stays 60s).
 
 - Plan created: 2026-06-11
 - Starting branch: `feature/1025-remote-lockable-resources-p1-m1a` (starting HEAD: `c782c28`)
+- M1B branch: `feature/1025-remote-lockable-resources-p1-m1b` — branched from m1a@`c782c28`, carries all M1B commits. `m1a` is left at the M1A final commit `c782c28`. (branch split 2026-06-12)
 - **Steps 0–8 + follow-ups F-1–F-3: ALL COMPLETE ✅** (2026-06-12)
-- Plugin HEAD: `02fcfae` (mvn test: **360 tests / 0 failures**)
+- Plugin HEAD: `feature/1025-remote-lockable-resources-p1-m1b` @ `02fcfae` (mvn test: **360 tests / 0 failures**)
 - E2E: all 16 scenarios 16/16 PASS (`dev/reports/20260612110631-e2e-test.md`)
 - Current design truth: `LRR_DESIGN_P1_M1B.md`; E2E spec: `E2E_TEST_SPECIFICATION.md` (unified)
 - Review findings: **all closed** (4-6 closed as by-design under transparent equivalence; stated in the design spec §5)

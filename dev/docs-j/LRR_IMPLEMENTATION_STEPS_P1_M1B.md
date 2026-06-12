@@ -644,8 +644,9 @@ M1B 追加作業として回収する。
 
 - 計画作成日: 2026-06-11
 - 起点ブランチ: `feature/1025-remote-lockable-resources-p1-m1a`（起点 HEAD: `c782c28`）
+- M1B ブランチ: `feature/1025-remote-lockable-resources-p1-m1b` — m1a@`c782c28` から分岐し、M1B の全 commit を保持。`m1a` は M1A 最終 commit `c782c28` に据え置き。（ブランチ分割 2026-06-12）
 - **Step 0〜8 + 追補 F-1〜F-3: 全完了 ✅**（2026-06-12）
-- plugin HEAD: `02fcfae`（mvn test **360 件 / 0 失敗**）
+- plugin HEAD: `feature/1025-remote-lockable-resources-p1-m1b` @ `02fcfae`（mvn test **360 件 / 0 失敗**）
 - E2E: 全 16 シナリオ 16/16 PASS（`dev/reports/20260612110631-e2e-test.md`）
 - 設計の現行真実: `LRR_DESIGN_P1_M1B.md`、E2E 仕様: `E2E_TEST_SPECIFICATION.md`（統合版）
 - レビュー指摘: **全クローズ**（4-6 は透過等価により設計どおりとしてクローズ、設計書 §5 に明記）

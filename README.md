@@ -63,5 +63,6 @@ Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/doc
 - **Phase 1 / M1B complete, including follow-ups F-1–F-3** (2026-06-12):
   all 8 steps + 3 follow-up items implemented,
   360 unit tests passing, 16/16 E2E scenarios passing.
-- Plugin branch: `feature/1025-remote-lockable-resources-p1-m1a`
-  (kept local; push/PR planned after final polishing).
+- Plugin branches (kept local; push/PR planned after final polishing):
+  - `feature/1025-remote-lockable-resources-p1-m1b` — M1B work (current, HEAD `02fcfae`)
+  - `feature/1025-remote-lockable-resources-p1-m1a` — M1A only (HEAD `c782c28`); m1b is branched from here.
