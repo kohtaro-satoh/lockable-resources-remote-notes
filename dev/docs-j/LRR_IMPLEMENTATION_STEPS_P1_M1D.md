@@ -25,8 +25,8 @@ ExtensionPoint として 2 層目に分離。
 
 ### 0. 事前準備
 
-- [ ] m1d ブランチ作成（m1c ベース、HEAD `2d88834`）
-- [ ] `LRR_RESULT_P1_M1C` / `LRR_DESIGN_P1_M1D` / 本書（j+e）整備（notes コミット）
+- [x] m1d ブランチ作成（m1c ベース、HEAD `2d88834`）
+- [x] `LRR_RESULT_P1_M1C` / `LRR_DESIGN_P1_M1D` / 本書（j+e）整備（notes `14403df`）
 
 ### Step 1: `getAvailableResources` に candidateFilter オーバーロード追加
 
@@ -37,7 +37,7 @@ ExtensionPoint として 2 層目に分離。
 - local（`start()`）は無改修（既存オーバーロード経由）。
 
 #### 完了条件
-- [ ] 実装完了 / [ ] `mvn test` 緑 / [ ] コミット
+- [x] 実装完了 / [x] `mvn test` 緑（375 件 / 0 失敗）/ [x] コミット（plugin `819daa0`）
 
 ### Step 2: RemoteResourceExposurePolicy（ExtensionPoint）+ 既定 ExposeLabelPolicy
 
@@ -47,7 +47,7 @@ ExtensionPoint として 2 層目に分離。
 - docs に「ここに公開制限/allowlist/認可を差し込む」と明記済み（設計 §4）。
 
 #### 完了条件
-- [ ] 実装完了 / [ ] `mvn test` 緑 / [ ] コミット
+- [x] 実装完了 / [x] `mvn test` 緑（375 件 / 0 失敗）/ [x] コミット（plugin `819daa0`）
 
 ### Step 3: 共有 buildLockEnvVars（local/remote 共通）
 
@@ -57,7 +57,7 @@ ExtensionPoint として 2 層目に分離。
 - remote の `generateLockEnvVars`（部分実装）を撤去。
 
 #### 完了条件
-- [ ] 実装完了 / [ ] `mvn test` 緑 / [ ] コミット
+- [x] 実装完了 / [x] `mvn test` 緑（375 件 / 0 失敗）/ [x] コミット（plugin `819daa0`）
 
 ### Step 4: ブリッジ acquire/queue を canonical へ委譲（再実装撤去）
 
@@ -69,7 +69,7 @@ ExtensionPoint として 2 層目に分離。
 - RemoteApiV1Action: 解決系の前処理を撤去し、policy admission ＋ canonical 委譲に寄せる。
 
 #### 完了条件
-- [ ] 実装完了 / [ ] `mvn test` 緑 / [ ] コミット
+- [x] 実装完了 / [x] `mvn test` 緑（375 件 / 0 失敗）/ [x] コミット（plugin `819daa0`）
 
 ### Step 5: テスト整備 + フル回帰
 
@@ -79,16 +79,25 @@ ExtensionPoint として 2 層目に分離。
 - `stabilize-build.sh`（worktree）でフル `mvn test`。
 
 #### 完了条件
-- [ ] テスト整備 / [ ] `mvn test` 件数・0 失敗を記録 / [ ] コミット
+- [x] テスト整備（プロパティ env var 伝搬 / 公開ポリシー隠蔽 / 未知→QUEUED / 同一 label main+extra は local 一致。
+  M1C の terminal 前提テストを QUEUED へ改訂、同一 label dedup 前提の 2 テストは canonical 挙動に合わせ削除）
+- [x] `mvn test` **375 件 / 0 失敗 / 1 skip**（`dev/reports/20260613125351-mvn-test.log`）
+- [x] コミット（plugin `819daa0`）
 
 ### Step 6: E2E メンテ + 全件完走
 
-- 既存シナリオを M1D 挙動に追従（exposeLabel が filter 層へ移ったことの影響を確認）。
-- 追加候補: プロパティ env var の remote 伝搬 / RANDOM strategy / ephemeral remote（policy 次第）。
+- 既存シナリオは M1D 挙動で全件 PASS（exposeLabel が filter 層へ移った影響なし）。
+- 追加: **S16 `remote-resource-properties`**（プロパティ env var `VAR0_<PROP>` の remote 伝搬を実証、`m1d-series`）。
 - `run-e2e.sh --clean-start` 全件 PASS、レポート保存。
 
 #### 完了条件
-- [ ] E2E メンテ / [ ] 全件 PASS 記録 / [ ] notes コミット
+- [x] E2E メンテ（S16 追加 + run-e2e 登録 + 仕様 j+e）
+- [x] **全 19 件 19/19 PASS**（`dev/reports/20260613132702-e2e-test.md`。S16 CP03: `S16RES0_S16_IP` = プロパティ値で伝搬実証）
+- [x] notes コミット
+
+記録: 2026-06-13 完了。mvn 375 / E2E 19/19。lock() 意味論の再実装を撤去し canonical 委譲＋env var 共有＋
+公開 ExtensionPoint を実現。残「真の非等価」3 件（プロパティ env var / ephemeral / selectStrategy）を
+一括透過化（個別実装なし）。
 
 ---
 
@@ -100,3 +109,4 @@ ExtensionPoint として 2 層目に分離。
 ## 更新履歴
 
 - 2026-06-13: 初版作成。M1D（真のブリッジ化）の実装ステップ計画。
+- 2026-06-13: 全 Step 完了。mvn 375 / 0 失敗、E2E 19/19 PASS（S16 追加）。plugin `819daa0`。

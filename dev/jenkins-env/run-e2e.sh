@@ -38,6 +38,9 @@ M1C_SCENARIOS=(
   "extra-label-resources"
   "label-quantity-all"
 )
+M1D_SCENARIOS=(
+  "remote-resource-properties"
+)
 D_SCENARIOS=(
   "fan-in-4"
   "chain-4"
@@ -59,6 +62,7 @@ ALL_SCENARIOS=(
   "stale-admin-release"
   "extra-label-resources"
   "label-quantity-all"
+  "remote-resource-properties"
   "fan-in-4"
   "chain-4"
   "diamond"
@@ -80,6 +84,7 @@ declare -A SCENARIO_IDS=(
   ["stale-admin-release"]="S13"
   ["extra-label-resources"]="S14"
   ["label-quantity-all"]="S15"
+  ["remote-resource-properties"]="S16"
   ["fan-in-4"]="D01"
   ["chain-4"]="D02"
   ["diamond"]="D03"
@@ -103,8 +108,9 @@ Options:
                         extra-resources | heartbeat-resilience |
                         priority-ordering | stale-admin-release |
                         extra-label-resources | label-quantity-all |
+                        remote-resource-properties |
                         fan-in-4 | chain-4 | diamond |
-                        s-series | m1a-series | m1b-series | m1c-series | d-series | all
+                        s-series | m1a-series | m1b-series | m1c-series | m1d-series | d-series | all
   -h, --help            Show this help.
 USAGE
 }
@@ -146,7 +152,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 is_valid_only=false
-for allowed in all s-series m1a-series m1b-series m1c-series d-series "${ALL_SCENARIOS[@]}"; do
+for allowed in all s-series m1a-series m1b-series m1c-series m1d-series d-series "${ALL_SCENARIOS[@]}"; do
   if [[ "$ONLY" == "$allowed" ]]; then
     is_valid_only=true
     break
@@ -258,6 +264,9 @@ select_scenarios() {
       ;;
     m1c-series)
       printf '%s\n' "${M1C_SCENARIOS[@]}"
+      ;;
+    m1d-series)
+      printf '%s\n' "${M1D_SCENARIOS[@]}"
       ;;
     d-series)
       printf '%s\n' "${D_SCENARIOS[@]}"

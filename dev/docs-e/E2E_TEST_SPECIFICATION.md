@@ -6,7 +6,7 @@ This document defines the design and specification of the E2E tests executed by
 > **About this unification:** This document consolidates the former
 > `E2E_TEST_SPECIFICATION_P1_M1.md` / `_P1_M1A.md` / `_P1_M1B.md` (2026-06-12).
 > Every test item is annotated with the milestone that introduced it
-> (**P1M1** / **P1M1A** / **P1M1B** / **P1M1C**).
+> (**P1M1** / **P1M1A** / **P1M1B** / **P1M1C** / **P1M1D**).
 
 ---
 
@@ -32,6 +32,7 @@ lockable-resources-plugin:
 | 13 | STALE admin release (STALE transition → fail-close hold → Force Release → waiter wakes) | P1M1B |
 | 14 | Atomic acquisition of label-based extra (main + label-extra under a single lease) | P1M1C |
 | 15 | Label with unspecified quantity locks ALL matching (equivalent to local "0 = all") | P1M1C |
+| 16 | Resource-property env var propagation over the bridge (`VAR0_<PROP>` reaches the body) | P1M1D |
 
 ---
 
@@ -56,6 +57,7 @@ lockable-resources-plugin:
 | S13 | `stale-admin-release` | Ghost lease → STALE → admin release | STALE transition, fail-close hold, Force Release | b | P1M1B |
 | S14 | `extra-label-resources` | resource + label-based extra atomic acquire | label-extra acquired under one lease (C-1 regression) | a, b | P1M1C |
 | S15 | `label-quantity-all` | label acquire with no quantity | all matching locked under one lease ("0 = all" equivalence) | a, b | P1M1C |
+| S16 | `remote-resource-properties` | resource-property env var propagation | `VAR0_<PROP>` reaches the remote body (M1D shared env-var generation) | a, b | P1M1D |
 | D01 | `fan-in-4` | A, B, C contend for D's resource | 4-client → 1-server queue stability | a, b, c, d | P1M1 |
 | D02 | `chain-4` | A→B, B→C, C→D (independent chain) | n parallel one-way relays | a, b, c, d | P1M1 |
 | D03 | `diamond` | A→(B+C), B→D, C→D (diamond dependency) | No deadlock under indirect shared dependency | a, b, c, d | P1M1 |
@@ -220,6 +222,14 @@ flowchart LR
   B -- "single lease locks all three (0 = all)" --> A
 ```
 
+#### S16 remote-resource-properties [P1M1D]
+
+```mermaid
+flowchart LR
+  A[Controller A] -- "lock(resource: R, variable: 'S16RES', serverId: 'b')" --> B[(B: R with property S16_IP)]
+  B -- "lockEnvVars: {S16RES: R, S16RES0: R, S16RES0_S16_IP: <value>}" --> A
+```
+
 #### D01 fan-in-4 [P1M1]
 
 ```mermaid
@@ -310,8 +320,9 @@ configure_label_resource(base_url, resource_name, label_name)    # added in P1M1
                         extra-resources | heartbeat-resilience |
                         priority-ordering | stale-admin-release |
                         extra-label-resources | label-quantity-all |
+                        remote-resource-properties |
                         fan-in-4 | chain-4 | diamond |
-                        s-series | m1a-series | m1b-series | m1c-series | d-series | all
+                        s-series | m1a-series | m1b-series | m1c-series | m1d-series | d-series | all
 -h, --help            Show help
 ```
 
@@ -321,13 +332,14 @@ configure_label_resource(base_url, resource_name, label_name)    # added in P1M1
 | `m1a-series` | S08–S09 (P1M1A) |
 | `m1b-series` | S10–S13 (P1M1B) |
 | `m1c-series` | S14–S15 (P1M1C) |
+| `m1d-series` | S16 (P1M1D) |
 | `d-series` | D01–D03 (P1M1; jenkins-d must be running) |
-| `all` | S01–S15 + D01–D03 |
+| `all` | S01–S16 + D01–D03 |
 
 ### Execution order (all)
 
 ```
-S01 → S02 → S03 → S04 → S05 → S06 → S07 → S08 → S09 → S10 → S11 → S12 → S13 → S14 → S15 → D01 → D02 → D03
+S01 → S02 → S03 → S04 → S05 → S06 → S07 → S08 → S09 → S10 → S11 → S12 → S13 → S14 → S15 → S16 → D01 → D02 → D03
 ```
 
 ---
@@ -389,6 +401,7 @@ JENKINS-50260), so `lock(label:...)` alone fails with
 | S13 (direct curl) | none (uses the API token directly) | - | B admin API token | P1M1B |
 | S14 A→B | `s14-a-for-b` | A | B admin API token | P1M1C |
 | S15 A→B | `s15-a-for-b` | A | B admin API token | P1M1C |
+| S16 A→B | `s16-a-for-b` | A | B admin API token | P1M1D |
 | D01 A,B,C→D | `d01-for-d` | A, B, C | D admin API token | P1M1 |
 | D02 A→B | `d02-a-for-b` | A | B admin API token | P1M1 |
 | D02 B→C | `d02-b-for-c` | B | C admin API token | P1M1 |
@@ -912,6 +925,49 @@ reports/<runId>-e2e-test/label-quantity-all/scenario-details.md
 
 ---
 
+## S16: remote-resource-properties — Resource-property env var propagation [P1M1D]
+
+### Test intent
+
+local `lock()` injects a locked resource's properties as `VAR0_<propName>` env vars into the body.
+After M1D shared the env-var generator between local and remote
+(`LockStepExecution.buildLockEnvVars`), a **remote lock exposes the same `VAR0_<PROP>`** to the body.
+This proves the canonical-delegation win end-to-end (remote previously dropped property env vars — one
+of the "true non-equivalences").
+
+### B-side setup
+
+`configure_remote_server` creates the exposed resource `RES`; a Groovy snippet then adds a property
+`S16_IP=<value>` to `RES` (a `LockableResourceProperty` via `setProperties`).
+
+### Pipeline
+
+Scripted pipeline with `variable: 'S16RES'`; the body echoes `env.S16RES0_S16_IP`.
+
+| Job | controller | Body |
+|---|---|---|
+| `s16-props` | A | `lock(resource: RES, variable: 'S16RES', serverId: 'b') { echo S16RES0_S16_IP }` |
+
+### Checkpoints
+
+| ID | Check | Expected |
+|---|---|---|
+| CP01 | Build result | `SUCCESS` |
+| CP02 | `S16RES` / `S16RES0` equal `RES` | `true` |
+| CP03 | **`S16RES0_S16_IP` equals the property value (property env var bridged = M1D)** | `true` |
+| CP04 | `Remote lock acquired on` appears in the console | `true` |
+| CP05 | `RES` released after completion | `true` |
+
+### Output files
+
+```
+reports/<runId>-e2e-test/remote-resource-properties/console.txt
+reports/<runId>-e2e-test/remote-resource-properties/summary.txt
+reports/<runId>-e2e-test/remote-resource-properties/scenario-details.md
+```
+
+---
+
 ## D01: fan-in-4 — Four-Controller Contention [P1M1]
 
 ### Test intent
@@ -1030,6 +1086,7 @@ The report records:
 | 2026-06-12 | All 16 (incl. M1B follow-ups F-1–F-3, `--clean-start`) | **16/16 PASS** | `dev/reports/20260612110631-e2e-test.md` |
 | 2026-06-12 | All 17 (incl. M1C / S14, `--clean-start`) | **17/17 PASS** | `dev/reports/20260612201703-e2e-test.md` |
 | 2026-06-12 | All 18 (incl. M1C follow-up / S15, `--clean-start`) | **18/18 PASS** | `dev/reports/20260612233944-e2e-test.md` |
+| 2026-06-13 | All 19 (incl. M1D / S16, `--clean-start`) | **19/19 PASS** | `dev/reports/20260613132702-e2e-test.md` |
 
 ---
 
@@ -1056,3 +1113,6 @@ The report records:
 - 2026-06-12: Added the M1C follow-up scenario S15 (label-quantity-all), proving a
   label acquire with no quantity locks ALL matching resources ("0 = all",
   local-equivalent). Added to `m1c-series`.
+- 2026-06-13: Added the M1D scenario S16 (remote-resource-properties), proving
+  resource-property env vars (`VAR0_<PROP>`) propagate to the remote body (canonical
+  delegation + shared env-var generation). Added the `m1d-series` group.

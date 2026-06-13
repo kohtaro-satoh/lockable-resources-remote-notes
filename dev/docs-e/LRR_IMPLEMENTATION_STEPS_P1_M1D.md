@@ -25,8 +25,8 @@ all of them transparent at once. The filter (exposeLabel) is separated into a se
 
 ### 0. Preliminaries
 
-- [ ] Create the m1d branch (based on m1c, HEAD `2d88834`)
-- [ ] `LRR_RESULT_P1_M1C` / `LRR_DESIGN_P1_M1D` / this file (j+e) in place (notes commit)
+- [x] Create the m1d branch (based on m1c, HEAD `2d88834`)
+- [x] `LRR_RESULT_P1_M1C` / `LRR_DESIGN_P1_M1D` / this file (j+e) in place (notes `14403df`)
 
 ### Step 1: add a candidateFilter overload to `getAvailableResources`
 
@@ -37,7 +37,7 @@ all of them transparent at once. The filter (exposeLabel) is separated into a se
 - local (`start()`) is unchanged (uses the existing overload).
 
 #### Done criteria
-- [ ] Implemented / [ ] `mvn test` green / [ ] committed
+- [x] Implemented / [x] `mvn test` green (375 / 0 failures) / [x] committed (plugin `819daa0`)
 
 ### Step 2: RemoteResourceExposurePolicy (ExtensionPoint) + default ExposeLabelPolicy
 
@@ -47,7 +47,7 @@ all of them transparent at once. The filter (exposeLabel) is separated into a se
 - The seam ("plug exposure restriction/allowlist/authorization here") is documented (design §4).
 
 #### Done criteria
-- [ ] Implemented / [ ] `mvn test` green / [ ] committed
+- [x] Implemented / [x] `mvn test` green (375 / 0 failures) / [x] committed (plugin `819daa0`)
 
 ### Step 3: shared buildLockEnvVars (local/remote)
 
@@ -57,7 +57,7 @@ all of them transparent at once. The filter (exposeLabel) is separated into a se
 - Remove remote's partial `generateLockEnvVars`.
 
 #### Done criteria
-- [ ] Implemented / [ ] `mvn test` green / [ ] committed
+- [x] Implemented / [x] `mvn test` green (375 / 0 failures) / [x] committed (plugin `819daa0`)
 
 ### Step 4: route bridge acquire/queue through the canonical path (remove re-implementation)
 
@@ -70,7 +70,7 @@ all of them transparent at once. The filter (exposeLabel) is separated into a se
 - RemoteApiV1Action: drop resolution pre-processing; lean on policy admission + canonical delegation.
 
 #### Done criteria
-- [ ] Implemented / [ ] `mvn test` green / [ ] committed
+- [x] Implemented / [x] `mvn test` green (375 / 0 failures) / [x] committed (plugin `819daa0`)
 
 ### Step 5: tests + full regression
 
@@ -80,16 +80,27 @@ all of them transparent at once. The filter (exposeLabel) is separated into a se
 - Full `mvn test` via `stabilize-build.sh` (worktree).
 
 #### Done criteria
-- [ ] Tests in place / [ ] record count & 0 failures / [ ] committed
+- [x] Tests in place (property env var propagation / exposure-policy hiding / unknown→QUEUED /
+  same-label main+extra matches local. M1C terminal-based tests revised to QUEUED; the two same-label
+  dedup tests were removed to match canonical behaviour)
+- [x] `mvn test` **375 / 0 failures / 1 skip** (`dev/reports/20260613125351-mvn-test.log`)
+- [x] committed (plugin `819daa0`)
 
 ### Step 6: E2E maintenance + full run
 
-- Follow M1D behaviour in existing scenarios (verify the effect of exposeLabel moving to the filter layer).
-- Candidate additions: remote property env var propagation / RANDOM strategy / ephemeral remote (policy-dependent).
-- `run-e2e.sh --clean-start` all PASS, save the report.
+- Existing scenarios pass under M1D (no impact from exposeLabel moving to the filter layer).
+- Added: **S16 `remote-resource-properties`** (proves property env var `VAR0_<PROP>` propagation, `m1d-series`).
+- `run-e2e.sh --clean-start` all PASS, report saved.
 
 #### Done criteria
-- [ ] E2E maintained / [ ] record all PASS / [ ] notes commit
+- [x] E2E maintained (S16 added + run-e2e registered + spec j+e)
+- [x] **all 19 PASS 19/19** (`dev/reports/20260613132702-e2e-test.md`; S16 CP03: `S16RES0_S16_IP` = property value)
+- [x] notes commit
+
+Note: completed 2026-06-13. mvn 375 / E2E 19/19. Removed the re-implementation of lock() semantics;
+delegated to the canonical path + shared env-var generation + a public exposure ExtensionPoint. The three
+remaining "true non-equivalences" (property env vars / ephemeral / selectStrategy) are now all transparent
+at once (no per-feature implementation).
 
 ---
 
@@ -101,3 +112,4 @@ all of them transparent at once. The filter (exposeLabel) is separated into a se
 ## Change Log
 
 - 2026-06-13: Initial version. Implementation-step plan for M1D (true bridging).
+- 2026-06-13: All steps complete. mvn 375 / 0 failures, E2E 19/19 PASS (S16 added). plugin `819daa0`.

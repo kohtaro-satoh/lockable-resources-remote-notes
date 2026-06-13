@@ -38,7 +38,8 @@ M1B superseded them).
 | M1C (M1B review fixes) | [e](dev/docs-e/LRR_DESIGN_P1_M1C.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1C.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1C.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1C.md) |
 | **M1D (true bridging)** | [e](dev/docs-e/LRR_DESIGN_P1_M1D.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1D.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1D.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1D.md) |
 
-Per-cycle result summaries: [LRR_RESULT_P1_M1C](dev/docs-e/LRR_RESULT_P1_M1C.md) ([j](dev/docs-j/LRR_RESULT_P1_M1C.md)).
+Per-cycle result summaries: [LRR_RESULT_P1_M1C](dev/docs-e/LRR_RESULT_P1_M1C.md) ([j](dev/docs-j/LRR_RESULT_P1_M1C.md)),
+[LRR_RESULT_P1_M1D](dev/docs-e/LRR_RESULT_P1_M1D.md) ([j](dev/docs-j/LRR_RESULT_P1_M1D.md)).
 
 E2E test specification (unified across milestones; each test item is tagged
 P1M1 / P1M1A / P1M1B):
@@ -66,17 +67,18 @@ Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/doc
 
 ## Status / 現況
 
-- **Phase 1 / M1D in progress** (2026-06-13): "true bridging" — route the server
-  through lock()'s canonical resolution + share env-var generation so per-feature
+- **Phase 1 / M1D complete** (2026-06-13): "true bridging" — the server delegates
+  to lock()'s canonical resolution + shares env-var generation, so per-feature
   residue (property env vars, ephemeral, resourceSelectStrategy) is eliminated at
-  once; exposure (exposeLabel) separated into a public `RemoteResourceExposurePolicy`
-  ExtensionPoint. See LRR_DESIGN_P1_M1D.
+  once; exposure separated into a public `RemoteResourceExposurePolicy` ExtensionPoint.
+  375 unit tests; E2E 19/19 PASS (S16 added). See LRR_RESULT_P1_M1D.
 - Phase 1 / M1C complete (2026-06-12): resolved the M1B-completion review findings
   (C-1/C-2/M-2/M-3; M-1 deferred) plus follow-up F-1 (label unspecified quantity =
   all). 375 unit tests; E2E 18/18 PASS (S14/S15). See LRR_RESULT_P1_M1C.
 - Phase 1 / M1B complete, including follow-ups F-1–F-3 (2026-06-12): all 8 steps
   + 3 follow-up items, 360 unit tests, 16/16 E2E.
 - Plugin branches (kept local; push/PR planned after final polishing):
-  - `feature/1025-remote-lockable-resources-p1-m1c` — M1C work (current, HEAD `5296b50`); branched from m1b.
+  - `feature/1025-remote-lockable-resources-p1-m1d` — M1D work (current, HEAD `819daa0`); branched from m1c.
+  - `feature/1025-remote-lockable-resources-p1-m1c` — M1C work (HEAD `5296b50`); branched from m1b.
   - `feature/1025-remote-lockable-resources-p1-m1b` — M1B work (HEAD `02fcfae`)
   - `feature/1025-remote-lockable-resources-p1-m1a` — M1A only (HEAD `c782c28`); m1b is branched from here.
