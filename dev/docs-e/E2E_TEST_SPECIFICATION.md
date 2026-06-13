@@ -58,6 +58,7 @@ lockable-resources-plugin:
 | S14 | `extra-label-resources` | resource + label-based extra atomic acquire | label-extra acquired under one lease (C-1 regression) | a, b | P1M1C |
 | S15 | `label-quantity-all` | label acquire with no quantity | all matching locked under one lease ("0 = all" equivalence) | a, b | P1M1C |
 | S16 | `remote-resource-properties` | resource-property env var propagation | `VAR0_<PROP>` reaches the remote body (M1D shared env-var generation) | a, b | P1M1D |
+| S17 | `remote-unknown-rejected` | acquire for an unknown/unexposed resource | uniform 404 fast rejection + no ephemeral created on the server (H-1 regression) | a, b | P1M1E |
 | D01 | `fan-in-4` | A, B, C contend for D's resource | 4-client → 1-server queue stability | a, b, c, d | P1M1 |
 | D02 | `chain-4` | A→B, B→C, C→D (independent chain) | n parallel one-way relays | a, b, c, d | P1M1 |
 | D03 | `diamond` | A→(B+C), B→D, C→D (diamond dependency) | No deadlock under indirect shared dependency | a, b, c, d | P1M1 |
@@ -333,13 +334,14 @@ configure_label_resource(base_url, resource_name, label_name)    # added in P1M1
 | `m1b-series` | S10–S13 (P1M1B) |
 | `m1c-series` | S14–S15 (P1M1C) |
 | `m1d-series` | S16 (P1M1D) |
+| `m1e-series` | S17 (P1M1E) |
 | `d-series` | D01–D03 (P1M1; jenkins-d must be running) |
-| `all` | S01–S16 + D01–D03 |
+| `all` | S01–S17 + D01–D03 |
 
 ### Execution order (all)
 
 ```
-S01 → S02 → S03 → S04 → S05 → S06 → S07 → S08 → S09 → S10 → S11 → S12 → S13 → S14 → S15 → S16 → D01 → D02 → D03
+S01 → S02 → S03 → S04 → S05 → S06 → S07 → S08 → S09 → S10 → S11 → S12 → S13 → S14 → S15 → S16 → S17 → D01 → D02 → D03
 ```
 
 ---
@@ -402,6 +404,7 @@ JENKINS-50260), so `lock(label:...)` alone fails with
 | S14 A→B | `s14-a-for-b` | A | B admin API token | P1M1C |
 | S15 A→B | `s15-a-for-b` | A | B admin API token | P1M1C |
 | S16 A→B | `s16-a-for-b` | A | B admin API token | P1M1D |
+| S17 A→B | `s17-a-for-b` | A | B admin API token | P1M1E |
 | D01 A,B,C→D | `d01-for-d` | A, B, C | D admin API token | P1M1 |
 | D02 A→B | `d02-a-for-b` | A | B admin API token | P1M1 |
 | D02 B→C | `d02-b-for-c` | B | C admin API token | P1M1 |
@@ -968,6 +971,48 @@ reports/<runId>-e2e-test/remote-resource-properties/scenario-details.md
 
 ---
 
+## S17: remote-unknown-rejected — 404 rejection of unknown/unexposed + no ephemeral creation [P1M1E]
+
+### Test intent
+
+M1E rejects "a resource this client cannot lock (unknown / unexposed)" up front with a **uniform 404**
+(intentionally replacing M1D's "unknown → QUEUED"). It also proves end-to-end that the **server does not
+create an ephemeral resource for an unknown name** (the H-1 regression guard: M1D ran `createResource`
+before the exposure filter, leaving never-exposed, never-locked ephemerals created and persisted). The
+client also **fails immediately** on the 404 (M1D hung to the timeout).
+
+### B-side setup
+
+`configure_remote_server` provides one exposed resource `EXPOSED` (exposeLabel=`remote-enabled`). A
+non-existent name `UNKNOWN` (never created) is the acquire target.
+
+### Pipeline
+
+Scripted pipeline that tries to lock the unknown resource via serverId=b (the body must not run).
+
+| Job | controller | Body |
+|---|---|---|
+| `s17-unknown` | A | `lock(resource: UNKNOWN, serverId: 'b') { echo "should not run" }` |
+
+### Checkpoints
+
+| ID | Check | Expected |
+|---|---|---|
+| CP01 | Build result (fast 404 failure = no hang) | `FAILURE` |
+| CP02 | Console shows `HTTP 404` / `UNKNOWN_RESOURCE` (ties failure to the 404 rejection) | `true` |
+| CP03 | The lock body did not run | `true` |
+| CP04 | **No ephemeral resource for `UNKNOWN` was created on server B (H-1)** | `true` |
+
+### Output files
+
+```
+reports/<runId>-e2e-test/remote-unknown-rejected/console.txt
+reports/<runId>-e2e-test/remote-unknown-rejected/summary.txt
+reports/<runId>-e2e-test/remote-unknown-rejected/scenario-details.md
+```
+
+---
+
 ## D01: fan-in-4 — Four-Controller Contention [P1M1]
 
 ### Test intent
@@ -1087,6 +1132,7 @@ The report records:
 | 2026-06-12 | All 17 (incl. M1C / S14, `--clean-start`) | **17/17 PASS** | `dev/reports/20260612201703-e2e-test.md` |
 | 2026-06-12 | All 18 (incl. M1C follow-up / S15, `--clean-start`) | **18/18 PASS** | `dev/reports/20260612233944-e2e-test.md` |
 | 2026-06-13 | All 19 (incl. M1D / S16, `--clean-start`) | **19/19 PASS** | `dev/reports/20260613132702-e2e-test.md` |
+| 2026-06-14 | All 20 (incl. M1E / S17, `--clean-start`) | **20/20 PASS** | `dev/reports/20260614004015-e2e-test.md` |
 
 ---
 
@@ -1116,3 +1162,6 @@ The report records:
 - 2026-06-13: Added the M1D scenario S16 (remote-resource-properties), proving
   resource-property env vars (`VAR0_<PROP>`) propagate to the remote body (canonical
   delegation + shared env-var generation). Added the `m1d-series` group.
+- 2026-06-14: Added the M1E scenario S17 (remote-unknown-rejected), proving an acquire for
+  an unknown/unexposed resource fails fast with a uniform 404 and creates no ephemeral on
+  the server (H-1 fix). Added the `m1e-series` group; all 20 scenarios 20/20 PASS.
