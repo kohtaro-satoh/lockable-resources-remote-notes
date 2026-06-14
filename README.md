@@ -37,11 +37,13 @@ M1B superseded them).
 | M1B (transparent equivalence) | [e](dev/docs-e/LRR_DESIGN_P1_M1B.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1B.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1B.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1B.md) |
 | M1C (M1B review fixes) | [e](dev/docs-e/LRR_DESIGN_P1_M1C.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1C.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1C.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1C.md) |
 | M1D (true bridging) | [e](dev/docs-e/LRR_DESIGN_P1_M1D.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1D.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1D.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1D.md) |
-| **M1E (404 admission + multi-label exposeLabel)** | [e](dev/docs-e/LRR_DESIGN_P1_M1E.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1E.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1E.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1E.md) |
+| M1E (404 admission + multi-label exposeLabel) | [e](dev/docs-e/LRR_DESIGN_P1_M1E.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1E.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1E.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1E.md) |
+| **M1F (M1E review triage: bridge hardening)** | [e](dev/docs-e/LRR_DESIGN_P1_M1F.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1F.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1F.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1F.md) |
 
 Per-cycle result summaries: [LRR_RESULT_P1_M1C](dev/docs-e/LRR_RESULT_P1_M1C.md) ([j](dev/docs-j/LRR_RESULT_P1_M1C.md)),
 [LRR_RESULT_P1_M1D](dev/docs-e/LRR_RESULT_P1_M1D.md) ([j](dev/docs-j/LRR_RESULT_P1_M1D.md)),
-[LRR_RESULT_P1_M1E](dev/docs-e/LRR_RESULT_P1_M1E.md) ([j](dev/docs-j/LRR_RESULT_P1_M1E.md)).
+[LRR_RESULT_P1_M1E](dev/docs-e/LRR_RESULT_P1_M1E.md) ([j](dev/docs-j/LRR_RESULT_P1_M1E.md)),
+[LRR_RESULT_P1_M1F](dev/docs-e/LRR_RESULT_P1_M1F.md) ([j](dev/docs-j/LRR_RESULT_P1_M1F.md)).
 
 E2E test specification (unified across milestones; each test item is tagged
 P1M1 / P1M1A / P1M1B):
@@ -56,6 +58,10 @@ Reviews / レビュー:
   full review at M1B completion; findings C-1 / C-2 drive the M1C cycle
 - [LRR_REVIEW_P1_M1D](dev/docs-e/LRR_REVIEW_P1_M1D.md) ([j](dev/docs-j/LRR_REVIEW_P1_M1D.md)) —
   full review at M1D completion; findings H-1 / M-2 drive the M1E cycle
+- [LRR_REVIEW_P1_M1E](dev/docs-e/LRR_REVIEW_P1_M1E.md) ([j](dev/docs-j/LRR_REVIEW_P1_M1E.md)) —
+  full diff review (master..m1e); H-1 / M-2 resolved on the main path; one residual M1E-1
+  (no promotion-path admission re-check → ephemeral re-creation of a deleted resource).
+  Triaged into the M1F cycle (bridge hardening L-b/L-c/L-d implemented; M1E-1 intentionally retained)
 
 Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/docs-j/design-00/)
 
@@ -71,7 +77,13 @@ Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/doc
 
 ## Status / 現況
 
-- **Phase 1 / M1E complete** (2026-06-14): M1D review fixes + intentional simplification.
+- **Phase 1 / M1F complete** (2026-06-14): M1E-review triage by the lens "lean on lock()'s
+  existing logic; only add network-bridge-derived judgement." Implemented bridge hardening
+  only — L-b (reject non-http(s) remote URLs), L-c (cap POST body at 1 MiB → 413), L-d (map any
+  terminal FAILED to 4xx, never 202). M1E-1 (promotion-path ephemeral re-creation, canonical
+  `create=true`-derived) is intentionally retained and documented (design §4); M1E-2/M1E-3/L-a/L-e
+  retained too. No lock()-semantic change. See LRR_DESIGN_P1_M1F.
+- Phase 1 / M1E complete (2026-06-14): M1D review fixes + intentional simplification.
   Unknown/unexposed acquires are rejected up front with a uniform 404 (admission) and the
   server no longer creates ephemeral resources for them (H-1 fix); the exposure
   `ExtensionPoint` is removed in favour of a single `exposeLabel` filter, now a
@@ -88,7 +100,8 @@ Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/doc
 - Phase 1 / M1B complete, including follow-ups F-1–F-3 (2026-06-12): all 8 steps
   + 3 follow-up items, 360 unit tests, 16/16 E2E.
 - Plugin branches (kept local; push/PR planned after final polishing):
-  - `feature/1025-remote-lockable-resources-p1-m1e` — M1E work (current, HEAD `5d956de`); branched from m1d.
+  - `feature/1025-remote-lockable-resources-p1-m1f` — M1F work (current); branched from m1e.
+  - `feature/1025-remote-lockable-resources-p1-m1e` — M1E work (HEAD `5d956de`); branched from m1d.
   - `feature/1025-remote-lockable-resources-p1-m1d` — M1D work (HEAD `819daa0`); branched from m1c.
   - `feature/1025-remote-lockable-resources-p1-m1c` — M1C work (HEAD `5296b50`); branched from m1b.
   - `feature/1025-remote-lockable-resources-p1-m1b` — M1B work (HEAD `02fcfae`)
