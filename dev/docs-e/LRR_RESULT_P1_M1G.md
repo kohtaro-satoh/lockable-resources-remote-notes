@@ -50,17 +50,17 @@ remote queue ops / `LockStep.serverId` / the `LockableResource` remote-lock stat
 > The state machine and resolution logic that reviewers fear are gone from the core and appear as an
 > independent addition in the new remote package.
 
-## Verification (on the PR candidate = branch rebased onto upstream master)
+## Verification (final, on the PR branch `feature/1025-remote-lr-p1-m1` `4f3577f`)
 
-The reports below are from **`feature/1025-remote-lr-p1-m1g-rebased`** (rebased onto the current upstream
-master `87c4a7e`; M1G commit `4b40a42`). The pre-rebase m1g (`57d2e6d`) was verified with the same numbers
-(mvn 382/0, E2E 20/20).
+The reports below are from the **PR branch `feature/1025-remote-lr-p1-m1`** (a single squashed commit `4f3577f`
+on current upstream master `87c4a7e`, with the comment cleanup). Its tree is identical to the pre-squash
+`808da92`, and the rebased (`4b40a42`) and pre-rebase m1g (`57d2e6d`) were verified with the same numbers.
 
-- **Full mvn: 382 tests / 0 failures / 1 skip / BUILD SUCCESS** (`dev/reports/20260615092754-mvn-test.log`,
-  worktree, committed HEAD `4b40a42`). **Evidence that tests and behaviour are unchanged** (no new unit tests;
+- **Full mvn: 382 tests / 0 failures / 1 skip / BUILD SUCCESS** (`dev/reports/20260615141539-mvn-test.log`,
+  worktree, committed HEAD `4f3577f`). **Evidence that tests and behaviour are unchanged** (no new unit tests;
   the existing suite is the net; `LockStepWithRestartTest` passing also validates the rebase's Serializable
   resolution).
-- **E2E `--clean-start`: 20/20 PASS / 0 fail** (`dev/reports/20260615094930-e2e-test.md`). The scenarios that
+- **E2E `--clean-start`: 20/20 PASS / 0 fail** (`dev/reports/20260615143511-e2e-test.md`). The scenarios that
   exercise the moved code in a live environment — S09 delegated-mode, S11 heartbeat-resilience, S13
   stale-admin-release, S16 remote-resource-properties, S17 remote-unknown-rejected — are all green.
 
@@ -79,12 +79,24 @@ To prepare the PR, the latest upstream (`jenkinsci/lockable-resources-plugin`) m
      `import java.io.Serializable;`. Step persistence is retained via inheritance from `StepExecution`
      (`remoteSession` is still serialized). No behaviour change.
 
+## PR branch finalization (squash + comment cleanup, 2026-06-15)
+
+After the PR review, the submission branch was fixed to `feature/1025-remote-lr-p1-m1` and tidied.
+- **Comment cleanup (comments only; no behaviour change):** restrict the remote-added comments to ASCII
+  (em dash/arrow/multiply/ellipsis converted; upstream comments left as-is); drop milestone/decision-history
+  markers (M1B..M1G, H-1, L-b/L-c/L-d, "extracted in ...", etc.) so comments describe only the current spec;
+  keep the one phase-1 backlog note tagged `issue #1025 phase 1` (`heartbeatIntervalSeconds` accepted but
+  ignored, in `RemoteApiV1Action`).
+- **Squash:** `10d3d48` (squash M1A–M1F) + `4b40a42` (M1G) + `808da92` (comment cleanup) collapsed into a
+  single commit **`4f3577f` "Remote Lockable Resources (issue #1025 phase 1)"** on master `87c4a7e`. Full
+  feature diff: 47 files / +5594 -44.
+- `4b40a42` (`-m1g-rebased`) and `57d2e6d` (`-m1g`) are kept as references (reversible).
+
 ## Commits
 
-- plugin: pre-rebase m1g `57d2e6d` (kept) / PR candidate = rebased `4b40a42` (branch
-  `feature/1025-remote-lr-p1-m1g-rebased`). No push.
-- notes committed in this step (DESIGN/STEPS/RESULT j+e, README index/Status/branches, reports trimmed to one
-  each).
+- plugin: **PR branch `feature/1025-remote-lr-p1-m1` = `4f3577f`** (single commit). No push (force-push at
+  submission time).
+- notes committed in this step (DESIGN/STEPS/RESULT j+e, README Status/branches, reports trimmed to one each).
 
 ## Open items / next
 

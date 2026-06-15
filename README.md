@@ -84,6 +84,13 @@ Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/doc
 
 ## Status / 現況
 
+- **PR branch finalized** (2026-06-15): the whole feature was squashed onto current upstream master
+  (`87c4a7e`) as a single commit `4f3577f` on **`feature/1025-remote-lr-p1-m1`** (the PR branch), and the
+  remote-added comments were cleaned up for review (ASCII-only; milestone/decision-history markers removed,
+  describing only the current spec; the one phase-1 backlog note tagged `issue #1025 phase 1`). Final
+  verification on the squashed branch: mvn 382/0/1skip, E2E 20/20. Comment-only vs the M1G code; no behaviour
+  change. The pre-squash `feature/1025-remote-lr-p1-m1g-rebased` (`4b40a42`) and `feature/1025-remote-lr-p1-m1g`
+  (`57d2e6d`) are kept as references. Push (force) and PR are pending.
 - **Phase 1 / M1G complete** (2026-06-15): behaviour-preserving refactor that coheres the remote
   feature into the `…lockableresources.remote` package so the diff to existing core files reads as a
   minimal feature addition. Extracted the client state machine (`RemoteLockSession` + `RemoteLockRouting`
@@ -121,12 +128,14 @@ Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/doc
   all). 375 unit tests; E2E 18/18 PASS (S14/S15). See LRR_RESULT_P1_M1C.
 - Phase 1 / M1B complete, including follow-ups F-1–F-3 (2026-06-12): all 8 steps
   + 3 follow-up items, 360 unit tests, 16/16 E2E.
-- Plugin branches (kept local; push/PR planned after final polishing):
-  - `feature/1025-remote-lr-p1-m1g-rebased` — **PR candidate** (HEAD `4b40a42`): the M1G stack rebased
-    onto current upstream master (`87c4a7e`). mvn 382/0, E2E 20/20.
+- Plugin branches (kept local; force-push/PR pending):
+  - `feature/1025-remote-lr-p1-m1` — **PR branch** (HEAD `4f3577f`): the whole feature as a single squashed
+    commit on current upstream master (`87c4a7e`), comments cleaned for review. mvn 382/0, E2E 20/20.
+  - `feature/1025-remote-lr-p1-m1g-rebased` — pre-squash reference (HEAD `4b40a42`): M1G stack rebased onto
+    `87c4a7e`, before squashing/comment cleanup.
   - `feature/1025-remote-lr-p1-m1g` — M1G work (HEAD `57d2e6d`); behaviour-preserving package refactor,
     branched from the squashed `feature/1025-remote-lr-p1` (`de54e90`). Kept as the pre-rebase reference.
-  - `feature/1025-remote-lr-p1` — single-commit squash of the M1A–M1F series onto (old) master, for review/PR.
+  - `feature/1025-remote-lr-p1` — single-commit squash of the M1A–M1F series onto (old) master.
   - `feature/1025-remote-lockable-resources-p1-m1f` — M1F work; branched from m1e.
   - `feature/1025-remote-lockable-resources-p1-m1e` — M1E work (HEAD `5d956de`); branched from m1d.
   - `feature/1025-remote-lockable-resources-p1-m1d` — M1D work (HEAD `819daa0`); branched from m1c.
