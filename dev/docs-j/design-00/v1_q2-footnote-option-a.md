@@ -1,1 +1,0 @@
-(Think of it as an explicit "Remote API exposure" mode that must be turned on by an administrator after each restart.)

@@ -1,1 +1,0 @@
-(In other words: "Remote API exposure" is an explicit on/off mode, and it defaults to OFF after restart.)

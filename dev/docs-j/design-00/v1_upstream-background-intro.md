@@ -1,1 +1,0 @@
-Detailed notes are in my sandbox repo (work-in-progress, English drafts):
