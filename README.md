@@ -93,6 +93,12 @@ Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/doc
   global config are kept in core as unavoidable seams. mvn 382/0 (unchanged count), E2E 20/20. No
   behaviour change. See LRR_DESIGN_P1_M1G / LRR_RESULT_P1_M1G. plugin `57d2e6d` (branch
   `feature/1025-remote-lr-p1-m1g`, base `de54e90`).
+- **Rebased onto current upstream master for PR** (2026-06-15): master updated to `upstream/master`
+  `87c4a7e` (#1050/#1049/#1053); the M1G stack was rebased onto it as
+  `feature/1025-remote-lr-p1-m1g-rebased` (M1G `4b40a42`). Only `LockStepExecution.java` conflicted
+  (import block + the `implements Serializable` that #1049 had removed — reconciled to `Host` only).
+  Re-verified: mvn 382/0, E2E 20/20. The pre-rebase `feature/1025-remote-lr-p1-m1g` (`57d2e6d`) is kept.
+  See LRR_RESULT_P1_M1G "Rebase onto upstream master".
 - **Phase 1 / M1F complete** (2026-06-14): M1E-review triage by the lens "lean on lock()'s
   existing logic; only add network-bridge-derived judgement." Implemented bridge hardening
   only — L-b (reject non-http(s) remote URLs), L-c (cap POST body at 1 MiB → 413), L-d (map any
@@ -116,9 +122,11 @@ Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/doc
 - Phase 1 / M1B complete, including follow-ups F-1–F-3 (2026-06-12): all 8 steps
   + 3 follow-up items, 360 unit tests, 16/16 E2E.
 - Plugin branches (kept local; push/PR planned after final polishing):
-  - `feature/1025-remote-lr-p1-m1g` — M1G work (current, HEAD `57d2e6d`); behaviour-preserving
-    package refactor, branched from the squashed `feature/1025-remote-lr-p1` (`de54e90`).
-  - `feature/1025-remote-lr-p1` — single-commit squash of the M1A–M1F series onto master, for review/PR.
+  - `feature/1025-remote-lr-p1-m1g-rebased` — **PR candidate** (HEAD `4b40a42`): the M1G stack rebased
+    onto current upstream master (`87c4a7e`). mvn 382/0, E2E 20/20.
+  - `feature/1025-remote-lr-p1-m1g` — M1G work (HEAD `57d2e6d`); behaviour-preserving package refactor,
+    branched from the squashed `feature/1025-remote-lr-p1` (`de54e90`). Kept as the pre-rebase reference.
+  - `feature/1025-remote-lr-p1` — single-commit squash of the M1A–M1F series onto (old) master, for review/PR.
   - `feature/1025-remote-lockable-resources-p1-m1f` — M1F work; branched from m1e.
   - `feature/1025-remote-lockable-resources-p1-m1e` — M1E work (HEAD `5d956de`); branched from m1d.
   - `feature/1025-remote-lockable-resources-p1-m1d` — M1D work (HEAD `819daa0`); branched from m1c.

@@ -50,21 +50,41 @@ remote queue ops / `LockStep.serverId` / the `LockableResource` remote-lock stat
 > The state machine and resolution logic that reviewers fear are gone from the core and appear as an
 > independent addition in the new remote package.
 
-## Verification
+## Verification (on the PR candidate = branch rebased onto upstream master)
 
-- **Full mvn: 382 tests / 0 failures / 1 skip / BUILD SUCCESS** (`dev/reports/20260615082746-mvn-test.log`,
-  worktree, committed HEAD `57d2e6d`). Identical count to M1F — **evidence that tests and behaviour are
-  unchanged** (no new unit tests added; the existing suite is the net).
-- **E2E `--clean-start`: 20/20 PASS / 0 fail** (`dev/reports/20260615084634-e2e-test.md`). The scenarios that
+The reports below are from **`feature/1025-remote-lr-p1-m1g-rebased`** (rebased onto the current upstream
+master `87c4a7e`; M1G commit `4b40a42`). The pre-rebase m1g (`57d2e6d`) was verified with the same numbers
+(mvn 382/0, E2E 20/20).
+
+- **Full mvn: 382 tests / 0 failures / 1 skip / BUILD SUCCESS** (`dev/reports/20260615092754-mvn-test.log`,
+  worktree, committed HEAD `4b40a42`). **Evidence that tests and behaviour are unchanged** (no new unit tests;
+  the existing suite is the net; `LockStepWithRestartTest` passing also validates the rebase's Serializable
+  resolution).
+- **E2E `--clean-start`: 20/20 PASS / 0 fail** (`dev/reports/20260615094930-e2e-test.md`). The scenarios that
   exercise the moved code in a live environment — S09 delegated-mode, S11 heartbeat-resilience, S13
   stale-admin-release, S16 remote-resource-properties, S17 remote-unknown-rejected — are all green.
-- Server-side targeted tests (`RemoteLockManagerTest` 34 + `RemoteApiV1ActionTest`) were run in-place first
-  (green).
+
+## Rebase onto upstream master (2026-06-15)
+
+To prepare the PR, the latest upstream (`jenkinsci/lockable-resources-plugin`) master was pulled in.
+- master updated to `upstream/master` (`87c4a7e`: #1050 row count / #1049 deprecated-API replacement / #1053
+  allow empty reserve reason).
+- **The pre-rebase m1g `feature/1025-remote-lr-p1-m1g` (`57d2e6d`, old-master base) is kept as-is.**
+- `feature/1025-remote-lr-p1-m1g-rebased` was rebased onto the current master (squash `de54e90`→`10d3d48`,
+  M1G `57d2e6d`→`4b40a42`).
+- **Only `LockStepExecution.java` conflicted, in two places** (everything else auto-merged):
+  1. import block (replaying the squash) — kept `Serializable`/`StandardCharsets`/`Base64`.
+  2. class declaration (replaying M1G) — master #1049 had **removed the redundant `implements Serializable`**,
+     so it was reconciled to `implements RemoteLockSession.Host` only, dropping the now-unused
+     `import java.io.Serializable;`. Step persistence is retained via inheritance from `StepExecution`
+     (`remoteSession` is still serialized). No behaviour change.
 
 ## Commits
 
-- plugin `57d2e6d` (m1g branch, single commit). No push.
-- notes committed in this step (DESIGN/STEPS/RESULT j+e, README index/Status, reports trimmed to one each).
+- plugin: pre-rebase m1g `57d2e6d` (kept) / PR candidate = rebased `4b40a42` (branch
+  `feature/1025-remote-lr-p1-m1g-rebased`). No push.
+- notes committed in this step (DESIGN/STEPS/RESULT j+e, README index/Status/branches, reports trimmed to one
+  each).
 
 ## Open items / next
 

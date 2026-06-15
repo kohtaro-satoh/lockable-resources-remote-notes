@@ -46,19 +46,34 @@
 
 > 「レビュアーが恐れる」状態機械・解決ロジックがコアから消え、新規 remote パッケージに独立追加された形になった。
 
-## 検証
+## 検証（PR 候補 = upstream master へリベース後のブランチで実施）
 
-- **mvn フル: 382 件 / 0 失敗 / 1 skip / BUILD SUCCESS**（`dev/reports/20260615082746-mvn-test.log`、worktree、
-  コミット済み HEAD `57d2e6d`）。M1F と同一件数＝**テスト不変・挙動保存の裏付け**（新規ユニットは追加せず、既存が回帰網）。
-- **E2E `--clean-start`: 20/20 PASS / fail 0**（`dev/reports/20260615084634-e2e-test.md`）。移動コードを実環境で踏む
+下記レポートは **`feature/1025-remote-lr-p1-m1g-rebased`（現 upstream master `87c4a7e` へリベース、M1G コミット `4b40a42`）** での値。
+リベース前の元 m1g（`57d2e6d`）でも同値（mvn 382/0、E2E 20/20）を確認済み。
+
+- **mvn フル: 382 件 / 0 失敗 / 1 skip / BUILD SUCCESS**（`dev/reports/20260615092754-mvn-test.log`、worktree、
+  コミット済み HEAD `4b40a42`）。**テスト不変・挙動保存の裏付け**（新規ユニットは追加せず、既存が回帰網。
+  `LockStepWithRestartTest` 通過＝リベースの Serializable 解決の妥当性も実証）。
+- **E2E `--clean-start`: 20/20 PASS / fail 0**（`dev/reports/20260615094930-e2e-test.md`）。移動コードを実環境で踏む
   S09 delegated-mode・S11 heartbeat-resilience・S13 stale-admin-release・S16 remote-resource-properties・
   S17 remote-unknown-rejected すべて緑。
-- 事前にサーバ側ターゲットテスト（`RemoteLockManagerTest` 34＋`RemoteApiV1ActionTest`）を in-place で先行確認（緑）。
+
+## upstream master へのリベース（2026-06-15）
+
+PR 準備のため、upstream（`jenkinsci/lockable-resources-plugin`）の最新 master を取り込み。
+- master を `upstream/master`（`87c4a7e`：#1050 行数表示 / #1049 deprecated API 置換 / #1053 reserve の空 reason 許可）に更新。
+- **元 m1g `feature/1025-remote-lr-p1-m1g`（`57d2e6d`、旧 master ベース）はそのまま保存**。
+- `feature/1025-remote-lr-p1-m1g-rebased` を現 master へリベース（squash `de54e90`→`10d3d48`、M1G `57d2e6d`→`4b40a42`）。
+- **コンフリクトは `LockStepExecution.java` の2点のみ**（他は自動マージ）:
+  1. import ブロック（squash 適用時）— `Serializable`/`StandardCharsets`/`Base64` を採用。
+  2. クラス宣言（M1G 適用時）— **master #1049 が冗長な `implements Serializable` を削除**していたため、それに合わせ
+     `implements RemoteLockSession.Host` のみとし、未使用化した `import java.io.Serializable;` も除去。step 永続化は
+     `StepExecution` からの継承で維持（`remoteSession` は引き続き直列化）。挙動不変。
 
 ## コミット
 
-- plugin `57d2e6d`（m1g ブランチ、単一コミット）。push なし。
-- notes は本ステップでコミット（DESIGN/STEPS/RESULT j+e、README 索引/Status、レポート最新ひとつずつ整理）。
+- plugin: 元 m1g `57d2e6d`（保存）／PR 候補 = リベース版 `4b40a42`（ブランチ `feature/1025-remote-lr-p1-m1g-rebased`）。push なし。
+- notes は本ステップでコミット（DESIGN/STEPS/RESULT j+e、README 索引/Status/ブランチ、レポート最新ひとつずつ整理）。
 
 ## 残課題・次
 
