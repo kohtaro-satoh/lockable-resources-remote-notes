@@ -38,12 +38,14 @@ M1B superseded them).
 | M1C (M1B review fixes) | [e](dev/docs-e/LRR_DESIGN_P1_M1C.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1C.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1C.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1C.md) |
 | M1D (true bridging) | [e](dev/docs-e/LRR_DESIGN_P1_M1D.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1D.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1D.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1D.md) |
 | M1E (404 admission + multi-label exposeLabel) | [e](dev/docs-e/LRR_DESIGN_P1_M1E.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1E.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1E.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1E.md) |
-| **M1F (M1E review triage: bridge hardening)** | [e](dev/docs-e/LRR_DESIGN_P1_M1F.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1F.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1F.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1F.md) |
+| M1F (M1E review triage: bridge hardening) | [e](dev/docs-e/LRR_DESIGN_P1_M1F.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1F.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1F.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1F.md) |
+| **M1G (package the remote layer; no behaviour change)** | [e](dev/docs-e/LRR_DESIGN_P1_M1G.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1G.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1G.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1G.md) |
 
 Per-cycle result summaries: [LRR_RESULT_P1_M1C](dev/docs-e/LRR_RESULT_P1_M1C.md) ([j](dev/docs-j/LRR_RESULT_P1_M1C.md)),
 [LRR_RESULT_P1_M1D](dev/docs-e/LRR_RESULT_P1_M1D.md) ([j](dev/docs-j/LRR_RESULT_P1_M1D.md)),
 [LRR_RESULT_P1_M1E](dev/docs-e/LRR_RESULT_P1_M1E.md) ([j](dev/docs-j/LRR_RESULT_P1_M1E.md)),
-[LRR_RESULT_P1_M1F](dev/docs-e/LRR_RESULT_P1_M1F.md) ([j](dev/docs-j/LRR_RESULT_P1_M1F.md)).
+[LRR_RESULT_P1_M1F](dev/docs-e/LRR_RESULT_P1_M1F.md) ([j](dev/docs-j/LRR_RESULT_P1_M1F.md)),
+[LRR_RESULT_P1_M1G](dev/docs-e/LRR_RESULT_P1_M1G.md) ([j](dev/docs-j/LRR_RESULT_P1_M1G.md)).
 
 E2E test specification (unified across milestones; each test item is tagged
 P1M1 / P1M1A / P1M1B):
@@ -62,6 +64,11 @@ Reviews / レビュー:
   full diff review (master..m1e); H-1 / M-2 resolved on the main path; one residual M1E-1
   (no promotion-path admission re-check → ephemeral re-creation of a deleted resource).
   Triaged into the M1F cycle (bridge hardening L-b/L-c/L-d implemented; M1E-1 intentionally retained)
+- [LRR_REVIEW_P1_M1F](dev/docs-e/LRR_REVIEW_P1_M1F.md) ([j](dev/docs-j/LRR_REVIEW_P1_M1F.md)) —
+  review at M1F completion (m1e..m1f delta); the three bridge hardenings honor the lens with no new
+  fail-open and no canonical contamination. PR-quality within scope; findings Low/nit only
+  (F-1 isHttpUrl/resolve whitespace asymmetry, F-2 L-d empty errorCode). M1E-1 re-confirmed as a
+  known intentionally-deferred item
 
 Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/docs-j/design-00/)
 
@@ -77,6 +84,15 @@ Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/doc
 
 ## Status / 現況
 
+- **Phase 1 / M1G complete** (2026-06-15): behaviour-preserving refactor that coheres the remote
+  feature into the `…lockableresources.remote` package so the diff to existing core files reads as a
+  minimal feature addition. Extracted the client state machine (`RemoteLockSession` + `RemoteLockRouting`
+  + `RemoteCredentials`) out of `LockStepExecution`, and the server admission/resolution
+  (`RemoteResolver`) out of `LockableResourcesManager`. Core-file additions dropped **+1208 → +665**;
+  the unified-queue hook, the `getAvailableResources(Predicate)` seam, the public DSL/resource state and
+  global config are kept in core as unavoidable seams. mvn 382/0 (unchanged count), E2E 20/20. No
+  behaviour change. See LRR_DESIGN_P1_M1G / LRR_RESULT_P1_M1G. plugin `57d2e6d` (branch
+  `feature/1025-remote-lr-p1-m1g`, base `de54e90`).
 - **Phase 1 / M1F complete** (2026-06-14): M1E-review triage by the lens "lean on lock()'s
   existing logic; only add network-bridge-derived judgement." Implemented bridge hardening
   only — L-b (reject non-http(s) remote URLs), L-c (cap POST body at 1 MiB → 413), L-d (map any
@@ -100,7 +116,10 @@ Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/doc
 - Phase 1 / M1B complete, including follow-ups F-1–F-3 (2026-06-12): all 8 steps
   + 3 follow-up items, 360 unit tests, 16/16 E2E.
 - Plugin branches (kept local; push/PR planned after final polishing):
-  - `feature/1025-remote-lockable-resources-p1-m1f` — M1F work (current); branched from m1e.
+  - `feature/1025-remote-lr-p1-m1g` — M1G work (current, HEAD `57d2e6d`); behaviour-preserving
+    package refactor, branched from the squashed `feature/1025-remote-lr-p1` (`de54e90`).
+  - `feature/1025-remote-lr-p1` — single-commit squash of the M1A–M1F series onto master, for review/PR.
+  - `feature/1025-remote-lockable-resources-p1-m1f` — M1F work; branched from m1e.
   - `feature/1025-remote-lockable-resources-p1-m1e` — M1E work (HEAD `5d956de`); branched from m1d.
   - `feature/1025-remote-lockable-resources-p1-m1d` — M1D work (HEAD `819daa0`); branched from m1c.
   - `feature/1025-remote-lockable-resources-p1-m1c` — M1C work (HEAD `5296b50`); branched from m1b.
