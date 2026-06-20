@@ -39,13 +39,15 @@ M1B superseded them).
 | M1D (true bridging) | [e](dev/docs-e/LRR_DESIGN_P1_M1D.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1D.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1D.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1D.md) |
 | M1E (404 admission + multi-label exposeLabel) | [e](dev/docs-e/LRR_DESIGN_P1_M1E.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1E.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1E.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1E.md) |
 | M1F (M1E review triage: bridge hardening) | [e](dev/docs-e/LRR_DESIGN_P1_M1F.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1F.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1F.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1F.md) |
-| **M1G (package the remote layer; no behaviour change)** | [e](dev/docs-e/LRR_DESIGN_P1_M1G.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1G.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1G.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1G.md) |
+| M1G (package the remote layer; no behaviour change) | [e](dev/docs-e/LRR_DESIGN_P1_M1G.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1G.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1G.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1G.md) |
+| **M1H (PR #1055 CI follow-up: security hardening + B2)** | [e](dev/docs-e/LRR_DESIGN_P1_M1H.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1H.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1H.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1H.md) |
 
 Per-cycle result summaries: [LRR_RESULT_P1_M1C](dev/docs-e/LRR_RESULT_P1_M1C.md) ([j](dev/docs-j/LRR_RESULT_P1_M1C.md)),
 [LRR_RESULT_P1_M1D](dev/docs-e/LRR_RESULT_P1_M1D.md) ([j](dev/docs-j/LRR_RESULT_P1_M1D.md)),
 [LRR_RESULT_P1_M1E](dev/docs-e/LRR_RESULT_P1_M1E.md) ([j](dev/docs-j/LRR_RESULT_P1_M1E.md)),
 [LRR_RESULT_P1_M1F](dev/docs-e/LRR_RESULT_P1_M1F.md) ([j](dev/docs-j/LRR_RESULT_P1_M1F.md)),
-[LRR_RESULT_P1_M1G](dev/docs-e/LRR_RESULT_P1_M1G.md) ([j](dev/docs-j/LRR_RESULT_P1_M1G.md)).
+[LRR_RESULT_P1_M1G](dev/docs-e/LRR_RESULT_P1_M1G.md) ([j](dev/docs-j/LRR_RESULT_P1_M1G.md)),
+[LRR_RESULT_P1_M1H](dev/docs-e/LRR_RESULT_P1_M1H.md) ([j](dev/docs-j/LRR_RESULT_P1_M1H.md)).
 
 E2E test specification (unified across milestones; each test item is tagged
 P1M1 / P1M1A / P1M1B):
@@ -69,6 +71,14 @@ Reviews / レビュー:
   fail-open and no canonical contamination. PR-quality within scope; findings Low/nit only
   (F-1 isHttpUrl/resolve whitespace asymmetry, F-2 L-d empty errorCode). M1E-1 re-confirmed as a
   known intentionally-deferred item
+- [LRR_REVIEW_P1_M1H](dev/docs-e/LRR_REVIEW_P1_M1H.md) ([j](dev/docs-j/LRR_REVIEW_P1_M1H.md)) —
+  starting review for the PR #1055 CI follow-up (post-M1G). Diagnoses the "master conflict" as
+  non-existent (mergeable; just behind), triages the 4 Jenkins Security Scan alerts (#49–52), and
+  decides B2 for #52 (pure-read GET; QUEUED liveness folded onto the queue timeout). Drives the M1H cycle
+- [LRR_REVIEW_P1_M1H](dev/docs-e/LRR_REVIEW_P1_M1H.md) ([j](dev/docs-j/LRR_REVIEW_P1_M1H.md)) —
+  starting review for the PR #1055 CI follow-up (post-M1G). Diagnoses the "master conflict" as
+  non-existent (mergeable; just behind), triages the 4 Jenkins Security Scan alerts (#49–52), and
+  decides B2 for #52 (pure-read GET; QUEUED liveness folded onto the queue timeout). Drives the M1H cycle
 
 Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/docs-j/design-00/)
 
@@ -84,6 +94,15 @@ Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/doc
 
 ## Status / 現況
 
+- **Phase 1 / M1H complete** (2026-06-21): PR #1055 CI follow-up. Addressed the 4 Jenkins Security Scan alerts
+  (#49–52) on the remote API and re-synced master. #49/#50/#51: `doCheckUrl` / `doCheckForcedServerId` now require
+  POST (+ ADMINISTER on `doCheckUrl`) with `checkMethod="post"` on the form fields. #52 = **B2**: `GET /acquire/{lockId}`
+  is now a pure read — the poll-keepalive (`touchPoll`) is removed and QUEUED liveness is folded onto the unified queue
+  timeout (`RemoteQueueEntry` deadline). The suspected "master conflict" did not exist (mergeable; just 2 commits behind);
+  resolved by rebasing onto `upstream/master` `8f03dbf` (#1056 crowdin, #1057 BOM bump) with no conflict. Verified:
+  mvn verify BUILD SUCCESS 383/0/1skip (all gates ok), E2E 20/20; re-verified post-rebase on the new BOM (383/0/0/1skip).
+  plugin `7c3b325` on **`feature/1025-remote-lr-p1-m1`** (single M1H commit on top of master). Push (force) pending.
+  See LRR_REVIEW/DESIGN/RESULT_P1_M1H.
 - **PR branch finalized** (2026-06-15): the whole feature was squashed onto current upstream master
   (`87c4a7e`) as a single commit `4f3577f` on **`feature/1025-remote-lr-p1-m1`** (the PR branch), and the
   remote-added comments were cleaned up for review (ASCII-only; milestone/decision-history markers removed,
