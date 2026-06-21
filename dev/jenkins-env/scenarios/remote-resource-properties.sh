@@ -117,7 +117,7 @@ cat >"$DETAIL_FILE" <<EOF
 |---|---|
 | CP01 | PASS (build SUCCESS) |
 | CP02 | PASS (S16RES / S16RES0 == $RES) |
-| CP03 | PASS (resource-property env var S16RES0_S16_IP=$prop_line bridged) |
+| CP03 | PASS (resource-property env var S16RES0_S16_IP=$prop_line bridged — M1D) |
 | CP04 | PASS (Remote lock acquired on found) |
 | CP05 | PASS (resource released after completion) |
 
