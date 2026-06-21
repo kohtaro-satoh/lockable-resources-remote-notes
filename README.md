@@ -23,6 +23,8 @@ suffix) pairs. The Japanese versions are the working originals.
 | [remote-lock-usecase-e](docs-e/remote-lock-usecase-e.md) | [ユースケース](docs-j/remote-lock-usecase-j.md) | For whom: UC-1 (HW boards), UC-2 (licenses) |
 | [remote-lock-design-notes-e](docs-e/remote-lock-design-notes-e.md) | [設計ノート](docs-j/remote-lock-design-notes-j.md) | Decision log with rationale |
 | [lockable-resources-architecture-e](docs-e/lockable-resources-architecture-e.md) | [アーキテクチャ](docs-j/lockable-resources-architecture-j.md) | Upstream plugin architecture study |
+| [architecture (baseline `8f03dbf`)](docs-e/lockable-resources-architecture-8f03dbf-e.md) | [baseline `8f03dbf`](docs-j/lockable-resources-architecture-8f03dbf-j.md) | Upstream master pinned as the diff baseline |
+| [architecture (remote `65d8415`)](docs-e/lockable-resources-architecture-65d8415-e.md) | [remote `65d8415`](docs-j/lockable-resources-architecture-65d8415-j.md) | The submitted PR code: changes vs upstream, design rationale, review material |
 
 ### Development documents / 開発ドキュメント（`dev/`）
 
@@ -71,10 +73,6 @@ Reviews / レビュー:
   fail-open and no canonical contamination. PR-quality within scope; findings Low/nit only
   (F-1 isHttpUrl/resolve whitespace asymmetry, F-2 L-d empty errorCode). M1E-1 re-confirmed as a
   known intentionally-deferred item
-- [LRR_REVIEW_P1_M1H](dev/docs-e/LRR_REVIEW_P1_M1H.md) ([j](dev/docs-j/LRR_REVIEW_P1_M1H.md)) —
-  starting review for the PR #1055 CI follow-up (post-M1G). Diagnoses the "master conflict" as
-  non-existent (mergeable; just behind), triages the 4 Jenkins Security Scan alerts (#49–52), and
-  decides B2 for #52 (pure-read GET; QUEUED liveness folded onto the queue timeout). Drives the M1H cycle
 - [LRR_REVIEW_P1_M1H](dev/docs-e/LRR_REVIEW_P1_M1H.md) ([j](dev/docs-j/LRR_REVIEW_P1_M1H.md)) —
   starting review for the PR #1055 CI follow-up (post-M1G). Diagnoses the "master conflict" as
   non-existent (mergeable; just behind), triages the 4 Jenkins Security Scan alerts (#49–52), and
