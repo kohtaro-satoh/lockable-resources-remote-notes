@@ -42,14 +42,16 @@ M1B superseded them).
 | M1E (404 admission + multi-label exposeLabel) | [e](dev/docs-e/LRR_DESIGN_P1_M1E.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1E.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1E.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1E.md) |
 | M1F (M1E review triage: bridge hardening) | [e](dev/docs-e/LRR_DESIGN_P1_M1F.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1F.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1F.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1F.md) |
 | M1G (package the remote layer; no behaviour change) | [e](dev/docs-e/LRR_DESIGN_P1_M1G.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1G.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1G.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1G.md) |
-| **M1H (PR #1055 CI follow-up: security hardening + B2)** | [e](dev/docs-e/LRR_DESIGN_P1_M1H.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1H.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1H.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1H.md) |
+| M1H (PR #1055 CI follow-up: security hardening + B2) | [e](dev/docs-e/LRR_DESIGN_P1_M1H.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1H.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1H.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1H.md) |
+| **M1I (queued-expiry-poll-404 regression fix; found by load testing)** | [e](dev/docs-e/LRR_DESIGN_P1_M1I.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1I.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1I.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1I.md) |
 
 Per-cycle result summaries: [LRR_RESULT_P1_M1C](dev/docs-e/LRR_RESULT_P1_M1C.md) ([j](dev/docs-j/LRR_RESULT_P1_M1C.md)),
 [LRR_RESULT_P1_M1D](dev/docs-e/LRR_RESULT_P1_M1D.md) ([j](dev/docs-j/LRR_RESULT_P1_M1D.md)),
 [LRR_RESULT_P1_M1E](dev/docs-e/LRR_RESULT_P1_M1E.md) ([j](dev/docs-j/LRR_RESULT_P1_M1E.md)),
 [LRR_RESULT_P1_M1F](dev/docs-e/LRR_RESULT_P1_M1F.md) ([j](dev/docs-j/LRR_RESULT_P1_M1F.md)),
 [LRR_RESULT_P1_M1G](dev/docs-e/LRR_RESULT_P1_M1G.md) ([j](dev/docs-j/LRR_RESULT_P1_M1G.md)),
-[LRR_RESULT_P1_M1H](dev/docs-e/LRR_RESULT_P1_M1H.md) ([j](dev/docs-j/LRR_RESULT_P1_M1H.md)).
+[LRR_RESULT_P1_M1H](dev/docs-e/LRR_RESULT_P1_M1H.md) ([j](dev/docs-j/LRR_RESULT_P1_M1H.md)),
+[LRR_RESULT_P1_M1I](dev/docs-e/LRR_RESULT_P1_M1I.md) ([j](dev/docs-j/LRR_RESULT_P1_M1I.md)).
 
 E2E test specification (unified across milestones; each test item is tagged
 P1M1 / P1M1A / P1M1B):

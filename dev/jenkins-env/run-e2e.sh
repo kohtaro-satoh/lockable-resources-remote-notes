@@ -44,7 +44,7 @@ M1D_SCENARIOS=(
 M1E_SCENARIOS=(
   "remote-unknown-rejected"
 )
-M1H_SCENARIOS=(
+M1I_SCENARIOS=(
   "remote-acquire-timeout"
 )
 D_SCENARIOS=(
@@ -121,7 +121,7 @@ Options:
                         remote-resource-properties | remote-unknown-rejected |
                         remote-acquire-timeout |
                         fan-in-4 | chain-4 | diamond |
-                        s-series | m1a-series | m1b-series | m1c-series | m1d-series | m1e-series | m1h-series | d-series | all
+                        s-series | m1a-series | m1b-series | m1c-series | m1d-series | m1e-series | m1i-series | d-series | all
   -h, --help            Show this help.
 USAGE
 }
@@ -163,7 +163,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 is_valid_only=false
-for allowed in all s-series m1a-series m1b-series m1c-series m1d-series m1e-series m1h-series d-series "${ALL_SCENARIOS[@]}"; do
+for allowed in all s-series m1a-series m1b-series m1c-series m1d-series m1e-series m1i-series d-series "${ALL_SCENARIOS[@]}"; do
   if [[ "$ONLY" == "$allowed" ]]; then
     is_valid_only=true
     break
@@ -282,8 +282,8 @@ select_scenarios() {
     m1e-series)
       printf '%s\n' "${M1E_SCENARIOS[@]}"
       ;;
-    m1h-series)
-      printf '%s\n' "${M1H_SCENARIOS[@]}"
+    m1i-series)
+      printf '%s\n' "${M1I_SCENARIOS[@]}"
       ;;
     d-series)
       printf '%s\n' "${D_SCENARIOS[@]}"

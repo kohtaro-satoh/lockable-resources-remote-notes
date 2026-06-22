@@ -59,6 +59,7 @@ lockable-resources-plugin:
 | S15 | `label-quantity-all` | label acquire with no quantity | all matching locked under one lease ("0 = all" equivalence) | a, b | P1M1C |
 | S16 | `remote-resource-properties` | resource-property env var propagation | `VAR0_<PROP>` reaches the remote body (M1D shared env-var generation) | a, b | P1M1D |
 | S17 | `remote-unknown-rejected` | acquire for an unknown/unexposed resource | uniform 404 fast rejection + no ephemeral created on the server (H-1 regression) | a, b | P1M1E |
+| S18 | `remote-acquire-timeout` | allocation timeout (>120s) under contention | timeout fails closed as `LOCK_WAIT_TIMEOUT` (not a 404 / communication failure); queued-expiry-poll-404 regression | a, b | P1M1I |
 | D01 | `fan-in-4` | A, B, C contend for D's resource | 4-client → 1-server queue stability | a, b, c, d | P1M1 |
 | D02 | `chain-4` | A→B, B→C, C→D (independent chain) | n parallel one-way relays | a, b, c, d | P1M1 |
 | D03 | `diamond` | A→(B+C), B→D, C→D (diamond dependency) | No deadlock under indirect shared dependency | a, b, c, d | P1M1 |
@@ -335,13 +336,14 @@ configure_label_resource(base_url, resource_name, label_name)    # added in P1M1
 | `m1c-series` | S14–S15 (P1M1C) |
 | `m1d-series` | S16 (P1M1D) |
 | `m1e-series` | S17 (P1M1E) |
+| `m1i-series` | S18 (P1M1I; ~150s alone due to the 130s allocate timeout) |
 | `d-series` | D01–D03 (P1M1; jenkins-d must be running) |
-| `all` | S01–S17 + D01–D03 |
+| `all` | S01–S18 + D01–D03 |
 
 ### Execution order (all)
 
 ```
-S01 → S02 → S03 → S04 → S05 → S06 → S07 → S08 → S09 → S10 → S11 → S12 → S13 → S14 → S15 → S16 → S17 → D01 → D02 → D03
+S01 → … → S16 → S17 → S18 → D01 → D02 → D03
 ```
 
 ---
@@ -1013,6 +1015,63 @@ reports/<runId>-e2e-test/remote-unknown-rejected/scenario-details.md
 
 ---
 
+## S18: remote-acquire-timeout — Clean termination of an allocation timeout [P1M1I]
+
+### Test intent
+
+Prove that when a remote acquire times out waiting for a busy resource, it fails closed with a clear
+`LOCK_WAIT_TIMEOUT` (**the decisive guard for the queued-expiry-poll-404 regression**).
+
+This is the regression test for the bug found by the load test suite (`run-load.sh` stress). The terminal-record
+retention TTL (120s) in `RemoteLockManager` was keyed off `enqueuedAt`, so with `timeoutForAllocateResource > 120s`
+the FAILED record was already past its TTL the instant it was created and got evicted immediately; the client's
+`GET /acquire/{lockId}` poll then received **404 -> "server may have restarted / communication failure"** (a
+legitimate timeout mislabeled as a transport error). After the fix (terminal TTL from the terminal transition time
++ the client normalizing a poll 404 to a timeout) the client receives a clean **`LOCK_WAIT_TIMEOUT`**. See
+`LRR_ISSUE_P1_M1H_queued_expiry_poll_404.md`.
+
+> **The TTL boundary is the point**: the allocate timeout must exceed the 120s terminal TTL (this scenario uses
+> 130s). A shorter timeout leaves the FAILED window intact and the test passes spuriously.
+
+### Preconditions
+
+- **Controller B**: `remoteApiEnabled=true`, `exposeLabel=remote-enabled`, resource `s18-shared-*` exposed
+- **A-side credentials** (`s18-a-for-b`): B's admin API token
+- **A remote config**: `remotes[a→b]`
+
+### Pipeline layout
+
+| job | controller | content |
+|---|---|---|
+| `s18-local-holder` | B | `lock(resource: R) { sleep 150s }` local hold (longer than the waiter timeout) |
+| `s18-remote-waiter` | A | `lock(resource: R, serverId:'b', timeoutForAllocateResource:130, timeoutUnit:'SECONDS') { echo SHOULD_NOT_RUN }` |
+
+### Acceptance criteria
+
+| ID | Check | Expected |
+|---|---|---|
+| CP01 | `s18-local-holder` build result | `SUCCESS` (held through the waiter's allocate window) |
+| CP02 | `s18-remote-waiter` build result | `FAILURE` (allocate timeout, fail-closed) |
+| CP03 | **waiter console contains `LOCK_WAIT_TIMEOUT`** (**core**) | `true` |
+| CP03b | waiter console does NOT contain `server may have restarted` / `communication failure` / `HTTP 404` | `true` |
+| CP04 | lock body (`SHOULD_NOT_RUN`) did not run (fail-closed) | `true` |
+| CP05 | waiter waited >= 120s (a genuine allocate timeout, not an instant failure) | `true` |
+
+### Duration
+
+About 150s alone (130s allocate timeout > 120s TTL, plus the 150s holder hold).
+
+### Output files
+
+```
+reports/<runId>-e2e-test/remote-acquire-timeout/local-holder-console.txt
+reports/<runId>-e2e-test/remote-acquire-timeout/remote-waiter-console.txt
+reports/<runId>-e2e-test/remote-acquire-timeout/summary.txt
+reports/<runId>-e2e-test/remote-acquire-timeout/scenario-details.md
+```
+
+---
+
 ## D01: fan-in-4 — Four-Controller Contention [P1M1]
 
 ### Test intent
@@ -1165,3 +1224,7 @@ The report records:
 - 2026-06-14: Added the M1E scenario S17 (remote-unknown-rejected), proving an acquire for
   an unknown/unexposed resource fails fast with a uniform 404 and creates no ephemeral on
   the server (H-1 fix). Added the `m1e-series` group; all 20 scenarios 20/20 PASS.
+- 2026-06-22: Added the M1I scenario S18 (remote-acquire-timeout), the decisive guard for the
+  queued-expiry-poll-404 regression found by load testing: an allocate timeout (130s > the 120s
+  terminal TTL) fails closed with `LOCK_WAIT_TIMEOUT` (not a 404 / communication failure). Added the
+  `m1i-series` group. The timeout must exceed 120s to cross the TTL boundary.

@@ -5,7 +5,7 @@
 | ID | LRR-ISSUE-P1M1H-queued-expiry-poll-404 |
 | 重大度 | **正当性=低**（破綻なし・fail-closed 保持）／ **診断性・運用性=中**（誤診断を招く） |
 | 種別 | **ロジックバグ**：terminal record TTL の計測起点誤り（`enqueuedAt` 起点）。当初「client/server timeout 競合（race）」と誤認したが、コード精査で確定真因に訂正（2026-06-22） |
-| ステータス | Open（内部 issue 化。修正未着手。真因・修正箇所は特定済み） |
+| ステータス | **Fixed（M1I サイクルで修正。plugin `e231367`・E2E S18 で回帰ガード）**。設計/手順/結果 = `LRR_DESIGN_P1_M1I.md` / `LRR_IMPLEMENTATION_STEPS_P1_M1I.md` / `LRR_RESULT_P1_M1I.md` |
 | 発火条件 | **`timeoutForAllocateResource > TERMINAL_TTL_MS（=120s）`** のとき決定的に発生（負荷非依存） |
 | マイルストーン | P1M1H 派生（B2 = #52「QUEUED 期限をキュー timeout 一本化」の副作用） |
 | 発見手段 | 高負荷テスト G01 `grid-storm` の `stress` プリセット（hold 60s・200 並列、timeout=3 分）。ただし**真因は負荷非依存**で、timeout>120s の E2E 1 本で再現可能（§検出可能性） |
