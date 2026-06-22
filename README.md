@@ -58,6 +58,11 @@ P1M1 / P1M1A / P1M1B):
 
 - [E2E_TEST_SPECIFICATION](dev/docs-e/E2E_TEST_SPECIFICATION.md) ([j](dev/docs-j/E2E_TEST_SPECIFICATION.md))
 
+High-load / stress test specification (a separate suite; this is how the M1I regression was found) + the latest run report:
+
+- [LOAD_TEST_SPECIFICATION](dev/docs-e/LOAD_TEST_SPECIFICATION.md) ([j](dev/docs-j/LOAD_TEST_SPECIFICATION.md))
+- latest run (plugin `e231367`, `stress`, 4×50=200 jobs): [20260622153253-load-test.md](dev/reports/20260622153253-load-test.md) — 191/9, all 9 failures a clean `LOCK_WAIT_TIMEOUT`, overlaps 0, HUNG 0
+
 Reviews / レビュー:
 
 - [LRR_REVIEW_P1_M1A](dev/docs-e/LRR_REVIEW_P1_M1A.md) ([j](dev/docs-j/LRR_REVIEW_P1_M1A.md)) —
