@@ -76,6 +76,33 @@ def net_throughput_series(rows):
     return xs, ys
 
 
+def classify_failures(consoles_dir):
+    """Bucket FAILURE/ABORTED consoles by their failure signature (for the load report)."""
+    out = {"LOCK_WAIT_TIMEOUT": 0, "remote_404_comm_failure": 0, "job_timeout_abort": 0, "other": 0}
+    if not consoles_dir or not os.path.isdir(consoles_dir):
+        return out
+    for name in os.listdir(consoles_dir):
+        if not name.endswith(".txt"):
+            continue
+        try:
+            with open(os.path.join(consoles_dir, name), errors="replace") as fh:
+                txt = fh.read()
+        except OSError:
+            continue
+        if "Finished: FAILURE" not in txt and "Finished: ABORTED" not in txt:
+            continue
+        if "errorCode=LOCK_WAIT_TIMEOUT" in txt:
+            out["LOCK_WAIT_TIMEOUT"] += 1
+        elif ("returned HTTP 404" in txt or "communication failure" in txt
+              or "server may have restarted" in txt):
+            out["remote_404_comm_failure"] += 1
+        elif "Finished: ABORTED" in txt or "Timeout has been exceeded" in txt:
+            out["job_timeout_abort"] += 1
+        else:
+            out["other"] += 1
+    return out
+
+
 def pct(sorted_vals, p):
     if not sorted_vals:
         return None
@@ -124,10 +151,17 @@ def main():
     ap.add_argument("--preset", default="")
     ap.add_argument("--jobs-per-controller", type=int, default=0)
     ap.add_argument("--iter", type=int, default=0)
+    ap.add_argument("--sleep", type=int, default=0)
+    ap.add_argument("--remote-timeout", type=int, default=0)
+    ap.add_argument("--local-timeout", type=int, default=0)
+    ap.add_argument("--job-timeout", type=int, default=0)
+    ap.add_argument("--loopback", default="false")
+    ap.add_argument("--plugin-commit", default="")
     args = ap.parse_args()
 
     events = load_events(args.events)
     results = load_results(args.results)
+    fail_breakdown = classify_failures(os.path.join(os.path.dirname(args.out_metrics), "consoles"))
     netstats = load_netstats(args.netstats)
     net_summary = summarize_netstats(netstats) if netstats else {}
     plots_dir = os.path.join(os.path.dirname(args.out_metrics), "plots")
@@ -221,6 +255,7 @@ def main():
         "overlap_violations": len(overlaps),
         "completed_jobs": sum(1 for o in outcomes.values() if o == "COMPLETED"),
         "netstats": net_summary,
+        "failure_breakdown": fail_breakdown,
     }
 
     with open(args.out_metrics, "w") as f:
@@ -351,24 +386,82 @@ def main():
 
     # report
     rel = os.path.relpath(os.path.dirname(args.out_metrics), os.path.dirname(args.report))
+    total_jobs = args.jobs_per_controller * 4
+    loopback_on = str(args.loopback).lower() in ("true", "1", "yes", "on")
+    target_phrase = ("a randomly chosen controller (self included)" if loopback_on
+                     else "a randomly chosen OTHER controller")
+    titles = {
+        "queue-waiters-over-time": "Queued waiters over time",
+        "queue-wait-scatter": "Queue wait per acquisition",
+        "resource-mean-hold-scatter": "Per-resource mean hold time",
+        "network-throughput": "Container network throughput (REST API load)",
+        "cpu-utilization": "Container CPU utilization",
+    }
+    captions = {
+        "queue-waiters-over-time": "Lock requests waiting (REQUESTed but not yet ACQUIRED) at each instant. Peaks = contention.",
+        "queue-wait-scatter": "One point per lock acquisition: how long it waited (y) vs when it was acquired (x).",
+        "resource-mean-hold-scatter": "One point per resource: mean hold time (y) vs median acquire time (x); point size = number of acquisitions. Shows load skew across the pool.",
+        "network-throughput": "Per-container rx+tx throughput over time = load on the remote-lock REST API.",
+        "cpu-utilization": "Per-container CPU% over time; busier remote targets spike higher.",
+    }
+    qw = metrics["queue_wait_ms"]
     with open(args.report, "w") as f:
-        f.write(f"# Load Test Report (grid-storm)\n\n")
+        f.write("# Load Test Report — grid-storm\n\n")
         f.write(f"- runId: {args.run_id}\n- preset: {args.preset}\n")
-        f.write(f"- jobsPerController: {args.jobs_per_controller}  iter: {args.iter}\n")
-        f.write(f"- builds: {len(results)}  jobsWithEvents: {len(jobs)}\n\n")
-        f.write("## Build results\n\n")
+        if args.plugin_commit:
+            f.write(f"- plugin under test: `{args.plugin_commit}`\n")
+        f.write(f"- builds: {len(results)} (jobs with events: {len(jobs)})\n\n")
+
+        # ---- Scenario: what was actually exercised ----
+        f.write("## Scenario — what was tested\n\n")
+        f.write("**G01 grid-storm**: all 4 controllers (a/b/c/d) act as both lock **server and client**. "
+                f"Each controller starts **{args.jobs_per_controller} concurrent pipeline jobs** "
+                f"(**{total_jobs} jobs total** across the grid). Each controller defines 50 lockable resources "
+                "(label `pool`); 40 are exposed for remote acquisition.\n\n")
+        f.write(f"Every job repeats the following **{args.iter} time(s)** (whole-job timeout {args.job_timeout} min):\n\n")
+        f.write(f"1. **remote lock** `lock(label:'pool', quantity:2, serverId:<random>)` — 2 exposed resources on "
+                f"{target_phrase} (allocate timeout {args.remote_timeout} min)\n")
+        f.write("2. **local lock** `lock(label:'pool', quantity:1)` — 1 local resource, nested inside the remote hold "
+                f"(allocate timeout {args.local_timeout} min)\n")
+        f.write("3. **remote skipIfLocked** `lock(label:'pool', quantity:1, serverId:<random>, skipIfLocked:true)` — "
+                "best-effort; success or failure is swallowed (must not fail the job)\n")
+        f.write(f"4. **hold** for {args.sleep}s\n")
+        f.write("5. **release** the local lock, then the remote lock\n\n")
+        f.write("| parameter | value |\n|---|---|\n")
+        f.write(f"| jobs / controller | {args.jobs_per_controller} |\n")
+        f.write(f"| total concurrent jobs | {total_jobs} |\n")
+        f.write(f"| iterations / job | {args.iter} |\n")
+        f.write(f"| hold (sleep) | {args.sleep}s |\n")
+        f.write(f"| remote-lock allocate timeout | {args.remote_timeout} min |\n")
+        f.write(f"| local-lock allocate timeout | {args.local_timeout} min |\n")
+        f.write(f"| whole-job timeout | {args.job_timeout} min |\n")
+        f.write(f"| loopback (self as remote target) | {'on' if loopback_on else 'off (cross-controller only)'} |\n\n")
+
+        # ---- Result + invariants ----
+        f.write("## Result\n\n")
         for k, v in sorted(rcount.items()):
-            f.write(f"- {k}: {v}\n")
-        f.write(f"\n**HUNG (UNKNOWN result): {hung}** "
-                f"{'(OK)' if hung == 0 else '(INVESTIGATE — possible deadlock/lost wakeup)'}\n\n")
-        f.write("## Invariants\n\n")
-        f.write(f"- mutual-exclusion overlap violations (CP01/CP02): "
+            f.write(f"- build {k}: {v}\n")
+        if sum(fail_breakdown.values()):
+            f.write("\n**Failure breakdown** (by console signature)\n\n")
+            f.write(f"- `LOCK_WAIT_TIMEOUT` (clean allocate timeout, fail-closed): "
+                    f"{fail_breakdown['LOCK_WAIT_TIMEOUT']}\n")
+            if fail_breakdown["remote_404_comm_failure"]:
+                f.write(f"- remote 404 / communication failure: {fail_breakdown['remote_404_comm_failure']} "
+                        f"← queued-expiry-poll-404 regression (fixed in M1I / `e231367`)\n")
+            if fail_breakdown["job_timeout_abort"]:
+                f.write(f"- whole-job timeout (ABORTED): {fail_breakdown['job_timeout_abort']}\n")
+            if fail_breakdown["other"]:
+                f.write(f"- other: {fail_breakdown['other']}\n")
+        f.write("\n**Invariants**\n\n")
+        f.write(f"- mutual-exclusion overlap violations (a resource held beyond capacity at any instant): "
                 f"**{len(overlaps)}** {'(PASS)' if not overlaps else '(FAIL)'}\n")
-        f.write(f"- termination (HUNG=0, CP03): {'PASS' if hung == 0 else 'FAIL'}\n\n")
-        qw = metrics["queue_wait_ms"]
+        f.write(f"- termination — HUNG / UNKNOWN result (possible deadlock or lost wakeup): "
+                f"**{hung}** {'(PASS)' if hung == 0 else '(FAIL — investigate)'}\n\n")
+
         f.write("## Queue wait (ms)\n\n")
         f.write(f"- count: {qw['count']}  p50: {qw['p50']}  p95: {qw['p95']}  "
                 f"p99: {qw['p99']}  max: {qw['max']}\n\n")
+
         if net_summary:
             f.write("## Resource utilization (docker stats)\n\n")
             f.write("| container | peak CPU% | peak mem (MiB) | net rx (MB) | net tx (MB) | samples |\n")
@@ -377,20 +470,26 @@ def main():
                 s = net_summary[name]
                 f.write(f"| {name} | {s['peak_cpu_pct']} | {s['peak_mem_mib']} | "
                         f"{s['net_rx_total_mb']} | {s['net_tx_total_mb']} | {s['samples']} |\n")
-            f.write("\n> net rx/tx = run 期間中の累積差分。スループット推移は network-throughput.png 参照。\n\n")
-        f.write("## Artifacts\n\n")
-        f.write(f"- events: {rel}/events.csv\n- classification: {rel}/job-classification.csv\n")
-        f.write(f"- overlaps: {rel}/overlaps.txt\n- metrics: {rel}/metrics.json\n")
-        f.write(f"- consoles: {rel}/consoles/\n\n")
+            f.write("\n> net rx/tx = cumulative delta over the run.\n\n")
+
+        # ---- Plots: embedded inline (the .md is self-contained) ----
         f.write("## Plots\n\n")
         if plot_links is None:
-            f.write("- matplotlib not installed; plots skipped. "
-                    "Create dev/.venv and `pip install matplotlib`, then re-run analysis.\n")
+            f.write("_matplotlib not installed; plots skipped. Create `dev/.venv` and `pip install matplotlib`, then re-run._\n\n")
         elif not plot_links:
-            f.write("- no data to plot.\n")
+            f.write("_no data to plot._\n\n")
         else:
             for name, p in plot_links:
-                f.write(f"- {name}: [{rel}/plots/{os.path.basename(p)}]({rel}/plots/{os.path.basename(p)})\n")
+                base = os.path.basename(p)
+                f.write(f"### {titles.get(name, name)}\n\n")
+                f.write(f"![{name}]({rel}/plots/{base})\n\n")
+                if name in captions:
+                    f.write(f"{captions[name]}\n\n")
+
+        f.write("## Artifacts\n\n")
+        f.write(f"- events: `{rel}/events.csv`\n- classification: `{rel}/job-classification.csv`\n")
+        f.write(f"- overlaps: `{rel}/overlaps.txt`\n- metrics: `{rel}/metrics.json`\n")
+        f.write(f"- consoles: `{rel}/consoles/`\n")
 
     # console summary
     print(f"[analyze] builds={len(results)} results={dict(rcount)} hung={hung} "

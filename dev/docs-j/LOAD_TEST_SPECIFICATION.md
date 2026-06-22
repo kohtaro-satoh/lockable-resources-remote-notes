@@ -123,7 +123,7 @@ flowchart LR
 
 - `curl`, `python3`, `docker`, `base64`, `flock`
 - **matplotlib**（PNG 生成）: ホストに未導入のため `dev/.venv` を作成し `pip install matplotlib`。
-  描画は `dev/jenkins-env/lib/plot_load.py`（venv の python で実行、コンテナ非依存）。
+  描画は `dev/jenkins-env/lib/analyze_load.py`（venv の python で実行、コンテナ非依存）。
 
 ### REST API 契約（被試験エンドポイント）
 
@@ -153,11 +153,11 @@ timeout(time: JOB_TO, unit: 'MINUTES') {       // ジョブ全体 15 分
     def t1 = pickTarget(SELF, SERVERS, ALLOW_SELF)   // remote ターゲット
     emit(i, 'REMOTE_MAIN', 'REQUEST', t1)
     lock(label: 'pool', quantity: 2, serverId: t1, variable: 'RMAIN',
-         timeout: RLOCK_TO, unit: 'MINUTES') {   // ① remote 2 個（label）
+         timeoutForAllocateResource: RLOCK_TO, timeoutUnit: 'MINUTES') {   // ① remote 2 個（label）
       emit(i, 'REMOTE_MAIN', 'ACQUIRED', t1, env.RMAIN)   // env.RMAIN = 取得名(カンマ区切り)
       emit(i, 'LOCAL', 'REQUEST', SELF)
       lock(label: 'pool', quantity: 1, variable: 'LRES',
-           timeout: LLOCK_TO, unit: 'MINUTES') { // ② local 1 個（expose 不問）
+           timeoutForAllocateResource: LLOCK_TO, timeoutUnit: 'MINUTES') { // ② local 1 個（expose 不問）
         emit(i, 'LOCAL', 'ACQUIRED', SELF, env.LRES)
         def t2 = pickTarget(SELF, SERVERS, ALLOW_SELF)
         try {                                     // ③ remote 1 個 skipIfLocked（もみ消し）

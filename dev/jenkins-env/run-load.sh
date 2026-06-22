@@ -323,6 +323,7 @@ log "Analyzing"
 # Prefer the venv python (has matplotlib for PNG plots) if it exists
 PY="python3"
 if [[ -x "$RUN_SCRIPT_DIR/../.venv/bin/python" ]]; then PY="$RUN_SCRIPT_DIR/../.venv/bin/python"; fi
+PLUGIN_COMMIT="$(git -C "$RUN_SCRIPT_DIR/../../../lockable-resources-plugin" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 "$PY" "$RUN_SCRIPT_DIR/lib/analyze_load.py" \
   --events "$EVENTS_FILE" \
   --results "$SUMMARY_FILE" \
@@ -333,7 +334,9 @@ if [[ -x "$RUN_SCRIPT_DIR/../.venv/bin/python" ]]; then PY="$RUN_SCRIPT_DIR/../.
   --out-classification "$RESULTS_DIR/job-classification.csv" \
   --report "$REPORT_FILE" \
   --run-id "$RUN_ID" --preset "$PRESET" \
-  --jobs-per-controller "$JOBS_PER_CONTROLLER" --iter "$ITER" || {
+  --jobs-per-controller "$JOBS_PER_CONTROLLER" --iter "$ITER" \
+  --sleep "$SLEEP_SEC" --remote-timeout "$RLOCK_TO" --local-timeout "$LLOCK_TO" \
+  --job-timeout "$JOB_TO" --loopback "$ALLOW_SELF" --plugin-commit "$PLUGIN_COMMIT" || {
     err "analysis failed"; exit 1; }
 
 log "Report: $REPORT_FILE"
