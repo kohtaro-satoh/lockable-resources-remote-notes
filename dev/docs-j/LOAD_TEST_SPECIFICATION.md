@@ -47,13 +47,13 @@
 
 ```mermaid
 flowchart LR
-  subgraph A[jenkins-a: server+client / 50 res(40 exposed) / 50 jobs]
+  subgraph A["jenkins-a: server+client / 50 res(40 exposed) / 50 jobs"]
   end
-  subgraph B[jenkins-b: server+client / 50 res(40 exposed) / 50 jobs]
+  subgraph B["jenkins-b: server+client / 50 res(40 exposed) / 50 jobs"]
   end
-  subgraph C[jenkins-c: server+client / 50 res(40 exposed) / 50 jobs]
+  subgraph C["jenkins-c: server+client / 50 res(40 exposed) / 50 jobs"]
   end
-  subgraph D[jenkins-d: server+client / 50 res(40 exposed) / 50 jobs]
+  subgraph D["jenkins-d: server+client / 50 res(40 exposed) / 50 jobs"]
   end
   A <-->|remote lock 相互| B
   A <-->|remote lock 相互| C
