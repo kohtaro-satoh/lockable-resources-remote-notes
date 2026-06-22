@@ -1,0 +1,79 @@
+Started by user admin
+[Pipeline] Start of Pipeline
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named SELF (to a value of type String) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named SERVERS (to a value of type ArrayList) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named ALLOW_SELF (to a value of type Boolean) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named ITER (to a value of type Integer) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named SLEEP (to a value of type Integer) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named RLOCK_TO (to a value of type Integer) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named LLOCK_TO (to a value of type Integer) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named JOB_TO (to a value of type Integer) which could lead to memory leaks or other issues.
+[Pipeline] node
+Running on Jenkins in /var/jenkins_home/workspace/grid-storm@16
+[Pipeline] {
+[Pipeline] timeout
+Timeout set to expire in 15 min
+[Pipeline] {
+[Pipeline] echo
+LLT|1782085138548|grid-storm#217@b|b|1|REMOTE_MAIN|REQUEST|c|
+[Pipeline] lock
+Trying to acquire remote lock on [Label: pool, Quantity: 2] (serverId=c)
+Remote acquire enqueued (serverId=c, lockId=7bee7c68-5088-4bb1-bcca-236a09168a86)
+Remote lock acquired on [Label: pool, Quantity: 2] (serverId=c, lockId=7bee7c68-5088-4bb1-bcca-236a09168a86)
+[Pipeline] {
+[Pipeline] echo
+LLT|1782085138600|grid-storm#217@b|b|1|REMOTE_MAIN|ACQUIRED|c|c-res-33,c-res-34
+[Pipeline] echo
+LLT|1782085138613|grid-storm#217@b|b|1|LOCAL|REQUEST|b|
+[Pipeline] lock
+Trying to acquire lock on [Label: pool, Quantity: 1]
+Lock acquired on [Label: pool, Quantity: 1]
+[Pipeline] {
+[Pipeline] echo
+LLT|1782085138656|grid-storm#217@b|b|1|LOCAL|ACQUIRED|b|b-res-28
+[Pipeline] lock
+Trying to acquire remote lock on [Label: pool, Quantity: 1] (serverId=d)
+Remote acquire enqueued (serverId=d, lockId=528ecc04-4d37-464f-b943-aaf543b2d834)
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1782085138746|grid-storm#217@b|b|1|LOCAL|BODY|b|
+[Pipeline] sleep
+Sleeping for 1 min 0 sec
+[Pipeline] echo
+LLT|1782085200779|grid-storm#217@b|b|1|LOCAL|RELEASED|b|
+[Pipeline] }
+Lock released on resource [Label: pool, Quantity: 1]
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1782085200832|grid-storm#217@b|b|1|REMOTE_MAIN|RELEASED|c|
+[Pipeline] }
+Remote lock released on [Label: pool, Quantity: 2] (serverId=c, lockId=7bee7c68-5088-4bb1-bcca-236a09168a86)
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1782085200888|grid-storm#217@b|b|2|REMOTE_MAIN|REQUEST|d|
+[Pipeline] lock
+Trying to acquire remote lock on [Label: pool, Quantity: 2] (serverId=d)
+Remote acquire enqueued (serverId=d, lockId=0f279a70-6e52-4f42-a602-d72128396958)
+[Pipeline] // lock
+[Pipeline] }
+[Pipeline] // timeout
+[Pipeline] }
+[Pipeline] // node
+[Pipeline] End of Pipeline
+org.jenkins.plugins.lockableresources.remote.RemoteApiException: Remote API request failed: GET /acquire/0f279a70-6e52-4f42-a602-d72128396958/ returned HTTP 404
+	at PluginClassLoader for lockable-resources//org.jenkins.plugins.lockableresources.remote.RemoteApiClient.send(RemoteApiClient.java:249)
+Also:   org.jenkinsci.plugins.workflow.actions.ErrorAction$ErrorId: e2cb568d-e78b-46e9-a3d4-101e48615b0d
+Caused: org.jenkins.plugins.lockableresources.remote.RemoteApiException: Remote API communication failure: GET /acquire/0f279a70-6e52-4f42-a602-d72128396958/
+	at PluginClassLoader for lockable-resources//org.jenkins.plugins.lockableresources.remote.RemoteApiClient.send(RemoteApiClient.java:264)
+	at PluginClassLoader for lockable-resources//org.jenkins.plugins.lockableresources.remote.RemoteApiClient.sendAndDecodeJson(RemoteApiClient.java:210)
+	at PluginClassLoader for lockable-resources//org.jenkins.plugins.lockableresources.remote.RemoteApiClient.getAcquireStatus(RemoteApiClient.java:153)
+	at PluginClassLoader for lockable-resources//org.jenkins.plugins.lockableresources.remote.RemoteLockSession.pollStatus(RemoteLockSession.java:172)
+	at PluginClassLoader for lockable-resources//org.jenkins.plugins.lockableresources.remote.RemoteLockSession.lambda$startPolling$0(RemoteLockSession.java:150)
+	at jenkins.security.ImpersonatingScheduledExecutorService.lambda$wrap$0(ImpersonatingScheduledExecutorService.java:65)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Unknown Source)
+	at java.base/java.util.concurrent.FutureTask.runAndReset(Unknown Source)
+	at java.base/java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(Unknown Source)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+	at java.base/java.lang.Thread.run(Unknown Source)
+Finished: FAILURE
