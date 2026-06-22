@@ -336,7 +336,8 @@ PLUGIN_COMMIT="$(git -C "$RUN_SCRIPT_DIR/../../../lockable-resources-plugin" rev
   --run-id "$RUN_ID" --preset "$PRESET" \
   --jobs-per-controller "$JOBS_PER_CONTROLLER" --iter "$ITER" \
   --sleep "$SLEEP_SEC" --remote-timeout "$RLOCK_TO" --local-timeout "$LLOCK_TO" \
-  --job-timeout "$JOB_TO" --loopback "$ALLOW_SELF" --plugin-commit "$PLUGIN_COMMIT" || {
+  --job-timeout "$JOB_TO" --loopback "$ALLOW_SELF" --plugin-commit "$PLUGIN_COMMIT" \
+  --jenkinsfile "$RUN_SCRIPT_DIR/load/Jenkinsfile.grid" || {
     err "analysis failed"; exit 1; }
 
 log "Report: $REPORT_FILE"

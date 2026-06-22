@@ -157,6 +157,7 @@ def main():
     ap.add_argument("--job-timeout", type=int, default=0)
     ap.add_argument("--loopback", default="false")
     ap.add_argument("--plugin-commit", default="")
+    ap.add_argument("--jenkinsfile", default="")
     args = ap.parse_args()
 
     events = load_events(args.events)
@@ -436,6 +437,15 @@ def main():
         f.write(f"| local-lock allocate timeout | {args.local_timeout} min |\n")
         f.write(f"| whole-job timeout | {args.job_timeout} min |\n")
         f.write(f"| loopback (self as remote target) | {'on' if loopback_on else 'off (cross-controller only)'} |\n\n")
+
+        if args.jenkinsfile and os.path.exists(args.jenkinsfile):
+            with open(args.jenkinsfile) as jf:
+                jtext = jf.read().rstrip("\n")
+            f.write("### Job pipeline (`Jenkinsfile.grid`)\n\n")
+            f.write("The exact pipeline injected into every job. The harness replaces the `// @@CONFIG@@` line with "
+                    "a header that sets `SELF` / `SERVERS` / `ITER` / `SLEEP` / `RLOCK_TO` / `LLOCK_TO` / `JOB_TO` / "
+                    "`ALLOW_SELF` to the values above, then injects it as a `CpsFlowDefinition` (sandbox off).\n\n")
+            f.write("```groovy\n" + jtext + "\n```\n\n")
 
         # ---- Result + invariants ----
         f.write("## Result\n\n")
