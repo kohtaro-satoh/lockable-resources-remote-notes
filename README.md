@@ -54,6 +54,14 @@ P1M1 / P1M1A / P1M1B):
 
 - [E2E_TEST_SPECIFICATION](dev/docs-e/E2E_TEST_SPECIFICATION.md) ([j](dev/docs-j/E2E_TEST_SPECIFICATION.md))
 
+High-load / stress test specification (a separate suite that drives the remote lock at production scale; this is
+how the M1I regression was found), plus the latest run report:
+
+- [LOAD_TEST_SPECIFICATION](dev/docs-e/LOAD_TEST_SPECIFICATION.md) ([j](dev/docs-j/LOAD_TEST_SPECIFICATION.md))
+- latest run (plugin `e231367`, `stress` preset, 4×50 = 200 concurrent jobs):
+  [20260622160020-load-test.md](dev/reports/20260622160020-load-test.md) — 188 SUCCESS / 12 FAILURE, all 12 a clean
+  `LOCK_WAIT_TIMEOUT`, 0 mutual-exclusion violations, 0 HUNG (the report embeds the plots inline)
+
 ### Development environment / 開発環境（`dev/`）
 
 | Path | Content |

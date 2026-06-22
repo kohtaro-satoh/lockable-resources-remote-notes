@@ -1,0 +1,64 @@
+// Grid storm load job (G01) — see dev/docs-j/LOAD_TEST_SPECIFICATION.md
+//
+// Injected by run-load.sh as CpsFlowDefinition(script, /*sandbox*/ false).
+// The harness REPLACES the "// @@CONFIG@@" line below with a Groovy header that
+// defines these bindings (bare assignments, so top-level methods can read them):
+//
+//   SELF       = '<this controller id>'       // e.g. 'a'
+//   SERVERS    = ['a','b','c','d']            // all controller ids
+//   ALLOW_SELF = false                        // loopback mode: true=self may be picked as
+//                                             //   remote target (25%); false=cross-controller only
+//   ITER       = 1                            // iterations
+//   SLEEP     = 10                            // hold seconds
+//   RLOCK_TO  = 2                             // remote-main lock timeout (min)
+//   LLOCK_TO  = 2                             // local lock timeout (min)
+//   JOB_TO    = 5                             // whole-job timeout (min)
+//
+// Structured event line (parsed from consoleText by analyze_load.py):
+//   LLT|<epochMs>|<jobUid>|<self>|<iter>|<phase>|<event>|<target>|<resources>
+
+// @@CONFIG@@
+
+def emit(self, iter, phase, event, target, resources) {
+  echo "LLT|${System.currentTimeMillis()}|${env.JOB_NAME}#${env.BUILD_NUMBER}@${self}|" +
+       "${self}|${iter}|${phase}|${event}|${target}|${resources}"
+}
+
+def pick(list) { list[new Random().nextInt(list.size())] }
+
+// remote target selection. ALLOW_SELF=false excludes SELF (no loopback): every remote
+// request is a genuine cross-controller call. ALLOW_SELF=true keeps the 25% self chance
+// (server-self-use coverage / loopback performance).
+def pickTarget(self, servers, allowSelf) {
+  return pick(allowSelf ? servers : servers.findAll { it != self })
+}
+
+node {
+  timeout(time: JOB_TO, unit: 'MINUTES') {
+    for (int i = 1; i <= ITER; i++) {
+      def t1 = pickTarget(SELF, SERVERS, ALLOW_SELF)
+      emit(SELF, i, 'REMOTE_MAIN', 'REQUEST', t1, '')
+      lock(label: 'pool', quantity: 2, serverId: t1, variable: 'RMAIN',
+           timeoutForAllocateResource: RLOCK_TO, timeoutUnit: 'MINUTES') {
+        emit(SELF, i, 'REMOTE_MAIN', 'ACQUIRED', t1, env.RMAIN ?: '')
+        emit(SELF, i, 'LOCAL', 'REQUEST', SELF, '')
+        lock(label: 'pool', quantity: 1, variable: 'LRES',
+             timeoutForAllocateResource: LLOCK_TO, timeoutUnit: 'MINUTES') {
+          emit(SELF, i, 'LOCAL', 'ACQUIRED', SELF, env.LRES ?: '')
+          def t2 = pickTarget(SELF, SERVERS, ALLOW_SELF)
+          try {
+            lock(label: 'pool', quantity: 1, serverId: t2, skipIfLocked: true) {
+              emit(SELF, i, 'REMOTE_SKIP', 'ACQUIRED', t2, '')
+            }
+          } catch (err) {
+            emit(SELF, i, 'REMOTE_SKIP', 'FAILED', t2, '')
+          }
+          emit(SELF, i, 'LOCAL', 'BODY', SELF, '')
+          sleep(time: SLEEP, unit: 'SECONDS')
+          emit(SELF, i, 'LOCAL', 'RELEASED', SELF, '')
+        }
+        emit(SELF, i, 'REMOTE_MAIN', 'RELEASED', t1, '')
+      }
+    }
+  }
+}
