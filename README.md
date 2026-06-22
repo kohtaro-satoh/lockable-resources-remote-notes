@@ -46,7 +46,8 @@ historical snapshots.
 | M1E (404 admission + multi-label exposeLabel) | [e](dev/docs-e/LRR_DESIGN_P1_M1E.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1E.md) |
 | M1F (M1E review triage: bridge hardening) | [e](dev/docs-e/LRR_DESIGN_P1_M1F.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1F.md) |
 | M1G (package the remote layer; no behaviour change) | [e](dev/docs-e/LRR_DESIGN_P1_M1G.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1G.md) |
-| **M1H (PR #1055 CI follow-up: security hardening + B2)** | [e](dev/docs-e/LRR_DESIGN_P1_M1H.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1H.md) |
+| M1H (PR #1055 CI follow-up: security hardening + B2) | [e](dev/docs-e/LRR_DESIGN_P1_M1H.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1H.md) |
+| **M1I (queued-expiry-poll-404 regression fix; found by load testing)** | [e](dev/docs-e/LRR_DESIGN_P1_M1I.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1I.md) |
 
 E2E test specification (unified across milestones; each test item is tagged
 P1M1 / P1M1A / P1M1B):
@@ -65,6 +66,14 @@ P1M1 / P1M1A / P1M1B):
 
 ## Status / 現況
 
+- **Phase 1 / M1I complete** (2026-06-22): a low-risk regression fix found by local high-load testing on this
+  branch. When `timeoutForAllocateResource` is set and the acquire times out, the client's poll outcome was
+  inconsistent — a legitimate allocation timeout could surface either as `LOCK_WAIT_TIMEOUT` or as a `404` /
+  "communication failure" (it always failed closed; only the error *kind* differed, never lock correctness). The
+  server now retains the terminal record for its full TTL measured from the terminal transition (not from
+  enqueue), and the client normalizes a poll 404 to `LOCK_WAIT_TIMEOUT`, so a timed-out acquire consistently
+  reports `LOCK_WAIT_TIMEOUT`. Backward-compatible; covered by a unit test and a new E2E scenario (S18).
+  See LRR_DESIGN_P1_M1I.
 - **Phase 1 / M1H complete** (2026-06-21): PR #1055 CI follow-up. Addressed the 4 Jenkins Security Scan alerts
   (#49–52) on the remote API and re-synced upstream master. #49/#50/#51: `doCheckUrl` / `doCheckForcedServerId`
   now require POST (+ ADMINISTER on `doCheckUrl`) with `checkMethod="post"` on the form fields. #52 = **B2**:
