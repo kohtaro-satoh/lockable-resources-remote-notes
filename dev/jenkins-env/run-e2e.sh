@@ -44,6 +44,9 @@ M1D_SCENARIOS=(
 M1E_SCENARIOS=(
   "remote-unknown-rejected"
 )
+M1H_SCENARIOS=(
+  "remote-acquire-timeout"
+)
 D_SCENARIOS=(
   "fan-in-4"
   "chain-4"
@@ -67,6 +70,7 @@ ALL_SCENARIOS=(
   "label-quantity-all"
   "remote-resource-properties"
   "remote-unknown-rejected"
+  "remote-acquire-timeout"
   "fan-in-4"
   "chain-4"
   "diamond"
@@ -90,6 +94,7 @@ declare -A SCENARIO_IDS=(
   ["label-quantity-all"]="S15"
   ["remote-resource-properties"]="S16"
   ["remote-unknown-rejected"]="S17"
+  ["remote-acquire-timeout"]="S18"
   ["fan-in-4"]="D01"
   ["chain-4"]="D02"
   ["diamond"]="D03"
@@ -114,8 +119,9 @@ Options:
                         priority-ordering | stale-admin-release |
                         extra-label-resources | label-quantity-all |
                         remote-resource-properties | remote-unknown-rejected |
+                        remote-acquire-timeout |
                         fan-in-4 | chain-4 | diamond |
-                        s-series | m1a-series | m1b-series | m1c-series | m1d-series | m1e-series | d-series | all
+                        s-series | m1a-series | m1b-series | m1c-series | m1d-series | m1e-series | m1h-series | d-series | all
   -h, --help            Show this help.
 USAGE
 }
@@ -157,7 +163,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 is_valid_only=false
-for allowed in all s-series m1a-series m1b-series m1c-series m1d-series m1e-series d-series "${ALL_SCENARIOS[@]}"; do
+for allowed in all s-series m1a-series m1b-series m1c-series m1d-series m1e-series m1h-series d-series "${ALL_SCENARIOS[@]}"; do
   if [[ "$ONLY" == "$allowed" ]]; then
     is_valid_only=true
     break
@@ -275,6 +281,9 @@ select_scenarios() {
       ;;
     m1e-series)
       printf '%s\n' "${M1E_SCENARIOS[@]}"
+      ;;
+    m1h-series)
+      printf '%s\n' "${M1H_SCENARIOS[@]}"
       ;;
     d-series)
       printf '%s\n' "${D_SCENARIOS[@]}"
