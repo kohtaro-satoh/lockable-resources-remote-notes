@@ -1,0 +1,133 @@
+Started by user admin
+[Pipeline] Start of Pipeline
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named SELF (to a value of type String) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named SERVERS (to a value of type ArrayList) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named ALLOW_SELF (to a value of type Boolean) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named ITER (to a value of type Integer) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named SLEEP (to a value of type Integer) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named RLOCK_TO (to a value of type Integer) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named LLOCK_TO (to a value of type Integer) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named JOB_TO (to a value of type Integer) which could lead to memory leaks or other issues.
+[Pipeline] node
+Running on Jenkins in /var/jenkins_home/workspace/grid-storm@21
+[Pipeline] {
+[Pipeline] timeout
+Timeout set to expire in 15 min
+[Pipeline] {
+[Pipeline] echo
+LLT|1784429474426|grid-storm#76@d|d|1|REMOTE_MAIN|REQUEST|c|
+[Pipeline] lock
+Trying to acquire remote lock on [Label: pool, Quantity: 2] (serverId=c)
+Remote acquire enqueued (serverId=c, lockId=0c90f5a9-7fed-42cf-828d-31b63740d3cb)
+Remote lock acquired on [Label: pool, Quantity: 2] (serverId=c, lockId=0c90f5a9-7fed-42cf-828d-31b63740d3cb)
+[Pipeline] {
+[Pipeline] echo
+LLT|1784429555892|grid-storm#76@d|d|1|REMOTE_MAIN|ACQUIRED|c|c-res-07,c-res-08
+[Pipeline] echo
+LLT|1784429555920|grid-storm#76@d|d|1|LOCAL|REQUEST|d|
+[Pipeline] lock
+Trying to acquire lock on [Label: pool, Quantity: 1]
+Lock acquired on [Label: pool, Quantity: 1]
+[Pipeline] {
+[Pipeline] echo
+LLT|1784429556011|grid-storm#76@d|d|1|LOCAL|ACQUIRED|d|d-res-48
+[Pipeline] lock
+Trying to acquire remote lock on [Label: pool, Quantity: 1] (serverId=b)
+Remote acquire enqueued (serverId=b, lockId=7fce8247-453f-4482-bf17-79b7094069f7)
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1784429556162|grid-storm#76@d|d|1|LOCAL|BODY|d|
+[Pipeline] sleep
+Sleeping for 1 min 0 sec
+[Pipeline] echo
+LLT|1784429616230|grid-storm#76@d|d|1|LOCAL|RELEASED|d|
+[Pipeline] }
+Lock released on resource [Label: pool, Quantity: 1]
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1784429616324|grid-storm#76@d|d|1|REMOTE_MAIN|RELEASED|c|
+[Pipeline] }
+Remote lock released on [Label: pool, Quantity: 2] (serverId=c, lockId=0c90f5a9-7fed-42cf-828d-31b63740d3cb)
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1784429616427|grid-storm#76@d|d|2|REMOTE_MAIN|REQUEST|a|
+[Pipeline] lock
+Trying to acquire remote lock on [Label: pool, Quantity: 2] (serverId=a)
+Remote acquire enqueued (serverId=a, lockId=404ee5d3-3a06-4bcd-ab49-a6e291545620)
+Remote lock acquired on [Label: pool, Quantity: 2] (serverId=a, lockId=404ee5d3-3a06-4bcd-ab49-a6e291545620)
+[Pipeline] {
+[Pipeline] echo
+LLT|1784429751857|grid-storm#76@d|d|2|REMOTE_MAIN|ACQUIRED|a|a-res-30,a-res-31
+[Pipeline] echo
+LLT|1784429751881|grid-storm#76@d|d|2|LOCAL|REQUEST|d|
+[Pipeline] lock
+Trying to acquire lock on [Label: pool, Quantity: 1]
+Lock acquired on [Label: pool, Quantity: 1]
+[Pipeline] {
+[Pipeline] echo
+LLT|1784429751955|grid-storm#76@d|d|2|LOCAL|ACQUIRED|d|d-res-50
+[Pipeline] lock
+Trying to acquire remote lock on [Label: pool, Quantity: 1] (serverId=c)
+Remote acquire enqueued (serverId=c, lockId=72f5aab6-3c91-4538-9508-bdd30cac287f)
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1784429752027|grid-storm#76@d|d|2|LOCAL|BODY|d|
+[Pipeline] sleep
+Sleeping for 1 min 0 sec
+[Pipeline] echo
+LLT|1784429812058|grid-storm#76@d|d|2|LOCAL|RELEASED|d|
+[Pipeline] }
+Lock released on resource [Label: pool, Quantity: 1]
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1784429812132|grid-storm#76@d|d|2|REMOTE_MAIN|RELEASED|a|
+[Pipeline] }
+Remote lock released on [Label: pool, Quantity: 2] (serverId=a, lockId=404ee5d3-3a06-4bcd-ab49-a6e291545620)
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1784429812212|grid-storm#76@d|d|3|REMOTE_MAIN|REQUEST|c|
+[Pipeline] lock
+Trying to acquire remote lock on [Label: pool, Quantity: 2] (serverId=c)
+Remote acquire enqueued (serverId=c, lockId=61e97ebc-69af-41d7-a132-6cdcac54b42f)
+Remote lock acquired on [Label: pool, Quantity: 2] (serverId=c, lockId=61e97ebc-69af-41d7-a132-6cdcac54b42f)
+[Pipeline] {
+[Pipeline] echo
+LLT|1784429935583|grid-storm#76@d|d|3|REMOTE_MAIN|ACQUIRED|c|c-res-09,c-res-18
+[Pipeline] echo
+LLT|1784429935602|grid-storm#76@d|d|3|LOCAL|REQUEST|d|
+[Pipeline] lock
+Trying to acquire lock on [Label: pool, Quantity: 1]
+Lock acquired on [Label: pool, Quantity: 1]
+[Pipeline] {
+[Pipeline] echo
+LLT|1784429935655|grid-storm#76@d|d|3|LOCAL|ACQUIRED|d|d-res-02
+[Pipeline] lock
+Trying to acquire remote lock on [Label: pool, Quantity: 1] (serverId=b)
+Remote acquire enqueued (serverId=b, lockId=b8d539a4-1742-498f-9f85-c08633b57718)
+Remote lock acquired on [Label: pool, Quantity: 1] (serverId=b, lockId=b8d539a4-1742-498f-9f85-c08633b57718)
+[Pipeline] {
+[Pipeline] echo
+LLT|1784429935733|grid-storm#76@d|d|3|REMOTE_SKIP|ACQUIRED|b|
+[Pipeline] }
+Remote lock released on [Label: pool, Quantity: 1] (serverId=b, lockId=b8d539a4-1742-498f-9f85-c08633b57718)
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1784429935790|grid-storm#76@d|d|3|LOCAL|BODY|d|
+[Pipeline] sleep
+Sleeping for 1 min 0 sec
+[Pipeline] echo
+LLT|1784429995815|grid-storm#76@d|d|3|LOCAL|RELEASED|d|
+[Pipeline] }
+Lock released on resource [Label: pool, Quantity: 1]
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1784429995861|grid-storm#76@d|d|3|REMOTE_MAIN|RELEASED|c|
+[Pipeline] }
+Remote lock released on [Label: pool, Quantity: 2] (serverId=c, lockId=61e97ebc-69af-41d7-a132-6cdcac54b42f)
+[Pipeline] // lock
+[Pipeline] }
+[Pipeline] // timeout
+[Pipeline] }
+[Pipeline] // node
+[Pipeline] End of Pipeline
+Finished: SUCCESS

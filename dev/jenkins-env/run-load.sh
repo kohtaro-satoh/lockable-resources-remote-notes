@@ -9,7 +9,7 @@ source "$RUN_SCRIPT_DIR/lib/common.sh"
 # ---------------------------------------------------------------------------
 # Defaults / presets
 # ---------------------------------------------------------------------------
-PRESET="smoke"
+PRESET="full"
 JOBS_PER_CONTROLLER=""
 ITER=""
 SLEEP_SEC=""
