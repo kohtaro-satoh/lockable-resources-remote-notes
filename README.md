@@ -47,7 +47,8 @@ historical snapshots.
 | M1F (M1E review triage: bridge hardening) | [e](dev/docs-e/LRR_DESIGN_P1_M1F.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1F.md) |
 | M1G (package the remote layer; no behaviour change) | [e](dev/docs-e/LRR_DESIGN_P1_M1G.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1G.md) |
 | M1H (PR #1055 CI follow-up: security hardening + B2) | [e](dev/docs-e/LRR_DESIGN_P1_M1H.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1H.md) |
-| **M1I (queued-expiry-poll-404 regression fix; found by load testing)** | [e](dev/docs-e/LRR_DESIGN_P1_M1I.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1I.md) |
+| M1I (queued-expiry-poll-404 regression fix; found by load testing) | [e](dev/docs-e/LRR_DESIGN_P1_M1I.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1I.md) |
+| **M1J (remote config help links 404 fix; found in PR review)** | [e](dev/docs-e/LRR_DESIGN_P1_M1J.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1J.md) |
 
 E2E test specification (unified across milestones; each test item is tagged
 P1M1 / P1M1A / P1M1B):
@@ -58,8 +59,8 @@ High-load / stress test specification (a separate suite that drives the remote l
 how the M1I regression was found), plus the latest run report:
 
 - [LOAD_TEST_SPECIFICATION](dev/docs-e/LOAD_TEST_SPECIFICATION.md) ([j](dev/docs-j/LOAD_TEST_SPECIFICATION.md))
-- latest run (plugin `e231367`, `stress` preset, 4×50 = 200 concurrent jobs):
-  [20260622160020-load-test.md](dev/reports/20260622160020-load-test.md) — 188 SUCCESS / 12 FAILURE, all 12 a clean
+- latest run (plugin `e83534b`, `stress` preset, 4×50 = 200 concurrent jobs):
+  [20260719115008-load-test.md](dev/reports/20260719115008-load-test.md) — 182 SUCCESS / 18 FAILURE, all 18 a clean
   `LOCK_WAIT_TIMEOUT`, 0 mutual-exclusion violations, 0 HUNG (the report embeds the plots inline)
 
 ### Development environment / 開発環境（`dev/`）
@@ -74,6 +75,15 @@ how the M1I regression was found), plus the latest run report:
 
 ## Status / 現況
 
+- **Phase 1 / M1J complete** (2026-07-19): a minor UI-help fix found in PR #1055 review (a reviewer's
+  screenshot showed "Failed to load help file: Not Found" on the remote config screen). The explicit `help=`
+  paths in the two `config.jelly` files used the `help-<field>` (hyphen) form instead of the `help/<field>`
+  (slash) URL that `Descriptor#getHelpFile` actually generates, so all 8 remote-config help links 404'd (latent
+  since the first #1025 commit `4f3577f`). Fixed by aligning the 8 URLs to the slash form; no behaviour or logic
+  change. The branch was rebased by the reviewer onto `upstream/master` `4dbbfc1` (PR head `7fd218b`); the fix
+  (`e83534b`) sits on top. Verified on the rebase: 8/8 help URLs return 200 live, `mvn verify` BUILD SUCCESS
+  386/0/1skip (all gates ok), E2E 21/21, load `stress` 200 jobs (182 SUCCESS / 18 clean `LOCK_WAIT_TIMEOUT`,
+  0 overlap violations, 0 HUNG). See LRR_DESIGN_P1_M1J.
 - **Phase 1 / M1I complete** (2026-06-22): a low-risk regression fix found by local high-load testing on this
   branch. When `timeoutForAllocateResource` is set and the acquire times out, the client's poll outcome was
   inconsistent — a legitimate allocation timeout could surface either as `LOCK_WAIT_TIMEOUT` or as a `404` /
