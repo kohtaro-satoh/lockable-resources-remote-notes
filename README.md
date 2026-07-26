@@ -51,6 +51,15 @@ milestones rather than belonging to one.
 | **M1I (queued-expiry-poll-404 regression fix; found by load testing)** | [e](dev/docs-e/ph1-ms1/LRR_DESIGN_P1_M1I.md) / [j](dev/docs-j/ph1-ms1/LRR_DESIGN_P1_M1I.md) | [e](dev/docs-e/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1I.md) / [j](dev/docs-j/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1I.md) |
 | **M1J (remote config help-link 404 fix; reported by the reviewer)** | [e](dev/docs-e/ph1-ms1/LRR_DESIGN_P1_M1J.md) / [j](dev/docs-j/ph1-ms1/LRR_DESIGN_P1_M1J.md) | — (single-commit fix; no separate steps doc) |
 
+### Next milestone (Phase 1 / M2 + M3) — design in progress
+
+Design for the PR that will be branched off `master` once #1055 lands. It merges issue #1025's
+Phase 1 M2 and M3 (they are inseparable: M2's remaining part is the LR page mode switch, which needs
+M3's `GET /resources`) and absorbs the M1 leftovers.
+
+- [dev/docs-j/ph1-ms2/design_01.md](dev/docs-j/ph1-ms2/design_01.md) (Japanese; the English mirror
+  follows once the open questions in its §10 are settled)
+
 Per-cycle result summaries: [LRR_RESULT_P1_M1C](dev/docs-e/ph1-ms1/LRR_RESULT_P1_M1C.md) ([j](dev/docs-j/ph1-ms1/LRR_RESULT_P1_M1C.md)),
 [LRR_RESULT_P1_M1D](dev/docs-e/ph1-ms1/LRR_RESULT_P1_M1D.md) ([j](dev/docs-j/ph1-ms1/LRR_RESULT_P1_M1D.md)),
 [LRR_RESULT_P1_M1E](dev/docs-e/ph1-ms1/LRR_RESULT_P1_M1E.md) ([j](dev/docs-j/ph1-ms1/LRR_RESULT_P1_M1E.md)),
