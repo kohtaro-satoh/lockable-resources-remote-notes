@@ -24,7 +24,7 @@ a transparent wrapper for all lock DSL semantics.
 Starting branch: `feature/1025-remote-lockable-resources-p1-m1a`
 (M1's 14 commits + 1 test-adaptation commit; all 326 tests confirmed passing)
 
-Reference design: `dev/docs-e/LRR_DESIGN_P1_M1A.md`
+Reference design: `dev/docs-e/ph1-ms1/LRR_DESIGN_P1_M1A.md`
 
 ---
 

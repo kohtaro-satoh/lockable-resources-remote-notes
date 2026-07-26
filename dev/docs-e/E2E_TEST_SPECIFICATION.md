@@ -441,6 +441,13 @@ B pipeline:  lock(resource: '<B_RES>', serverId: 'a') { sleep 20s }   # B→A re
 - **Remotes on A**: `remotes[a→b]` = B internal URL + `s01-a-for-b`
 - **Remotes on B**: `remotes[b→a]` = A internal URL + `s01-b-for-a`
 
+### Pipeline structure
+
+| Job | Controller | Content |
+|---|---|---|
+| `s01-a-holder` | A | `lock(resource: <A's exposed resource>, serverId: 'b')` then sleeps 20s |
+| `s01-b-holder` | B | `lock(resource: <B's exposed resource>, serverId: 'a')` then sleeps 20s |
+
 ### Checkpoints
 
 | ID | Check | Expected |
@@ -454,6 +461,16 @@ B pipeline:  lock(resource: '<B_RES>', serverId: 'a') { sleep 20s }   # B→A re
 | CP07 | Both builds ran in parallel without waiting on each other (total < 40s) | `true` |
 
 CP07 is circumstantial evidence that the A and B relays are independent.
+
+### Output files
+
+```
+reports/<runId>-e2e-test/mutual-peer/a-console.txt
+reports/<runId>-e2e-test/mutual-peer/b-console.txt
+reports/<runId>-e2e-test/mutual-peer/summary.txt
+reports/<runId>-e2e-test/mutual-peer/scenario-details.md
+```
+
 
 ---
 
@@ -470,6 +487,21 @@ C pipeline:  lock(resource: '<SHARED>', serverId: 'b') { sleep 5s  }   # waits �
 (C started right after A)
 ```
 
+### Preconditions
+
+- **Controller B**: `remoteApiEnabled=true`, `exposeLabel=remote-enabled`, one shared resource
+- **Credentials on A** (`s02-for-b`): B's admin API token (created on A)
+- **Credentials on C** (`s02-for-b`): same ID and value (created on C)
+- **Remote config on A**: `remotes[a->b]`
+- **Remote config on C**: `remotes[c->b]`
+
+### Pipeline structure
+
+| Job | Controller | Content |
+|---|---|---|
+| `s02-holder` | A | Holds the shared resource for 25s |
+| `s02-waiter` | C | Acquires the shared resource and holds it for 5s |
+
 ### Checkpoints
 
 | ID | Check | Expected |
@@ -479,6 +511,16 @@ C pipeline:  lock(resource: '<SHARED>', serverId: 'b') { sleep 5s  }   # waits �
 | CP03 | `HOLDER_ACQUIRED` in A's console | `true` |
 | CP04 | `WAITER_ACQUIRED` in C's console | `true` |
 | CP05 | Waiter duration ≥ 15s | `true` (proves it waited during the hold) |
+
+### Output files
+
+```
+reports/<runId>-e2e-test/fan-in-contention/holder-console.txt
+reports/<runId>-e2e-test/fan-in-contention/waiter-console.txt
+reports/<runId>-e2e-test/fan-in-contention/summary.txt
+reports/<runId>-e2e-test/fan-in-contention/scenario-details.md
+```
+
 
 ---
 
@@ -500,6 +542,20 @@ A pipeline (remote):  lock(resource: X, serverId: 'b') { ... }  # remote attempt
 (A started right after B)
 ```
 
+### Preconditions
+
+- **Controller B**: `remoteApiEnabled=true`, `exposeLabel=remote-enabled`, exposes resource X
+  (B's own pipeline can lock the same X without a serverId)
+- **Credentials on A** (`s03-a-for-b`): created on A, holding B's admin API token
+- **Remote config on A**: `remotes[a->b]`
+
+### Pipeline structure
+
+| Job | Controller | Content |
+|---|---|---|
+| `s03-local-holder` | B | Holds resource X locally with `lock(resource: X)` (30s) |
+| `s03-remote-waiter` | A | Acquires resource X remotely with `lock(resource: X, serverId: 'b')` |
+
 ### Checkpoints
 
 | ID | Check | Expected |
@@ -509,6 +565,16 @@ A pipeline (remote):  lock(resource: X, serverId: 'b') { ... }  # remote attempt
 | CP03 | `LOCAL_HOLDER_ACQUIRED` in B's console | `true` |
 | CP04 | `REMOTE_WAITER_ACQUIRED` in A's console | `true` |
 | CP05 | Remote waiter duration ≥ 20s | `true` (proves A waited during B's local hold) |
+
+### Output files
+
+```
+reports/<runId>-e2e-test/server-self-use/local-holder-console.txt
+reports/<runId>-e2e-test/server-self-use/remote-waiter-console.txt
+reports/<runId>-e2e-test/server-self-use/summary.txt
+reports/<runId>-e2e-test/server-self-use/scenario-details.md
+```
+
 
 ---
 
@@ -528,6 +594,19 @@ A pipeline:
   }
 ```
 
+### Preconditions
+
+- **Controller A**: creates a local-only resource `s04-local-a-<timestamp>` (no exposeLabel)
+- **Controller B**: `remoteApiEnabled=true`, `exposeLabel=remote-enabled`, exposes `s04-remote-b-<timestamp>`
+- **Credentials on A** (`s04-a-for-b`): B's admin API token
+- **Remote config on A**: `remotes[a->b]`
+
+### Pipeline structure
+
+| Job | Controller | Content |
+|---|---|---|
+| `s04-mixed-lock` | A | `lock(local-a) { lock(remote-b, serverId:'b') { echo BOTH_ACQUIRED } }` |
+
 ### Checkpoints
 
 | ID | Check | Expected |
@@ -536,6 +615,15 @@ A pipeline:
 | CP02 | `BOTH_ACQUIRED` in A's console | `true` |
 | CP03 | B's resource `s04-remote-b-*` released afterwards | `true` (via Groovy scriptText) |
 | CP04 | A's resource `s04-local-a-*` released afterwards | `true` (via Groovy scriptText) |
+
+### Output files
+
+```
+reports/<runId>-e2e-test/mixed-local-remote/console.txt
+reports/<runId>-e2e-test/mixed-local-remote/summary.txt
+reports/<runId>-e2e-test/mixed-local-remote/scenario-details.md
+```
+
 
 ---
 
@@ -553,6 +641,19 @@ A pipeline (remote):  lock(resource: X, skipIfLocked: true, serverId: 'b') {
                       }
 ```
 
+### Preconditions
+
+- **Controller B**: `remoteApiEnabled=true`, `exposeLabel=remote-enabled`, exposes resource X
+- **Credentials on A** (`s05-a-for-b`): B's admin API token
+- **Remote config on A**: `remotes[a->b]`
+
+### Pipeline structure
+
+| Job | Controller | Content |
+|---|---|---|
+| `s05-local-holder` | B | Holds resource X locally (30s) |
+| `s05-skip-test` | A | `lock(resource: X, skipIfLocked: true, serverId: 'b') { echo SKIP_BODY_EXECUTED }` |
+
 ### Checkpoints
 
 | ID | Check | Expected |
@@ -561,6 +662,16 @@ A pipeline (remote):  lock(resource: X, skipIfLocked: true, serverId: 'b') {
 | CP02 | `s05-skip-test` build result | `SUCCESS` |
 | CP03 | `SKIP_BODY_EXECUTED` does **NOT** appear in A's console | `true` |
 | CP04 | A skip message appears in A's console | `true` (WARN level) |
+
+### Output files
+
+```
+reports/<runId>-e2e-test/skip-if-locked/local-holder-console.txt
+reports/<runId>-e2e-test/skip-if-locked/skip-test-console.txt
+reports/<runId>-e2e-test/skip-if-locked/summary.txt
+reports/<runId>-e2e-test/skip-if-locked/scenario-details.md
+```
+
 
 ---
 
@@ -578,6 +689,22 @@ C pipeline:  lock(resource: A's resource, serverId: 'a') { sleep 15s }   # C→A
 (all three started simultaneously)
 ```
 
+### Preconditions
+
+- **Controllers A/B/C**: each with `remoteApiEnabled=true`, `exposeLabel=remote-enabled`, exposing a resource
+- Credentials and remote configuration:
+  - `s06-a-for-b`: created on A (B's API token), A's `remotes[a->b]`
+  - `s06-b-for-c`: created on B (C's API token), B's `remotes[b->c]`
+  - `s06-c-for-a`: created on C (A's API token), C's `remotes[c->a]`
+
+### Pipeline structure
+
+| Job | Controller | serverId | Hold |
+|---|---|---|---|
+| `s06-a-to-b` | A | `b` | 15s |
+| `s06-b-to-c` | B | `c` | 15s |
+| `s06-c-to-a` | C | `a` | 15s |
+
 ### Checkpoints
 
 | ID | Check | Expected |
@@ -586,6 +713,17 @@ C pipeline:  lock(resource: A's resource, serverId: 'a') { sleep 15s }   # C→A
 | CP04–CP06 | `*_ACQUIRED` markers in each console | `true` |
 | CP07 | All builds ran in parallel (total < 30s) | `true` |
 | CP08 | All resources released (LRM state check) | `true` |
+
+### Output files
+
+```
+reports/<runId>-e2e-test/three-way-mesh/a-console.txt
+reports/<runId>-e2e-test/three-way-mesh/b-console.txt
+reports/<runId>-e2e-test/three-way-mesh/c-console.txt
+reports/<runId>-e2e-test/three-way-mesh/summary.txt
+reports/<runId>-e2e-test/three-way-mesh/scenario-details.md
+```
+
 
 ---
 
@@ -596,6 +734,11 @@ C pipeline:  lock(resource: A's resource, serverId: 'a') { sleep 15s }   # C→A
 When remote API communication failures, authentication failures, or
 misconfiguration occur, the build becomes `FAILURE` without executing the lock
 body.
+
+### Common preconditions
+
+- **Controller B**: a remote server that requires authentication (base configuration)
+- **Controller A**: the client; uses the credential `s07-valid-creds` as its base
 
 ### Lock body (all failure cases)
 
@@ -625,6 +768,18 @@ lock(resource: X, serverId: 'b') {
 
 S07-C04/C05 additionally: `Remote credentials not found for serverId=b, credentialsId=` appears.
 
+### Output files
+
+```
+reports/<runId>-e2e-test/fail-closed/remote-down/console.txt
+reports/<runId>-e2e-test/fail-closed/timeout/console.txt
+reports/<runId>-e2e-test/fail-closed/auth-error/console.txt
+reports/<runId>-e2e-test/fail-closed/missing-credentials-id/console.txt
+reports/<runId>-e2e-test/fail-closed/credentials-type-mismatch/console.txt
+reports/<runId>-e2e-test/fail-closed/scenario-details.md
+```
+
+
 ---
 
 ## S08: label-env-vars — Label Acquisition and lockEnvVars Expansion [P1M1A]
@@ -650,6 +805,19 @@ This evidences equivalence with local `lock(label: 'hw', quantity: 1, variable: 
 > **Note**: Declarative pipelines must spell out `resource: null`
 > (JENKINS-50260; see [Pipeline notation](#pipeline-notation-lesson-from-p1m1b)).
 
+### Preconditions
+
+- **Controller B**: `remoteApiEnabled=true`, `exposeLabel=remote-enabled`
+- **Resource on B**: `s08-hw-board-<timestamp>` carries both the `remote-enabled` and `hw` labels
+- **Credentials on A** (`s08-a-for-b`): B's admin API token
+- **Remote config on A**: `remotes[a->b]` = B's internal URL + `s08-a-for-b`
+
+### Pipeline structure
+
+| Job | Controller | Content |
+|---|---|---|
+| `s08-label-env` | A | `lock(label:'hw', resource: null, quantity:1, variable:'HW_LOCK', serverId:'b') { echo HW_LOCK=... ; echo HW_LOCK0=... }` |
+
 ### Checkpoints
 
 | ID | Check | Expected |
@@ -660,6 +828,15 @@ This evidences equivalence with local `lock(label: 'hw', quantity: 1, variable: 
 | CP04 | CP02 and CP03 values match (single resource → variable equals variable0) | `true` |
 | CP05 | B's resource `s08-hw-board-*` released after completion | `true` |
 | CP06 | `Remote lock acquired on` in A's console | `true` |
+
+### Output files
+
+```
+reports/<runId>-e2e-test/label-env-vars/console.txt
+reports/<runId>-e2e-test/label-env-vars/summary.txt
+reports/<runId>-e2e-test/label-env-vars/scenario-details.md
+```
+
 
 ---
 
@@ -681,6 +858,20 @@ A pipeline (forcedServerId='b'):
   }
 ```
 
+### Preconditions
+
+- **Controller B**: `remoteApiEnabled=true`, `exposeLabel=remote-enabled`, exposes a resource
+- **Credentials on A** (`s09-a-for-b`): B's admin API token
+- **Remote config on A**: `remotes[a->b]` = B's internal URL + `s09-a-for-b`
+- **`forcedServerId` on A**: `b` (set when the scenario starts, cleared afterwards)
+
+### Pipeline structure
+
+| Job | Controller | DSL | forcedServerId |
+|---|---|---|---|
+| `s09-delegated` | A | `lock(resource: B_RES) { echo DELEGATED_ACQUIRED }` | `b` (set) |
+| `s09-local-fallback` | A | `lock(resource: A_LOCAL_RES) { echo LOCAL_ACQUIRED }` | `` (after clearing) |
+
 ### Checkpoints
 
 | ID | Check | Expected |
@@ -693,6 +884,16 @@ A pipeline (forcedServerId='b'):
 | CP06 | `LOCAL_ACQUIRED` in the fallback console | `true` |
 | CP07 | `Remote lock acquired on` does **NOT** appear in the fallback console (local behavior restored) | `true` |
 | CP08 | B's resource `s09-res-b-*` released | `true` |
+
+### Output files
+
+```
+reports/<runId>-e2e-test/delegated-mode/delegated-console.txt
+reports/<runId>-e2e-test/delegated-mode/fallback-console.txt
+reports/<runId>-e2e-test/delegated-mode/summary.txt
+reports/<runId>-e2e-test/delegated-mode/scenario-details.md
+```
+
 
 ---
 
@@ -727,6 +928,15 @@ Uses a scripted pipeline (see [Pipeline notation](#pipeline-notation-lesson-from
 | CP05 | Both R1 and R2 free after completion | `true` |
 | CP06 | `Remote lock acquired on` in the console | `true` |
 
+### Output files
+
+```
+reports/<runId>-e2e-test/extra-resources/console.txt
+reports/<runId>-e2e-test/extra-resources/summary.txt
+reports/<runId>-e2e-test/extra-resources/scenario-details.md
+```
+
+
 ---
 
 ## S11: heartbeat-resilience — Job Continuation Through Heartbeat Failures [P1M1B]
@@ -754,6 +964,16 @@ so the final release succeeds.
 
 Without CP03 we could not detect "the fault injection didn't take effect".
 Warnings are saved to `heartbeat-warnings.txt` in the scenario artifact directory.
+
+### Output files
+
+```
+reports/<runId>-e2e-test/heartbeat-resilience/console.txt
+reports/<runId>-e2e-test/heartbeat-resilience/heartbeat-warnings.txt
+reports/<runId>-e2e-test/heartbeat-resilience/summary.txt
+reports/<runId>-e2e-test/heartbeat-resilience/scenario-details.md
+```
+
 
 ---
 
@@ -792,6 +1012,17 @@ The observations are mutually exclusive, so the test cannot pass by accident.
 | CP03 | Both waiters' body markers appear | `true` |
 | CP04 | The resource is free at the end | `true` |
 
+### Output files
+
+```
+reports/<runId>-e2e-test/priority-ordering/holder-console.txt
+reports/<runId>-e2e-test/priority-ordering/local-waiter-console.txt
+reports/<runId>-e2e-test/priority-ordering/remote-high-console.txt
+reports/<runId>-e2e-test/priority-ordering/summary.txt
+reports/<runId>-e2e-test/priority-ordering/scenario-details.md
+```
+
+
 ---
 
 ## S13: stale-admin-release — STALE Transition and Admin Release [P1M1B]
@@ -827,6 +1058,15 @@ comes from the response JSON.
 
 Includes the STALE threshold wait (`max(heartbeatInterval × 6, 60)` = 60s);
 S13 alone takes roughly 70–90 seconds.
+
+### Output files
+
+```
+reports/<runId>-e2e-test/stale-admin-release/waiter-console.txt
+reports/<runId>-e2e-test/stale-admin-release/summary.txt
+reports/<runId>-e2e-test/stale-admin-release/scenario-details.md
+```
+
 
 ---
 
@@ -1086,6 +1326,11 @@ C pipeline:  lock(resource: D's resource, serverId: 'd') { sleep 5s  }
 (all three started nearly simultaneously)
 ```
 
+### Preconditions
+
+- **Controller D**: `remoteApiEnabled=true`, `exposeLabel=remote-enabled`, one shared resource
+- A, B and C each get the credential `d01-for-d` and `remotes[*->d]`
+
 ### Checkpoints
 
 | ID | Check | Expected |
@@ -1093,6 +1338,17 @@ C pipeline:  lock(resource: D's resource, serverId: 'd') { sleep 5s  }
 | CP01–CP03 | All three build results | `SUCCESS` |
 | CP04 | `ACQUIRED` markers in all three consoles | `true` |
 | CP05 | No two clients ACQUIRED at the same moment (timestamp check) | `true` (WARN level) |
+
+### Output files
+
+```
+reports/<runId>-e2e-test/fan-in-4/a-console.txt
+reports/<runId>-e2e-test/fan-in-4/b-console.txt
+reports/<runId>-e2e-test/fan-in-4/c-console.txt
+reports/<runId>-e2e-test/fan-in-4/summary.txt
+reports/<runId>-e2e-test/fan-in-4/scenario-details.md
+```
+
 
 ---
 
@@ -1104,6 +1360,14 @@ The three independent one-way relays A→B, B→C, C→D run in parallel. Each r
 is fully independent (A→B does not depend on B→C), confirming issue #1025's
 design principle "n one-way relays coexist without affecting each other" at scale.
 
+### Preconditions
+
+- B, C and D each expose a resource with `remoteApiEnabled=true`
+- Credentials and remote configuration:
+  - `d02-a-for-b`: created on A, A's `remotes[a->b]`
+  - `d02-b-for-c`: created on B, B's `remotes[b->c]`
+  - `d02-c-for-d`: created on C, C's `remotes[c->d]`
+
 ### Checkpoints
 
 | ID | Check | Expected |
@@ -1111,6 +1375,17 @@ design principle "n one-way relays coexist without affecting each other" at scal
 | CP01–CP03 | All build results | `SUCCESS` |
 | CP04–CP06 | `ACQUIRED` in each console | `true` |
 | CP07 | All builds in parallel (total < 30s) | `true` |
+
+### Output files
+
+```
+reports/<runId>-e2e-test/chain-4/a-console.txt
+reports/<runId>-e2e-test/chain-4/b-console.txt
+reports/<runId>-e2e-test/chain-4/c-console.txt
+reports/<runId>-e2e-test/chain-4/summary.txt
+reports/<runId>-e2e-test/chain-4/scenario-details.md
+```
+
 
 ---
 
@@ -1144,6 +1419,16 @@ C pipeline:  lock(D's resource, serverId:'d') { sleep 10s }
 blocks until both B and C complete (sequential acquisition due to nested
 `lock()`). No deadlock is expected; the overall timeout is set to 180 seconds.
 
+### Preconditions
+
+- B, C and D each expose a resource with `remoteApiEnabled=true`
+- Credentials and remote configuration:
+  - `d03-a-for-b`, `d03-a-for-c`: created on A
+  - `d03-b-for-d`: created on B
+  - `d03-c-for-d`: created on C
+  - A's `remotes[a->b]` and `remotes[a->c]`
+  - B's `remotes[b->d]`, C's `remotes[c->d]`
+
 ### Checkpoints
 
 | ID | Check | Expected |
@@ -1151,6 +1436,17 @@ blocks until both B and C complete (sequential acquisition due to nested
 | CP01–CP03 | All three build results | `SUCCESS` |
 | CP04 | `DIAMOND_ACQUIRED` in A's console | `true` |
 | CP05 | No deadlock (all three in infinite wait) | `true` |
+
+### Output files
+
+```
+reports/<runId>-e2e-test/diamond/a-console.txt
+reports/<runId>-e2e-test/diamond/b-console.txt
+reports/<runId>-e2e-test/diamond/c-console.txt
+reports/<runId>-e2e-test/diamond/summary.txt
+reports/<runId>-e2e-test/diamond/scenario-details.md
+```
+
 
 ---
 

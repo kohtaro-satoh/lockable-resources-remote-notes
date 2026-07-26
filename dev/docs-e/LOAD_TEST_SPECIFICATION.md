@@ -372,7 +372,7 @@ Under hold-60s / 200-way exhaustion, a failing remote acquire split into **2 pat
 `t=timeoutForAllocateResource`, so when `timeoutForAllocateResource > 120s` it is already past the enqueue-based TTL
 the instant it is created and is evicted on the next sweep; the next poll then 404s. The A/B variance is only the
 sweep-interval gap between markFailed and removal — **the dominant cause is a deterministic bug, not load-dependent**.
-Details, fix, and E2E detectability: `dev/docs-j/LRR_ISSUE_P1_M1H_queued_expiry_poll_404.md`.
+Details, fix, and E2E detectability: `dev/docs-j/ph1-ms1/LRR_ISSUE_P1_M1H_queued_expiry_poll_404.md`.
 
 **Assessment:** not a `break` (mutual exclusion holds, no deadlock, body not executed) — but a legitimate timeout is
 mislabeled as a 404 communication failure. **The primary fix is to measure the TTL from the terminal-transition
@@ -388,6 +388,16 @@ time.** Reproducible deterministically with one E2E using `timeoutForAllocateRes
 - **queue coalescing avoided**: parameter-less concurrent triggers coalesce in the Jenkins queue, so a `STORM_IDX` parameter (`buildWithParameters`) makes each trigger a distinct queue item.
 - **executors**: `Jenkins.setNumExecutors(jobs/ctrl)` provides the concurrency.
 - **CSV alignment**: multiple `resources` names use `;` inside the cell to avoid column drift (the parser splits on `;`).
+
+### Open items (to be settled by real `converge` / `full` / `soak` runs)
+
+- **COMPLETED rate and queue-wait baselines** from real `converge` / `full` runs (fixing CP08's threshold).
+- **Actual heap / executor values that sustain 200 concurrent jobs** (confirm host capacity with `full`).
+- The relationship between `lock(timeout:)` and the remote `timeoutForAllocateResource`, and the behaviour
+  while entries sit in QUEUED (`smoke` never reaches it because there is no contention; `stress` observes a
+  real exhaustion timeout and validates CP04).
+- **A Groovy way to obtain the cleanup CP07 and soak leak checks** (remote record count / STALE count).
+  To be settled when L03 is implemented.
 
 ## Changelog
 

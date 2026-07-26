@@ -67,7 +67,7 @@
 - `docs-j/remote-lock-background-j.md`（なぜ）
   → `docs-j/remote-lock-usecase-j.md`（誰のため）
   → `docs-j/remote-lock-design-notes-j.md`（判断ログ）
-  → `dev/docs-j/LRR_DESIGN_P1_M1*.md`（何を作る）
+  → `dev/docs-j/ph1-ms1/LRR_DESIGN_P1_M1*.md`（何を作る）
 
   という分離は upstream 説得の土台として強力。
 - design-notes の「覆す時には理由を残す」運用方針、"federation" という語を意図的に避けたスコープ制御、§7（GET/POST 使い分け）や §9（ephemeral 禁止）の判断根拠は、本家メンテナのレビューに耐える品質。

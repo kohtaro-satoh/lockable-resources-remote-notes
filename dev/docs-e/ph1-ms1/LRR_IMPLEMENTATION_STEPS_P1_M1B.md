@@ -104,7 +104,7 @@ getNextRemoteEntry()    → next remote candidate
 
 - [x] M1A Steps 0–6 all complete (plugin `c782c28`, 347 tests)
 - [x] All 12 E2E scenarios passing (`run-e2e.sh`, 2026-06-11)
-- [x] Review recorded in `dev/docs-j/LRR_REVIEW_P1_M1A.md`
+- [x] Review recorded in `dev/docs-j/ph1-ms1/LRR_REVIEW_P1_M1A.md`
 - [x] M1B decisions recorded in this file
 
 ---

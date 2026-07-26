@@ -102,7 +102,7 @@ getNextRemoteEntry()    → remote の次候補
 
 - [x] M1A Step 0〜6 全完了（plugin `c782c28`、347 件テスト）
 - [x] E2E 全 12 シナリオ成功（`run-e2e.sh`、2026-06-11）
-- [x] レビュー結果を `dev/docs-j/LRR_REVIEW_P1_M1A.md` に記録
+- [x] レビュー結果を `dev/docs-j/ph1-ms1/LRR_REVIEW_P1_M1A.md` に記録
 - [x] M1B 意思決定を本ファイルに記録
 
 ---

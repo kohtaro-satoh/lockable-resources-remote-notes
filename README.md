@@ -32,26 +32,32 @@ Per-milestone specs and progress trackers. **The newest milestone is the current
 truth**; older milestone documents are historical snapshots (with banners where
 M1B superseded them).
 
+Phase 1 / Milestone 1 documents live under `dev/docs-e/ph1-ms1/` and
+`dev/docs-j/ph1-ms1/`. The cross-milestone specifications (E2E, load) and the early
+design drafts stay at the top of `dev/docs-*/`, because they keep growing across
+milestones rather than belonging to one.
+
 | Milestone | Design spec | Implementation steps |
 |---|---|---|
-| M1 (minimal peer mode) | [e](dev/docs-e/LRR_DESIGN_P1_M1.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1.md) |
-| M1A (transparent lockRequest) | [e](dev/docs-e/LRR_DESIGN_P1_M1A.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1A.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1A.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1A.md) |
-| M1B (transparent equivalence) | [e](dev/docs-e/LRR_DESIGN_P1_M1B.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1B.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1B.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1B.md) |
-| M1C (M1B review fixes) | [e](dev/docs-e/LRR_DESIGN_P1_M1C.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1C.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1C.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1C.md) |
-| M1D (true bridging) | [e](dev/docs-e/LRR_DESIGN_P1_M1D.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1D.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1D.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1D.md) |
-| M1E (404 admission + multi-label exposeLabel) | [e](dev/docs-e/LRR_DESIGN_P1_M1E.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1E.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1E.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1E.md) |
-| M1F (M1E review triage: bridge hardening) | [e](dev/docs-e/LRR_DESIGN_P1_M1F.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1F.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1F.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1F.md) |
-| M1G (package the remote layer; no behaviour change) | [e](dev/docs-e/LRR_DESIGN_P1_M1G.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1G.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1G.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1G.md) |
-| M1H (PR #1055 CI follow-up: security hardening + B2) | [e](dev/docs-e/LRR_DESIGN_P1_M1H.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1H.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1H.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1H.md) |
-| **M1I (queued-expiry-poll-404 regression fix; found by load testing)** | [e](dev/docs-e/LRR_DESIGN_P1_M1I.md) / [j](dev/docs-j/LRR_DESIGN_P1_M1I.md) | [e](dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1I.md) / [j](dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1I.md) |
+| M1 (minimal peer mode) | [e](dev/docs-e/ph1-ms1/LRR_DESIGN_P1_M1.md) / [j](dev/docs-j/ph1-ms1/LRR_DESIGN_P1_M1.md) | [e](dev/docs-e/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1.md) / [j](dev/docs-j/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1.md) |
+| M1A (transparent lockRequest) | [e](dev/docs-e/ph1-ms1/LRR_DESIGN_P1_M1A.md) / [j](dev/docs-j/ph1-ms1/LRR_DESIGN_P1_M1A.md) | [e](dev/docs-e/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1A.md) / [j](dev/docs-j/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1A.md) |
+| M1B (transparent equivalence) | [e](dev/docs-e/ph1-ms1/LRR_DESIGN_P1_M1B.md) / [j](dev/docs-j/ph1-ms1/LRR_DESIGN_P1_M1B.md) | [e](dev/docs-e/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1B.md) / [j](dev/docs-j/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1B.md) |
+| M1C (M1B review fixes) | [e](dev/docs-e/ph1-ms1/LRR_DESIGN_P1_M1C.md) / [j](dev/docs-j/ph1-ms1/LRR_DESIGN_P1_M1C.md) | [e](dev/docs-e/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1C.md) / [j](dev/docs-j/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1C.md) |
+| M1D (true bridging) | [e](dev/docs-e/ph1-ms1/LRR_DESIGN_P1_M1D.md) / [j](dev/docs-j/ph1-ms1/LRR_DESIGN_P1_M1D.md) | [e](dev/docs-e/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1D.md) / [j](dev/docs-j/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1D.md) |
+| M1E (404 admission + multi-label exposeLabel) | [e](dev/docs-e/ph1-ms1/LRR_DESIGN_P1_M1E.md) / [j](dev/docs-j/ph1-ms1/LRR_DESIGN_P1_M1E.md) | [e](dev/docs-e/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1E.md) / [j](dev/docs-j/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1E.md) |
+| M1F (M1E review triage: bridge hardening) | [e](dev/docs-e/ph1-ms1/LRR_DESIGN_P1_M1F.md) / [j](dev/docs-j/ph1-ms1/LRR_DESIGN_P1_M1F.md) | [e](dev/docs-e/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1F.md) / [j](dev/docs-j/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1F.md) |
+| M1G (package the remote layer; no behaviour change) | [e](dev/docs-e/ph1-ms1/LRR_DESIGN_P1_M1G.md) / [j](dev/docs-j/ph1-ms1/LRR_DESIGN_P1_M1G.md) | [e](dev/docs-e/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1G.md) / [j](dev/docs-j/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1G.md) |
+| M1H (PR #1055 CI follow-up: security hardening + B2) | [e](dev/docs-e/ph1-ms1/LRR_DESIGN_P1_M1H.md) / [j](dev/docs-j/ph1-ms1/LRR_DESIGN_P1_M1H.md) | [e](dev/docs-e/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1H.md) / [j](dev/docs-j/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1H.md) |
+| **M1I (queued-expiry-poll-404 regression fix; found by load testing)** | [e](dev/docs-e/ph1-ms1/LRR_DESIGN_P1_M1I.md) / [j](dev/docs-j/ph1-ms1/LRR_DESIGN_P1_M1I.md) | [e](dev/docs-e/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1I.md) / [j](dev/docs-j/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1I.md) |
+| **M1J (remote config help-link 404 fix; reported by the reviewer)** | [e](dev/docs-e/ph1-ms1/LRR_DESIGN_P1_M1J.md) / [j](dev/docs-j/ph1-ms1/LRR_DESIGN_P1_M1J.md) | — (single-commit fix; no separate steps doc) |
 
-Per-cycle result summaries: [LRR_RESULT_P1_M1C](dev/docs-e/LRR_RESULT_P1_M1C.md) ([j](dev/docs-j/LRR_RESULT_P1_M1C.md)),
-[LRR_RESULT_P1_M1D](dev/docs-e/LRR_RESULT_P1_M1D.md) ([j](dev/docs-j/LRR_RESULT_P1_M1D.md)),
-[LRR_RESULT_P1_M1E](dev/docs-e/LRR_RESULT_P1_M1E.md) ([j](dev/docs-j/LRR_RESULT_P1_M1E.md)),
-[LRR_RESULT_P1_M1F](dev/docs-e/LRR_RESULT_P1_M1F.md) ([j](dev/docs-j/LRR_RESULT_P1_M1F.md)),
-[LRR_RESULT_P1_M1G](dev/docs-e/LRR_RESULT_P1_M1G.md) ([j](dev/docs-j/LRR_RESULT_P1_M1G.md)),
-[LRR_RESULT_P1_M1H](dev/docs-e/LRR_RESULT_P1_M1H.md) ([j](dev/docs-j/LRR_RESULT_P1_M1H.md)),
-[LRR_RESULT_P1_M1I](dev/docs-e/LRR_RESULT_P1_M1I.md) ([j](dev/docs-j/LRR_RESULT_P1_M1I.md)).
+Per-cycle result summaries: [LRR_RESULT_P1_M1C](dev/docs-e/ph1-ms1/LRR_RESULT_P1_M1C.md) ([j](dev/docs-j/ph1-ms1/LRR_RESULT_P1_M1C.md)),
+[LRR_RESULT_P1_M1D](dev/docs-e/ph1-ms1/LRR_RESULT_P1_M1D.md) ([j](dev/docs-j/ph1-ms1/LRR_RESULT_P1_M1D.md)),
+[LRR_RESULT_P1_M1E](dev/docs-e/ph1-ms1/LRR_RESULT_P1_M1E.md) ([j](dev/docs-j/ph1-ms1/LRR_RESULT_P1_M1E.md)),
+[LRR_RESULT_P1_M1F](dev/docs-e/ph1-ms1/LRR_RESULT_P1_M1F.md) ([j](dev/docs-j/ph1-ms1/LRR_RESULT_P1_M1F.md)),
+[LRR_RESULT_P1_M1G](dev/docs-e/ph1-ms1/LRR_RESULT_P1_M1G.md) ([j](dev/docs-j/ph1-ms1/LRR_RESULT_P1_M1G.md)),
+[LRR_RESULT_P1_M1H](dev/docs-e/ph1-ms1/LRR_RESULT_P1_M1H.md) ([j](dev/docs-j/ph1-ms1/LRR_RESULT_P1_M1H.md)),
+[LRR_RESULT_P1_M1I](dev/docs-e/ph1-ms1/LRR_RESULT_P1_M1I.md) ([j](dev/docs-j/ph1-ms1/LRR_RESULT_P1_M1I.md)).
 
 E2E test specification (unified across milestones; each test item is tagged
 P1M1 / P1M1A / P1M1B):
@@ -61,29 +67,43 @@ P1M1 / P1M1A / P1M1B):
 High-load / stress test specification (a separate suite; this is how the M1I regression was found) + the latest run report:
 
 - [LOAD_TEST_SPECIFICATION](dev/docs-e/LOAD_TEST_SPECIFICATION.md) ([j](dev/docs-j/LOAD_TEST_SPECIFICATION.md))
-- latest run (plugin `e231367`, `stress`, 4×50=200 jobs): [20260622160020-load-test.md](dev/reports/20260622160020-load-test.md) — 188 SUCCESS / 12 FAILURE, all failures a clean `LOCK_WAIT_TIMEOUT`, overlaps 0, HUNG 0 (the report embeds the Jenkinsfile and the plots)
+- latest run (plugin `8fd2193`, `stress`, 4×50=200 jobs): [20260726101522-load-test.md](dev/reports/20260726101522-load-test.md) — 181 SUCCESS / 19 FAILURE, all failures a clean `LOCK_WAIT_TIMEOUT`, overlaps 0, HUNG 0 (the report embeds the Jenkinsfile and the plots)
 
 Reviews / レビュー:
 
-- [LRR_REVIEW_P1_M1A](dev/docs-e/LRR_REVIEW_P1_M1A.md) ([j](dev/docs-j/LRR_REVIEW_P1_M1A.md)) —
+- [LRR_REVIEW_P1_M1A](dev/docs-e/ph1-ms1/LRR_REVIEW_P1_M1A.md) ([j](dev/docs-j/ph1-ms1/LRR_REVIEW_P1_M1A.md)) —
   full review at M1A completion; the findings drove the M1B redesign
-- [LRR_REVIEW_P1_M1B](dev/docs-e/LRR_REVIEW_P1_M1B.md) ([j](dev/docs-j/LRR_REVIEW_P1_M1B.md)) —
+- [LRR_REVIEW_P1_M1B](dev/docs-e/ph1-ms1/LRR_REVIEW_P1_M1B.md) ([j](dev/docs-j/ph1-ms1/LRR_REVIEW_P1_M1B.md)) —
   full review at M1B completion; findings C-1 / C-2 drive the M1C cycle
-- [LRR_REVIEW_P1_M1D](dev/docs-e/LRR_REVIEW_P1_M1D.md) ([j](dev/docs-j/LRR_REVIEW_P1_M1D.md)) —
+- [LRR_REVIEW_P1_M1D](dev/docs-e/ph1-ms1/LRR_REVIEW_P1_M1D.md) ([j](dev/docs-j/ph1-ms1/LRR_REVIEW_P1_M1D.md)) —
   full review at M1D completion; findings H-1 / M-2 drive the M1E cycle
-- [LRR_REVIEW_P1_M1E](dev/docs-e/LRR_REVIEW_P1_M1E.md) ([j](dev/docs-j/LRR_REVIEW_P1_M1E.md)) —
+- [LRR_REVIEW_P1_M1E](dev/docs-e/ph1-ms1/LRR_REVIEW_P1_M1E.md) ([j](dev/docs-j/ph1-ms1/LRR_REVIEW_P1_M1E.md)) —
   full diff review (master..m1e); H-1 / M-2 resolved on the main path; one residual M1E-1
   (no promotion-path admission re-check → ephemeral re-creation of a deleted resource).
   Triaged into the M1F cycle (bridge hardening L-b/L-c/L-d implemented; M1E-1 intentionally retained)
-- [LRR_REVIEW_P1_M1F](dev/docs-e/LRR_REVIEW_P1_M1F.md) ([j](dev/docs-j/LRR_REVIEW_P1_M1F.md)) —
+- [LRR_REVIEW_P1_M1F](dev/docs-e/ph1-ms1/LRR_REVIEW_P1_M1F.md) ([j](dev/docs-j/ph1-ms1/LRR_REVIEW_P1_M1F.md)) —
   review at M1F completion (m1e..m1f delta); the three bridge hardenings honor the lens with no new
   fail-open and no canonical contamination. PR-quality within scope; findings Low/nit only
   (F-1 isHttpUrl/resolve whitespace asymmetry, F-2 L-d empty errorCode). M1E-1 re-confirmed as a
   known intentionally-deferred item
-- [LRR_REVIEW_P1_M1H](dev/docs-e/LRR_REVIEW_P1_M1H.md) ([j](dev/docs-j/LRR_REVIEW_P1_M1H.md)) —
+- [LRR_REVIEW_P1_M1H](dev/docs-e/ph1-ms1/LRR_REVIEW_P1_M1H.md) ([j](dev/docs-j/ph1-ms1/LRR_REVIEW_P1_M1H.md)) —
   starting review for the PR #1055 CI follow-up (post-M1G). Diagnoses the "master conflict" as
   non-existent (mergeable; just behind), triages the 4 Jenkins Security Scan alerts (#49–52), and
   decides B2 for #52 (pure-read GET; QUEUED liveness folded onto the queue timeout). Drives the M1H cycle
+
+- [LRR_REVIEW_UPSTREAM_FOLLOWUP_UX](dev/docs-e/ph1-ms1/LRR_REVIEW_UPSTREAM_FOLLOWUP_UX.md) ([j](dev/docs-j/ph1-ms1/LRR_REVIEW_UPSTREAM_FOLLOWUP_UX.md)) —
+  review of the maintainer's follow-up branch (`feature/1025-remote-lr-followup-ux`, submitted as
+  [kohtaro-satoh#1](https://github.com/kohtaro-satoh/lockable-resources-plugin/pull/1)). Confirms one real
+  bug fix on our side (HTTP status swallowed by `RemoteApiException extends IOException`, which had
+  silently disabled the 404/410 branch in `RemoteLockSession.pollOnce()`), two dashboard additions, and
+  the CRLF regression that turns PR #1055's CI red. Verified with mvn verify 394/0/1skip, E2E 21/21 and
+  two 200-job stress runs
+
+Incident notes / 障害調査:
+
+- [LRR_ISSUE_P1_M1H_queued_expiry_poll_404](dev/docs-e/ph1-ms1/LRR_ISSUE_P1_M1H_queued_expiry_poll_404.md)
+  ([j](dev/docs-j/ph1-ms1/LRR_ISSUE_P1_M1H_queued_expiry_poll_404.md)) — root-cause analysis of the
+  queued-expiry-poll-404 regression found by the load suite; drives the M1I cycle
 
 Early design drafts (Japanese only, historical): [dev/docs-j/design-00/](dev/docs-j/design-00/)
 

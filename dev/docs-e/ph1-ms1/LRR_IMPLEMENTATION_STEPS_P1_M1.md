@@ -741,8 +741,8 @@ Notes:
   - `dev/jenkins-env/README.md`
   - `dev/docs-j/E2E_TEST_SPECIFICATION.md`
   - `dev/docs-e/E2E_TEST_SPECIFICATION.md`
-  - `dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1.md`
-  - `dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1.md`
+  - `dev/docs-j/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1.md`
+  - `dev/docs-e/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1.md`
 - Verification:
   - Step 7 entry points and `mvn test` stabilization steps are consolidated in this tracker
   - Step 8 entry points, prerequisites, `--only` options, and report locations are consolidated in `dev/jenkins-env/README.md` and `E2E_TEST_SPECIFICATION.md`

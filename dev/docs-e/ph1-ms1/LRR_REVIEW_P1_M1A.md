@@ -75,7 +75,7 @@ test records — has holes, and serious bugs have accumulated there.**
 - `docs-j/remote-lock-background-j.md` (why)
   → `docs-j/remote-lock-usecase-j.md` (for whom)
   → `docs-j/remote-lock-design-notes-j.md` (decision log)
-  → `dev/docs-j/LRR_DESIGN_P1_M1*.md` (what to build)
+  → `dev/docs-j/ph1-ms1/LRR_DESIGN_P1_M1*.md` (what to build)
 
   This separation is a strong foundation for persuading upstream.
 - The design-notes policy of "leave a reason when overturning a decision", the

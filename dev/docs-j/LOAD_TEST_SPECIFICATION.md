@@ -370,7 +370,7 @@ hold 60s・200 並列の枯渇下で remote acquire が失敗する経路が **2
 - **A（3/9）**: client のポーリングが record 存在中に当たり、`state=FAILED, errorCode=LOCK_WAIT_TIMEOUT` を受領 → 「lock 待ち timeout」と明示。**クリーン**。
 - **B（6/9）**: サーバ側の QUEUED entry timeout で record が先に消え、client の `GET /acquire/{lockId}` が **404 LOCK_NOT_FOUND** → `RemoteApiClient` がこれを `RemoteApiException: Remote API communication failure` と扱い fail-closed。**正当な枯渇 timeout が「通信失敗」と誤表示**される。
 
-**確定真因（当初「race」と書いたが訂正）**: terminal record の保持 TTL（`TERMINAL_TTL_MS=120s`）を **`enqueuedAt` 起点**で測っているバグ（`RemoteLockManager.maybeScanStale` L228-230）。timeout 起因の FAILED 記録は `t=timeoutForAllocateResource` で生成されるため、`timeoutForAllocateResource > 120s` だと**生成直後に TTL 超過扱い → 即削除**。以降の GET poll が 404 → client が「server may have restarted」で fail-closed（系統 B）。A/B の揺れは「markFailed〜次回掃引まで」の隙間のみで、**主因は決定的バグ・負荷非依存**。詳細・修正・E2E 検出可否は `dev/docs-j/LRR_ISSUE_P1_M1H_queued_expiry_poll_404.md`。
+**確定真因（当初「race」と書いたが訂正）**: terminal record の保持 TTL（`TERMINAL_TTL_MS=120s`）を **`enqueuedAt` 起点**で測っているバグ（`RemoteLockManager.maybeScanStale` L228-230）。timeout 起因の FAILED 記録は `t=timeoutForAllocateResource` で生成されるため、`timeoutForAllocateResource > 120s` だと**生成直後に TTL 超過扱い → 即削除**。以降の GET poll が 404 → client が「server may have restarted」で fail-closed（系統 B）。A/B の揺れは「markFailed〜次回掃引まで」の隙間のみで、**主因は決定的バグ・負荷非依存**。詳細・修正・E2E 検出可否は `dev/docs-j/ph1-ms1/LRR_ISSUE_P1_M1H_queued_expiry_poll_404.md`。
 
 **評価**: `破綻` ではない（相互排他保持・デッドロック無し・body 未実行）。だが正当な枯渇 timeout が 404 通信失敗として誤表示される。**修正の本丸は terminal 遷移時刻起点で TTL を測ること**。`timeoutForAllocateResource > 120s` の E2E 1 本で決定的に再現でき、負荷は必須でない（高負荷テストは stress が偶々 timeout=3 分を使ったため先に炙り出した）。
 

@@ -23,7 +23,7 @@ M1（最小 peer mode）を「`lock(...)` の透過 remote ラッパー」とし
 起点ブランチ: `feature/1025-remote-lockable-resources-p1-m1a`
 （M1 の 14 コミット + テスト追従 1 コミット、全 326 件テスト成功確認済み）
 
-参照設計書: `dev/docs-j/LRR_DESIGN_P1_M1A.md`
+参照設計書: `dev/docs-j/ph1-ms1/LRR_DESIGN_P1_M1A.md`
 
 ---
 

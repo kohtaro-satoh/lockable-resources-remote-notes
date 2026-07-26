@@ -752,8 +752,8 @@ Step8 最終状態（2026-05-23）:
   - `dev/jenkins-env/README.md`
   - `dev/docs-j/E2E_TEST_SPECIFICATION.md`
   - `dev/docs-e/E2E_TEST_SPECIFICATION.md`
-  - `dev/docs-j/LRR_IMPLEMENTATION_STEPS_P1_M1.md`
-  - `dev/docs-e/LRR_IMPLEMENTATION_STEPS_P1_M1.md`
+  - `dev/docs-j/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1.md`
+  - `dev/docs-e/ph1-ms1/LRR_IMPLEMENTATION_STEPS_P1_M1.md`
 - 確認結果:
   - Step7 の実行入口と `mvn test` 安定化手順は本ファイル内に整理済み
   - Step8 の実行入口・前提条件・`--only` オプション・レポート出力先は `dev/jenkins-env/README.md` と `E2E_TEST_SPECIFICATION.md` に整理済み
