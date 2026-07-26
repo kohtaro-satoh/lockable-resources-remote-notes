@@ -20,13 +20,23 @@
 # Usage: ./run-mvn-verify.sh [--skip-tests]
 #   --skip-tests   add -DskipTests (fast: static gates + compile only, no test run)
 #
+# Target repo: defaults to ../../lockable-resources-plugin. Override with PLUGIN_DIR
+# (same convention as start.sh / run-e2e.sh); a relative path is resolved against this
+# script's directory. Useful for verifying a second clone, e.g. a maintainer's PR branch:
+#   PLUGIN_DIR=../../jenkinsci/lockable-resources-plugin ./run-mvn-verify.sh
+#
 # Output: reports/yyyymmddhhmmss-mvn-verify.md
 #
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_REPO="$(cd "${SCRIPT_DIR}/../../lockable-resources-plugin" && pwd)"
+# PLUGIN_DIR overrides the target repo (relative paths resolve against SCRIPT_DIR).
+if [[ -n "${PLUGIN_DIR:-}" ]]; then
+    PLUGIN_REPO="$(cd "$SCRIPT_DIR" && cd "$PLUGIN_DIR" && pwd)"
+else
+    PLUGIN_REPO="$(cd "${SCRIPT_DIR}/../../lockable-resources-plugin" && pwd)"
+fi
 MAVEN_BIN="${HOME}/.local/apache-maven-3.9.9/bin/mvn"
 REPORTS_DIR="${SCRIPT_DIR}/reports"
 
@@ -67,7 +77,9 @@ log_info "run-mvn-verify (CI-equivalent local gate)"
 log_info "Plugin repo (in-place): $PLUGIN_REPO"
 log_info "HEAD: ${HEAD_DESC}   working tree: ${TREE_LABEL}"
 log_info "Command: mvn ${MVN_ARGS[*]}"
-log_warn "Runs spotless/spotbugs/checkstyle/pmd${SKIP_TESTS:+ (tests skipped)}; may take 10-20 min."
+SKIP_NOTE=""
+[[ "$SKIP_TESTS" == "true" ]] && SKIP_NOTE=" (tests skipped)"
+log_warn "Runs spotless/spotbugs/checkstyle/pmd${SKIP_NOTE}; may take 10-20 min."
 echo ""
 
 # From here, do not abort on non-zero: capture the result and always write the report.

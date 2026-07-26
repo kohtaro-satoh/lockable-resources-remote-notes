@@ -323,7 +323,15 @@ log "Analyzing"
 # Prefer the venv python (has matplotlib for PNG plots) if it exists
 PY="python3"
 if [[ -x "$RUN_SCRIPT_DIR/../.venv/bin/python" ]]; then PY="$RUN_SCRIPT_DIR/../.venv/bin/python"; fi
-PLUGIN_COMMIT="$(git -C "$RUN_SCRIPT_DIR/../../../lockable-resources-plugin" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+# Which repo was the deployed hpi built from? PLUGIN_DIR (same convention as start.sh /
+# run-e2e.sh) wins; otherwise assume the sibling default. Without this the report labels the
+# run with the default repo's HEAD even when another clone was deployed.
+if [[ -n "${PLUGIN_DIR:-}" ]]; then
+  PLUGIN_REPO_FOR_LABEL="$(cd "$RUN_SCRIPT_DIR" && cd "$PLUGIN_DIR" && pwd)"
+else
+  PLUGIN_REPO_FOR_LABEL="$RUN_SCRIPT_DIR/../../../lockable-resources-plugin"
+fi
+PLUGIN_COMMIT="$(git -C "$PLUGIN_REPO_FOR_LABEL" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 "$PY" "$RUN_SCRIPT_DIR/lib/analyze_load.py" \
   --events "$EVENTS_FILE" \
   --results "$SUMMARY_FILE" \
