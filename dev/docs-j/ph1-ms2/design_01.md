@@ -290,6 +290,34 @@ delegated mode ではページ上部に常時バッジを出す:
 | 7 | **`withRemoteMetadata` が空 `lockEnvVars` で落ちる** | REVIEW_UPSTREAM §12-7 | 条件の外に出し、`variable` 指定があれば常に注入されるようにする |
 | 8 | **`inversePrecedence` が remote キュー順序に未適用** | 氏の `remote-api-curl.md` | **適用しない**方針を維持し、doc の記述（既に正確）をそのままとする。適用するとローカルキューと remote キューで順序規則が二重化するため（[§10](#10-未決事項実装前に決める) Q4） |
 | 9 | **M-1: onResume の displayTarget 劣化** | REVIEW_P1_M1B | [§4.2](#42-データ源をどう持つか) のレジストリが要求内容を保持するため、**副産物として解消**する |
+| 10 | **`lockCause` がリモート保持を考慮していない** | 本書（2026-07-26 実機確認） | 下記 [§6.1](#61-lockcause-のリモート非対応追加分) |
+
+### 6.1 `lockCause` のリモート非対応（追加分）
+
+実機（jenkins-env、氏のブランチ `8fd2193`）で確認した未修正箇所。氏が直したのは Held By 列と
+Queue タブであり、**`lockCause` の文字列生成は手つかず**。
+
+remote 保持中の資源に対して、ビルド名（null）と取得時刻（未設定）をそのまま埋め込んでいる:
+
+```
+# REST API（同じ B 上の 2 資源）
+demo-plc-board          : locked by null at <unknown>                      ← remote 保持
+s02-shared-1785026807   : locked by demo-local-holder-b#1 at Jul 26, 2026, 8:44 AM   ← local 保持
+
+# ローカル待機ジョブのコンソール
+The resource [demo-plc-board] is locked by remote lockId e8ec986d-... since <unknown>.
+```
+
+- **`locked by null`** — `getBuild()` が null（remote 保持なので Run が無い）
+- **`at <unknown>` / `since <unknown>`** — 取得時刻が未設定。`RemoteLockRecord` は `acquiredAt` を
+  保持しているので**出せるはずの値**
+
+**対応:** `lockCause` 生成を `remoteLockedBy != null` の場合に分岐させ、clientId と
+`RemoteLockRecord#getAcquiredAt()` を使う。Held By 列（氏の実装）と同じ情報源を参照する。
+
+> 露出範囲が広い点に注意。この文字列は **REST API の `lockCause`** と
+> **ローカル待機ジョブのコンソール**の両方に出る。とくに後者は「なぜ待たされているか」を
+> 調べる利用者が最初に見る場所であり、`by null` は分かりにくい。
 
 ---
 
