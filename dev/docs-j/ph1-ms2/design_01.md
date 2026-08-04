@@ -4,8 +4,9 @@
 > `master` にマージされた地点を**起点**として作る次 PR の設計。
 > issue [#1025](https://github.com/jenkinsci/lockable-resources-plugin/issues/1025) の
 > **Phase 1 M2 と M3 を 1 本に統合**し、あわせて **M1 のやり残し**を回収する。
-> **作成日:** 2026-07-26
-> **前提コミット:** 未定（#1055 マージ後の `master`）
+> **作成日:** 2026-07-26 / **最終更新:** 2026-08-05
+> **前提コミット:** #1055 は **2026-08-04 に `jenkinsci:master` へマージ済み**（マージコミット `018e913`、
+> merged by mPokornyETM）。本書の実装側記述は `upstream/master` = `011c6a3`（`018e913` を含む）で確認済み
 > **正本仕様:** issue #1025 本文の "Configuration surface" 〜 "Phase 1 scope"（authoritative）
 > **関連:** `../ph1-ms1/LRR_DESIGN_P1_M1.md`（M1 設計。§4 に本書が埋める API が「M3 以降」として予告済み）、
 > `../ph1-ms1/LRR_REVIEW_UPSTREAM_FOLLOWUP_UX.md` §13.3（やり残しの一覧と行き先）
@@ -58,6 +59,25 @@ E2E `delegated-mode`（S09）で回帰も張ってある。M2 に残っている
 
 これで **Phase 1 は「issue 本文の Phase 1 scope をすべて満たした」と宣言できる状態**になる。
 
+### 1.3 Phase 1 チェックボックスを checked にする条件
+
+issue #1025 本文末尾の Phases 節にある `- [ ] Phase 1` は、**#1055 マージ後もまだ checked にできない**。
+2026-08-05 時点の判定は次のとおり。
+
+| 本文の項目 | 判定 | 根拠 |
+|---|---|---|
+| M1: Core REST API + 明示 `serverId` | ✅ | #1055 |
+| M2: `forcedServerId` resolution **and the LR page mode-switching behavior** | ⚠️ 半分 | 解決ロジックのみ。LR ページ側は未実装（本書 [§5](#5-設計-c-delegated-mode-の表示切替m2-本体)） |
+| M3: `GET /resources` + client-side LR page integration | ❌ | 未着手（本書 [§3.1](#31-get-resources) / [§4](#4-設計-b-クライアント側-lr-ページ)） |
+| Phase 1 scope "LR page integration on **both** sides" | ⚠️ 半分 | サーバ側のみ実装済み |
+
+→ **本書の A〜C を実装した時点で checked にできる**。逆に言えば、Phase 1 完了宣言はこの PR が唯一の残作業。
+
+> **呼称の注意:** 本書の作業を過去メモや PR #1055 のコメントで「Phase 2」と呼んでいた箇所があるが、
+> issue 本文の定義では **Phase 1 の M2＋M3**。本文の Phase 2 は運用系
+> （maintenance switch / polling 値の設定化 / client allow-list、本書 [§8](#8-含まないもの)）を指す。
+> 対外的な記述では「remaining Phase 1 work (M2+M3)」と書く。
+
 ---
 
 ## 2. 現状ギャップ（仕様 vs 実装）
@@ -77,6 +97,10 @@ E2E `delegated-mode`（S09）で回帰も張ってある。M2 に残っている
 | `GET /resources` | **未** | [§3.1](#31-get-resources) |
 
 `RemoteApiV1Action#getDynamic` の分岐は現状 `acquire` / `lease` の 2 つのみ。`resources` の追加が必要。
+
+> **表記について:** 上表は実装の呼称（`lockId`）に合わせている。issue 本文は acquire 側を `requestId`、
+> lease 側を `leaseId` と**別 ID として**書いているが、実装は 1 本の `lockId` に統一済み。
+> 本 PR で新設する 3 本もこの統一を踏襲する（[§7.5](#75-requestid--leaseid-を-lockid-に一本化した)）。
 
 ### 2.2 設定・UI
 
@@ -113,7 +137,10 @@ E2E `delegated-mode`（S09）で回帰も張ってある。M2 に残っている
 
 - **公開フィルタは既存の `getExposeLabels()` を再利用**する。新しい remote 独自判定を足さない
   （M1F の観点「ブリッジ由来でない remote 独自判定を増やさない」を維持）
-- `remoteApiEnabled=false` のときは既存 3 本と同様に **API が存在しないかのように応答**
+- `remoteApiEnabled=false` のときは既存 3 本と**完全に同型**、すなわち
+  **403 `REMOTE_API_DISABLED`** を返す。issue 本文は「API が存在しないかのように応答（＝404）」と
+  書いているが、実装は M1 の時点で 403 を選んでいる。**ここで 404 にすると同一 API 内で挙動が割れる**ため、
+  実装の 403 に揃え、issue 本文側を直す（[§7.7](#77-remoteapienabledfalse-時の応答が-403-になっている)）
 - 状態（locked / reserved / queued）は**返さない**。返すとクライアント側がそれをロック判断に使う誘惑が生まれ、
   「リモートが単一の真実」という設計原則を壊す。仕様の意図どおり除外する
 - ページングは持たない（小〜中規模前提。数千件になる想定なら Phase 3）
@@ -291,6 +318,7 @@ delegated mode ではページ上部に常時バッジを出す:
 | 8 | **`inversePrecedence` が remote キュー順序に未適用** | 氏の `remote-api-curl.md` | **適用しない**方針を維持し、doc の記述（既に正確）をそのままとする。適用するとローカルキューと remote キューで順序規則が二重化するため（[§10](#10-未決事項実装前に決める) Q4） |
 | 9 | **M-1: onResume の displayTarget 劣化** | REVIEW_P1_M1B | [§4.2](#42-データ源をどう持つか) のレジストリが要求内容を保持するため、**副産物として解消**する |
 | 10 | **`lockCause` がリモート保持を考慮していない** | 本書（2026-07-26 実機確認） | 下記 [§6.1](#61-lockcause-のリモート非対応追加分) |
+| 11 | **README が remote 機能に一切触れていない** | 本書（2026-08-05 マージ後確認） | 下記 [§6.2](#62-readme-未記載追加分) |
 
 ### 6.1 `lockCause` のリモート非対応（追加分）
 
@@ -319,6 +347,26 @@ The resource [demo-plc-board] is locked by remote lockId e8ec986d-... since <unk
 > **ローカル待機ジョブのコンソール**の両方に出る。とくに後者は「なぜ待たされているか」を
 > 調べる利用者が最初に見る場所であり、`by null` は分かりにくい。
 
+### 6.2 README 未記載（追加分）
+
+マージ後の `master` で確認したところ、**プラグイン本体の `README.md` に remote 機能の記述が 1 文字も無い**
+（`grep -c -i remote README.md` → **0**）。#1055 で入ったドキュメントは
+`src/doc/examples/remote-api-curl.md` と `remote-lock-pipeline-pattern.md` の 2 本と、
+`src/doc/examples/readme.md`（索引）への 2 行追加のみ。
+
+利用者が最初に読む README に導線が無いため、**機能が事実上「発見できない」状態**にある。
+とくに次の 3 点は既存 README の記述との整合性の問題でもある。
+
+| 箇所 | 現状 | 必要な追記 |
+|---|---|---|
+| **Permissions 表**（README `### Permissions`） | View / Configure / Unlock / Reserve / Steal / Queue の 6 行のみ | **`RemoteUse`（Implied by: Jenkins.ADMINISTER）の行が欠落**。M1B で追加した権限が表に無く、表自体が不正確になっている |
+| **Usage / Acquire lock** | `lock()` のパラメータ説明に `serverId` が無い | peer mode の `lock(..., serverId: 'X')` と delegated mode（`forcedServerId`）の説明 |
+| **Configuration as Code** | 例に remote 系キーが無い | `remoteApiEnabled` / `exposeLabel` / `clientId` / `forcedServerId` / `remotes[]`。テストには既に `configuration-as-code-remote.yml` があるので、そこから抜粋できる |
+
+**対応方針:** 本 PR に相乗りさせる。理由は (1) Permissions 表の欠落は既存ドキュメントの不整合であり
+早いほうがよい、(2) 本 PR で LR ページに remote 表示が入るため、README の説明対象がここで確定するから。
+ただし分量が出るようなら **docs 単独 PR に切り出す**判断もあり（[§10](#10-未決事項実装前に決める) Q7）。
+
 ---
 
 ## 7. 仕様と実装の乖離をどう扱うか
@@ -342,6 +390,11 @@ issue #1025 本文（正本）と実装が意図的にずれている箇所。**
 ただし [§3.2](#32-get-leaselockid) の `GET /lease` は**実際に効いている値**を返すことで、
 「無視されている」ことが運用者から見えるようにする。
 
+> **検証内容の精度に注意。** 実装の 400 `INVALID_HEARTBEAT_INTERVAL` は
+> **「整数として読めない」「0 以下」の 2 条件のみ**で、仕様の言う "outside the server's accepted range"
+> （上限を含む範囲チェック）は行っていない。値を使っていない以上、上限だけ検証しても意味が無いため
+> **これも現状維持**とし、issue 本文の記述を「正の整数であること（値は Phase 1 では未使用）」に改める。
+
 ### 7.3 `X_SERVER_ID` / `X_LOCK_ID` の非対称
 
 M1D §3-2 は「env var は local と remote で同一（共有関数）」と定めたが、氏の follow-up で
@@ -359,6 +412,94 @@ allocate timeout は `FAILED` + `errorCode=LOCK_WAIT_TIMEOUT`（M1I で確定し
 
 → **`EXPIRED` は将来枠**（仕様本文も "future: when maxWaitSeconds is set" と書いている）。
 doc から誤記を削除し、issue 本文にも将来枠である旨を補記する。
+
+なお client 側 `RemoteAcquireState` には仕様に無い **`UNKNOWN`** が足してある
+（未知文字列を例外にせず吸収するための番兵）。issue 本文の状態一覧に注記する。
+
+### 7.5 `requestId` / `leaseId` を `lockId` に一本化した
+
+仕様は acquire 側を `requestId`、lease 側を `leaseId` と別 ID で書いているが、実装は
+**`POST /acquire` が返す `lockId` を lease 操作でもそのまま使う**。実際に 2 つの ID を分ける必要が無く、
+分けるとクライアントが対応表を持たされる。
+
+→ **実装を維持し、issue 本文の endpoint 表・client loop・JSON 例を `lockId` に統一する。**
+本 PR で新設する 3 本（`GET /lease/{lockId}`・`POST /acquire/{lockId}/cancel`・`GET /resources`）も同じ呼称。
+
+### 7.6 acquire リクエストボディの構造が仕様と別物
+
+仕様の JSON 例はフラットな 3 フィールド（`resource` / `skipIfLocked` / `heartbeatIntervalSeconds`）。
+実装は透過等価対応（M1C〜M1G）を経て次の形になっている。
+
+```jsonc
+{
+  "clientId": "jenkins-a",              // 任意。未指定ならサーバ側で "Remote API" 表示
+  "heartbeatIntervalSeconds": 10,       // 任意・現状は無視（§7.2）
+  "lockRequest": {                      // ← ラッパが入った
+    "resource": "plc-01",
+    "label": "plc",
+    "quantity": 0,                      // 0/未指定 = label に一致する全件（local lock() と同じ）
+    "variable": "RESOURCE",
+    "inversePrecedence": false,
+    "resourceSelectStrategy": "SEQUENTIAL",
+    "skipIfLocked": false,
+    "priority": 0,
+    "timeoutForAllocateResource": 0,
+    "timeoutUnit": "MINUTES",
+    "reason": "…",
+    "extra": [ { "resource": "…", "label": "…", "quantity": 0 } ]
+  }
+}
+```
+
+→ **実装を維持し、issue 本文の JSON 例を差し替える。** 本文の例のままだと、curl クライアントを
+書く人が `lockRequest` ラッパに気付けず `MISSING_LOCK_REQUEST`（400）を踏む。
+`src/doc/examples/remote-api-curl.md` は正しい形で書かれているので、本文からそちらへ誘導するのが実務的。
+
+### 7.7 `remoteApiEnabled=false` 時の応答が 403 になっている
+
+仕様は「全エンドポイントが **API が存在しないかのように** 応答する」＝ 404 相当を意図した書き方。
+実装は 4 本すべて **403 `REMOTE_API_DISABLED`**（`RemoteApiV1Action` の各メソッド冒頭）。
+
+→ **実装を維持し、issue 本文を「403 `REMOTE_API_DISABLED` を返す」に改める。**
+理由: (1) 認可チェック（`checkPermission(REMOTE)`）が先に走るため、権限の無い相手には
+どのみち「存在の有無」を明かさない、(2) 権限を持つ運用者にとっては
+「無効化されている」と「パスを間違えた」が区別できるほうが診断しやすい、
+(3) 本 PR の新設 3 本を仕様どおり 404 にすると**同一 API 内で挙動が割れる**。
+
+### 7.8 クライアント側に `clientId` 設定が増えている
+
+仕様の Client-side settings 表は `remotes[]` と `forcedServerId` の 2 つのみ。実装には
+**`clientId`**（サーバ側 LR ページで「どのコントローラが握っているか」を表示するための自己申告名。
+未設定時は root URL 相当にフォールバック）が追加されている。JCasC でも設定可能
+（`configuration-as-code-remote.yml`）。
+
+→ **実装を維持し、issue 本文の Client-side settings 表に 1 行追加する。**
+
+### 7.9 `RemoteUse` 権限を Phase 1 で先行実装した
+
+仕様の Non-goals は「Phase 1 ではプラグイン固有の allow-list や**専用の remote-API 権限は作らない**。
+Jenkins 標準の認証・認可で保護する」と明記。実装は Security Scan 対応（M1H）で
+**専用 Permission `RemoteUse`（ADMINISTER が implied）を追加**し、全エンドポイントがこれを要求する。
+
+→ **実装を維持し、issue 本文の Non-goals と Phase 1 scope を修正する。**
+これは「クライアント allow-list」（＝どの client を許すかの列挙）とは別物で、
+**権限を絞れるようにしただけ**。allow-list 自体は引き続き Phase 2（[§8](#8-含まないもの)）。
+Non-goals に残したままだと、レビュアから「仕様に反する実装」に見える。
+
+### 7.10 Open questions のうち確定したもの
+
+issue 本文末尾の Open questions は #1055 でほぼ決着している。**本文を更新して未決事項を減らす**。
+
+| Open question | 確定値 | 根拠 |
+|---|---|---|
+| Default polling interval | **3s** | `RemoteClientDefaults.DEFAULT_POLL_INTERVAL_SECONDS` |
+| Default heartbeat / stale threshold | **10s** / `max(hb × 6, 60) = 60s` | `RemoteClientDefaults` / `RemoteLockManager.STALE_THRESHOLD_MS`（式は仕様どおり） |
+| `UNKNOWN_RESOURCE` / `UNKNOWN_LABEL` の HTTP コード | **404 に統一**（本文は "4xx" 止まり） | `RemoteApiV1Action`。存在の有無を明かさないため両者を同一コードに |
+| サーバ側の remote owner 表示 | **`clientId`**（未指定時 "Remote API"）を Held By / Queue に表示 | M1B ＋ 氏の follow-up |
+| UI 統合の詳細（merged vs separate tab、バッジ） | 本書 [§4.3](#43-表示) / [§5](#5-設計-c-delegated-mode-の表示切替m2-本体) で確定 | 本 PR で実装 |
+
+未決のまま残るのは **クライアント側の request timeout 既定 5s**（`DEFAULT_REQUEST_TIMEOUT_SECONDS`。
+本文の Open questions には項目自体が無い）くらい。設定化は Phase 2。
 
 ---
 
@@ -390,7 +531,7 @@ M1 の設計判断を引き継いで**意図的に残置**するもの。再議�
 
 | 対象 | 内容 |
 |---|---|
-| `GET /resources` | exposeLabel フィルタが効く / 未公開資源が出ない / `remoteApiEnabled=false` で 404 相当 / 状態フィールドを含まない |
+| `GET /resources` | exposeLabel フィルタが効く / 未公開資源が出ない / `remoteApiEnabled=false` で **403 `REMOTE_API_DISABLED`**（既存 3 本と同型）/ 状態フィールドを含まない |
 | `GET /lease/{lockId}` | ACQUIRED で 200＋`staleThresholdSeconds` / QUEUED で 404 / 未知 lockId で 404 |
 | `POST /acquire/{id}/cancel` | QUEUED → `CANCELLED` 遷移 / **直後の GET が 200 `CANCELLED`（404 ではない）** / ACQUIRED に対しては 409 / 未知は 404 |
 | `release` の QUEUED 経路 | `CANCELLED` 遷移＋TTL 保持に変わったこと（回帰） |
@@ -428,6 +569,8 @@ M1 の設計判断を引き継いで**意図的に残置**するもの。再議�
 | Q4 | `inversePrecedence` を remote キューに適用するか | (a) 適用しない（doc 明記のまま） / (b) 適用する | **(a)**。local と remote で順序規則が二重化する |
 | Q5 | `/resources` を負荷テストに含めるか | (a) 含めない / (b) grid-storm に相乗り | 実装後に判断 |
 | Q6 | Remote locks を新規タブにするか既存タブ内セクションにするか | (a) 新規タブ / (b) Overview 内セクション | **(a)**。#1035 のタブ構成に素直に乗る |
+| Q7 | README 追記（[§6.2](#62-readme-未記載追加分)）を本 PR に含めるか | (a) 本 PR に相乗り / (b) docs 単独 PR | **(a)**。ただし Permissions 表の欠落だけは分量が小さく独立性も高いので、先行して小さい PR にする手もある |
+| Q8 | issue 本文の更新をいつ出すか | (a) 本 PR 提出時に一括更新 / (b) 先に本文だけ直してから実装 | **(b)**。[§7](#7-仕様と実装の乖離をどう扱うか) は「実装が正・本文が古い」パターンばかりで、レビュアが本文を正本として読むと齟齬が起きる。**#1055 マージ直後の今が更新の好機** |
 
 ---
 
@@ -436,3 +579,4 @@ M1 の設計判断を引き継いで**意図的に残置**するもの。再議�
 | 日付 | 内容 |
 |---|---|
 | 2026-07-26 | 初版。issue #1025 の Phase 1 M2/M3 を統合し、M1 やり残し 9 件の取り込み先として定義 |
+| 2026-08-05 | #1055 マージ（`018e913`, 2026-08-04）を受けてマージ後 `master` と突き合わせ。§1.3「Phase 1 チェックボックスの可否」＋呼称の整理を追加。§3.1 の `remoteApiEnabled=false` 時の応答を **403 に訂正**（実装と食い違っていた。§9.1 の該当テスト行も同時修正）。§6 に **11: README 未記載**（§6.2）を追加。§7 に **7.5 lockId 一本化 / 7.6 acquire ボディ構造 / 7.7 403 / 7.8 `clientId` 設定 / 7.9 `RemoteUse` 権限の先行実装 / 7.10 Open questions の確定**を追加。§10 に Q7・Q8 を追加 |
