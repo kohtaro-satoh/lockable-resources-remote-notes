@@ -1,0 +1,133 @@
+Started by user admin
+[Pipeline] Start of Pipeline
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named SELF (to a value of type String) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named SERVERS (to a value of type ArrayList) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named ALLOW_SELF (to a value of type Boolean) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named ITER (to a value of type Integer) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named SLEEP (to a value of type Integer) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named RLOCK_TO (to a value of type Integer) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named LLOCK_TO (to a value of type Integer) which could lead to memory leaks or other issues.
+Did you forget the `def` keyword? WorkflowScript seems to be setting a field named JOB_TO (to a value of type Integer) which could lead to memory leaks or other issues.
+[Pipeline] node
+Running on Jenkins in /var/jenkins_home/workspace/grid-storm
+[Pipeline] {
+[Pipeline] timeout
+Timeout set to expire in 15 min
+[Pipeline] {
+[Pipeline] echo
+LLT|1785888806065|grid-storm#2@a|a|1|REMOTE_MAIN|REQUEST|b|
+[Pipeline] lock
+Trying to acquire remote lock on [Label: pool, Quantity: 2] (serverId=b, serverUrl=http://jenkins-b:8080/jenkins)
+Remote acquire enqueued (serverId=b, serverUrl=http://jenkins-b:8080/jenkins, lockId=1318cf77-70ea-4b6d-b811-6d08605a1759)
+Remote lock acquired on [Label: pool, Quantity: 2] (serverId=b, lockId=1318cf77-70ea-4b6d-b811-6d08605a1759)
+[Pipeline] {
+[Pipeline] echo
+LLT|1785888806179|grid-storm#2@a|a|1|REMOTE_MAIN|ACQUIRED|b|b-res-01,b-res-02
+[Pipeline] echo
+LLT|1785888806210|grid-storm#2@a|a|1|LOCAL|REQUEST|a|
+[Pipeline] lock
+Trying to acquire lock on [Label: pool, Quantity: 1]
+Lock acquired on [Label: pool, Quantity: 1]
+[Pipeline] {
+[Pipeline] echo
+LLT|1785888806381|grid-storm#2@a|a|1|LOCAL|ACQUIRED|a|a-res-01
+[Pipeline] lock
+Trying to acquire remote lock on [Label: pool, Quantity: 1] (serverId=d, serverUrl=http://jenkins-d:8080/jenkins)
+Remote acquire enqueued (serverId=d, serverUrl=http://jenkins-d:8080/jenkins, lockId=df4174b7-7abd-40b5-b3a4-a4cae2755461)
+Remote lock acquired on [Label: pool, Quantity: 1] (serverId=d, lockId=df4174b7-7abd-40b5-b3a4-a4cae2755461)
+[Pipeline] {
+[Pipeline] echo
+LLT|1785888806514|grid-storm#2@a|a|1|REMOTE_SKIP|ACQUIRED|d|
+[Pipeline] }
+Remote lock released on [Label: pool, Quantity: 1] (serverId=d, lockId=df4174b7-7abd-40b5-b3a4-a4cae2755461)
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1785888806631|grid-storm#2@a|a|1|LOCAL|BODY|a|
+[Pipeline] sleep
+Sleeping for 1 min 0 sec
+[Pipeline] echo
+LLT|1785888867855|grid-storm#2@a|a|1|LOCAL|RELEASED|a|
+[Pipeline] }
+Lock released on resource [Label: pool, Quantity: 1]
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1785888867912|grid-storm#2@a|a|1|REMOTE_MAIN|RELEASED|b|
+[Pipeline] }
+Remote lock released on [Label: pool, Quantity: 2] (serverId=b, lockId=1318cf77-70ea-4b6d-b811-6d08605a1759)
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1785888867996|grid-storm#2@a|a|2|REMOTE_MAIN|REQUEST|b|
+[Pipeline] lock
+Trying to acquire remote lock on [Label: pool, Quantity: 2] (serverId=b, serverUrl=http://jenkins-b:8080/jenkins)
+Remote acquire enqueued (serverId=b, serverUrl=http://jenkins-b:8080/jenkins, lockId=79e3d417-f5b4-4080-b1b0-0c5564593ade)
+Remote lock acquired on [Label: pool, Quantity: 2] (serverId=b, lockId=79e3d417-f5b4-4080-b1b0-0c5564593ade)
+[Pipeline] {
+[Pipeline] echo
+LLT|1785888996747|grid-storm#2@a|a|2|REMOTE_MAIN|ACQUIRED|b|b-res-01,b-res-02
+[Pipeline] echo
+LLT|1785888996764|grid-storm#2@a|a|2|LOCAL|REQUEST|a|
+[Pipeline] lock
+Trying to acquire lock on [Label: pool, Quantity: 1]
+Lock acquired on [Label: pool, Quantity: 1]
+[Pipeline] {
+[Pipeline] echo
+LLT|1785888996831|grid-storm#2@a|a|2|LOCAL|ACQUIRED|a|a-res-14
+[Pipeline] lock
+Trying to acquire remote lock on [Label: pool, Quantity: 1] (serverId=d, serverUrl=http://jenkins-d:8080/jenkins)
+Remote acquire enqueued (serverId=d, serverUrl=http://jenkins-d:8080/jenkins, lockId=6e84998c-c6b9-41e0-ac1d-ee9e98e49cd7)
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1785888996899|grid-storm#2@a|a|2|LOCAL|BODY|a|
+[Pipeline] sleep
+Sleeping for 1 min 0 sec
+[Pipeline] echo
+LLT|1785889058098|grid-storm#2@a|a|2|LOCAL|RELEASED|a|
+[Pipeline] }
+Lock released on resource [Label: pool, Quantity: 1]
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1785889058143|grid-storm#2@a|a|2|REMOTE_MAIN|RELEASED|b|
+[Pipeline] }
+Remote lock released on [Label: pool, Quantity: 2] (serverId=b, lockId=79e3d417-f5b4-4080-b1b0-0c5564593ade)
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1785889058225|grid-storm#2@a|a|3|REMOTE_MAIN|REQUEST|c|
+[Pipeline] lock
+Trying to acquire remote lock on [Label: pool, Quantity: 2] (serverId=c, serverUrl=http://jenkins-c:8080/jenkins)
+Remote acquire enqueued (serverId=c, serverUrl=http://jenkins-c:8080/jenkins, lockId=57c3fde3-6548-48db-bf6e-788fc25ddb45)
+Remote lock acquired on [Label: pool, Quantity: 2] (serverId=c, lockId=57c3fde3-6548-48db-bf6e-788fc25ddb45)
+[Pipeline] {
+[Pipeline] echo
+LLT|1785889122724|grid-storm#2@a|a|3|REMOTE_MAIN|ACQUIRED|c|c-res-10,c-res-12
+[Pipeline] echo
+LLT|1785889122745|grid-storm#2@a|a|3|LOCAL|REQUEST|a|
+[Pipeline] lock
+Trying to acquire lock on [Label: pool, Quantity: 1]
+Lock acquired on [Label: pool, Quantity: 1]
+[Pipeline] {
+[Pipeline] echo
+LLT|1785889122802|grid-storm#2@a|a|3|LOCAL|ACQUIRED|a|a-res-16
+[Pipeline] lock
+Trying to acquire remote lock on [Label: pool, Quantity: 1] (serverId=d, serverUrl=http://jenkins-d:8080/jenkins)
+Remote acquire enqueued (serverId=d, serverUrl=http://jenkins-d:8080/jenkins, lockId=b5d9df66-ee45-452c-a081-22363f3911f0)
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1785889122886|grid-storm#2@a|a|3|LOCAL|BODY|a|
+[Pipeline] sleep
+Sleeping for 1 min 0 sec
+[Pipeline] echo
+LLT|1785889184058|grid-storm#2@a|a|3|LOCAL|RELEASED|a|
+[Pipeline] }
+Lock released on resource [Label: pool, Quantity: 1]
+[Pipeline] // lock
+[Pipeline] echo
+LLT|1785889184121|grid-storm#2@a|a|3|REMOTE_MAIN|RELEASED|c|
+[Pipeline] }
+Remote lock released on [Label: pool, Quantity: 2] (serverId=c, lockId=57c3fde3-6548-48db-bf6e-788fc25ddb45)
+[Pipeline] // lock
+[Pipeline] }
+[Pipeline] // timeout
+[Pipeline] }
+[Pipeline] // node
+[Pipeline] End of Pipeline
+Finished: SUCCESS
