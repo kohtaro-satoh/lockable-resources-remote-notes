@@ -96,7 +96,7 @@
 
 ### B1. `inversePrecedence` の透過等価
 
-- [ ] `Apply inversePrecedence to remotely queued requests`
+- [x] `Apply inversePrecedence to remotely queued requests`
 - **対象:** `LockableResourcesManager#queueRemote()`
 - **内容:** local の `queueContext` は `inversePrecedence && priority == 0` のとき **index 0 に挿入**するが、
   `queueRemote` は priority しか見ておらず `inversePrecedence` を参照しない（ワイヤでは運ばれて
@@ -108,7 +108,7 @@
 
 ### B2. 検証層の再設計（Wire → Admission → Canonical）
 
-- [ ] `Delegate remote request validation to the canonical validator`
+- [x] `Delegate remote request validation to the canonical validator`
 - **対象:** `RemoteApiV1Action`（境界）、`RemoteLockManager#enqueue()`、必要なら `RemoteResolver`
 - **内容:**
   - 境界の自前チェック **`MISSING_TARGET` と `INVALID_SELECT_STRATEGY` を削除**（canonical の部分コピーであり、
@@ -117,6 +117,11 @@
     `IllegalArgumentException` は**そのまま伝播**させ、`RemoteApiV1Action` が catch して
     **400 `INVALID_REQUEST` ＋ `ex.getMessage()`**（record は作らない＝現状の 400 群と同じ門前払い）
   - `extra` も canonical に乗せる（`ExtraResource` → `LockStepResource` を組んで list オーバーロード）
+- **実装時の発見:** 境界の `MISSING_TARGET` を外すだけでは足りなかった。**解決側（`enqueue`）が空セレクタを弾く**ため
+  `allowEmptyOrNullValues=true` でも 400 のままになる。設計 §3.5 の意図を満たすには
+  **local と同じ「何もロックせず本体を実行する no-op リース」を返す**必要があり、`enqueue` にその分岐を追加した。
+  また B1 のテスト 1 本（`inversePrecedence` + `priority` でキュー位置を確認するもの）は、
+  この変更で**入力自体が 400 になり作成不能**になるため B2 で削除した（B1 コミット時点では有効なので B1 では残す）
 - **これで変わる挙動 3 件:** `allowEmptyOrNullValues=true` の無指定が**受理**される／
   `priority != 0 && inversePrecedence` が **400**（§10.1 対応 2）／`resource` と `label` の同時指定が **400**（M1E-2 を閉じる）
 - **順序が重要:** admission を先に置くことで **未知/未公開とも一律 404** が維持される（canonical を先に走らせると
@@ -126,7 +131,7 @@
 
 ### B3. メンテナンススイッチ "accept new acquires: ON/OFF"
 
-- [ ] `Add a maintenance switch for the remote acquire endpoint`
+- [x] `Add a maintenance switch for the remote acquire endpoint`
 - **対象:** `LockableResourcesManager`（`acceptNewAcquires`、既定 `true`）、`RemoteApiV1Action`、
   `LockableResourcesManager/config.jelly` ＋ `help-acceptNewAcquires.html` ＋ `Messages.properties` ＋ JCasC、
   クライアント側は `RemoteLockSession`
@@ -138,11 +143,16 @@
 - **未確定（氏に未質問。PR で提示して合意を取る）:** 上記リトライと drain の 2 点。相違があれば PR で差し替える
 - **テスト:** OFF で 503／同じ状態で heartbeat・release・GET が成功／ON 復帰で再び受理／既存キューの昇格が止まらない／
   クライアントが 503 でリトライし timeout まで粘る
+- **実装時の判断 3 件:** (a) **リトライ中の再起動は fail-closed**。`onResume` は lockId が無いと静かに return するため、
+  そのままだとステップが永久待ちになる。`acquirePaused` を見て失敗させる（この時点でサーバ側にロックは存在しない）。
+  (b) 既定値は `allowEphemeralResources` と同じ**フィールド初期化子**で表現（同一クラス内の既存パターンに合わせる）。
+  (c) 設定項目追加により **JCasC のエクスポート期待値 `casc_expected_output.yml` が不一致**になり既存テストが落ちた。
+  期待値・CasC サンプル・アサーションを更新済み（設定を増やすたびに発生するので次回以降も要注意）
 - **設計書:** §3.4
 
 ### B4. `GET /resources`
 
-- [ ] `Add the remote resources discovery endpoint`
+- [x] `Add the remote resources discovery endpoint`
 - **対象:** `RemoteApiV1Action#getDynamic`（`resources` 分岐を追加）
 - **内容:** 公開中の資源一覧と、**サーバ側の受付状態**を 1 回のスナップショットで返す
   - 資源ごと: `name` / `labels` / `description` / **`state`（`FREE` / `LOCKED` / `RESERVED` / `QUEUED`）** /
@@ -157,6 +167,8 @@
     **403 `REMOTE_API_DISABLED`**。ページングは持たない
 - **テスト:** exposeLabel フィルタが効く／未公開資源が漏れない／**4 状態が正しく出る**／
   **ビルド名・reason・note が漏れない**／`acceptNewAcquires` が反映される／無効時 403
+- **実装メモ:** 公開判定は `RemoteResolver.exposedResources()` に切り出して `isExposed` を再利用（remote 独自判定を増やさない）。
+  E2E は S19 が Phase C の計画なので、この時点ではユニットのみ
 - **設計書:** §3.1
 
 ---
@@ -268,7 +280,8 @@ plugin のコミットには含めない。
 - [ ] `dev/jenkins-env/run-e2e.sh --clean-start` — 全 25 シナリオ PASS（既存 21 ＋ 新規 4）
 - [ ] `dev/jenkins-env/run-load.sh --preset stress` — overlap 0 / HUNG 0。
       **LR ページが正式な挙動で更新されている状態のまま**計測する（§9.3）。
-      `/resources` を **10s 間隔で相互に引く負荷を含める**（§10 Q5 で「含める」に確定。TTL 短縮で頻度が 6 倍）
+      `/resources` を **10s 間隔で相互に引く負荷を含める**（§10 Q5 で「含める」に確定。TTL 短縮で頻度が 6 倍）。
+      ※ Phase B 時点ではクライアント側キャッシュが未実装のため、この負荷はまだ入っていない（Phase C で追加）
 - [ ] **§9.4 の新旧並走比較** — a = 新版 / b = 旧版（現 master）で LR ページを見比べ、Q6 を最終決定。
       PR 用の修正前後スクリーンショットを取得
 - [ ] ドキュメント整備 — `docs-e` の ph1-ms2 ミラー（PR 提出までに作成）
@@ -298,6 +311,7 @@ D1/D2   すべての実装コミットの後（挙動が確定してから書く
 | 日付 | 内容 |
 |---|---|
 | 2026-08-08 (3) | issue #1025 本文の更新を取りやめ。並行作業と完了条件を「PR 本文に乖離セクションを書く／提出後に #1025 へ導線コメント」に差し替え |
+| 2026-08-08 (4) | **Phase B（B1〜B4）完了。** plugin コミット 4 本（`bb42b06` / `49c4686` / `4080658` / `ed2f5a9`）。run-mvn-verify **BUILD SUCCESS 412/0/1skip・全ゲート ok**（`20260808135020-mvn-verify.md`）、run-e2e **21/21 PASS**（`20260808140951-e2e-test.md`）、run-load stress **176 SUCCESS / 24 クリーン LOCK_WAIT_TIMEOUT・overlap 0・HUNG 0**（`20260808142517-load-test.md`）。B1〜B4 に実装時の発見を追記。**A5 のテストが Phase B の verify で flaky 発覚**（リモートのキューエントリを解放しないままだったため、ローカル待機ビルドが終了せず teardown が `DirectoryNotEmptyException`）。1 機能 1 コミット原則に従い **A5 に畳んで B1〜B4 を積み直し**（A5 = `2f7d384`） |
 | 2026-08-08 (3) | **Phase A（A1〜A5）完了。** plugin コミット 5 本（`575f4fe` / `02fa4ba` / `507f4cb` / `c3347ec` / `43f177d`）。run-mvn-verify **BUILD SUCCESS 401/0/1skip・全ゲート ok**（`20260808102007-mvn-verify.md`。master の 394 から +7）、run-e2e **21/21 PASS**（`20260808104113-e2e-test.md`、作業ツリーを `start.sh --clean --in-place-build` でデプロイして実行）。A3・A5 に実装時の発見を追記。**計画外の追加作業 2 件**: (a) A2 の二重 release ガード（レコード保持により、2 回目の release が別クライアントのロックを解放しうる経路が生まれるため）、(b) `getRemoteLockRecord()` の Jenkins 非依存化（既存の `LockableResourceTest` が Jenkins 無しで `getLockCauseDetail()` を呼ぶため、A1 が `Jenkins.get()` を踏んで落ちた。フル verify で検出） |
 | 2026-08-08 (2) | B4 の機能仕様を確定（`GET /resources` が状態と `acceptNewAcquires` を返す）。C2 / C3 / S19 / S22 と負荷の完了条件を追従 |
 | 2026-08-08 | 初版。`design_01.md` の確定内容を 15 コミット（A5 + B4 + C4 + D2）に分解 |
