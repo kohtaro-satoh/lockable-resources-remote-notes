@@ -24,7 +24,7 @@
 
 ### A1. `lockCause` がリモート保持を考慮していない
 
-- [ ] `Report the remote holder in the lock cause`
+- [x] `Report the remote holder in the lock cause`
 - **対象:** `LockableResource#getLockCause()` / `#getLockCauseDetail()`（`LockableResource.java:652`〜）
 - **内容:** remote 保持中の資源が `locked by null at <unknown>` と表示される。`remoteLockedBy != null` で分岐させ、
   `clientId` と `RemoteLockRecord#getAcquiredAt()` を使う。Held By 列（氏の実装）と同じ情報源を参照する
@@ -35,7 +35,7 @@
 
 ### A2. QUEUED の release 直後に `GET /acquire/{lockId}` が 404 になる
 
-- [ ] `Keep a released queued request until its terminal TTL`
+- [x] `Keep a released queued request until its terminal TTL`
 - **対象:** `RemoteLockManager#release()`
 - **内容:** QUEUED に対する release が `markFailed("RELEASED")` の直後に `records.remove()` するため、
   直後の GET が 404 を返す。**terminal TTL（120s）保持に変更**し、`records.remove()` は掃引に一本化する。
@@ -46,18 +46,23 @@
 
 ### A3. 404/410 のラベルが実態とねじれている
 
-- [ ] `Report a vanished remote record as a missing record, not a timeout`
+- [x] `Report a vanished remote record as a missing record, not a timeout`
 - **対象:** `RemoteLockSession#pollOnce()` の 404/410 分岐（現 249-290 行）
 - **内容:** 到達可能な `!bodyStarted` 側を「record が存在しない（サーバ再起動の可能性）」寄りの表現に**一本化**する。
   正当な allocate timeout はサーバ側 FAILED 経路に一本化済みである前提をコメントで明示。A2 と併せて
   **404 が出る条件そのものが減る**
 - **前提確認済み:** 当該分岐は `73a2d3b`＋`7fd218b` で全行が当方のコード（氏の `9ffade8` は acquire 時ログのみ）
 - **テスト:** 既存の 404/410 テストの文言更新（回帰）
+- **実装時の発見:** E2E S18 の CP03 は「waiter コンソールに `LOCK_WAIT_TIMEOUT` がある」ことを見ているが、
+  **旧実装では 404 分岐が `LOCK_WAIT_TIMEOUT` を自ら生成していた**ため、M1I がリグレッションしても CP03 は緑のままだった。
+  一本化により 404 経路は "server may have restarted or the record expired" を出すので、**S18 が本来の回帰ガードになる**。
+  新メッセージには既存判定に合わせて `server may have restarted` の語を残した（S18 の除外 grep と `analyze_load.py` の分類が
+  そのまま効く）
 - **設計書:** §6-1 / §10 Q1
 
 ### A4. `variable` 指定が空 `lockEnvVars` で注入されない
 
-- [ ] `Inject the remote lock variable even when no env vars are returned`
+- [x] `Inject the remote lock variable even when no env vars are returned`
 - **対象:** `LockStepExecution#withRemoteMetadata()`（`LockStepExecution.java:340`、呼び出しは `:168`）
 - **内容:** 空 `lockEnvVars` の条件の内側に入っているため注入が落ちる。条件の外に出し、
   **`variable` 指定があれば常に注入**されるようにする
@@ -66,7 +71,7 @@
 
 ### A5. Queue タブが remote 行を正しく扱っていない（3 件まとめて 1 コミット）
 
-- [ ] `Fix the queue tab handling of remote entries`
+- [x] `Fix the queue tab handling of remote entries`
 - **対象:** `LockableResourcesRootAction`（`QueueStruct` / `getQueuePage` / `doChangeQueueOrder`）、
   `tableQueue/table.jelly`、`tableQueue/queue-too-long.js`
 - **内容:**
@@ -78,6 +83,11 @@
 - **1 コミットにする理由:** 3 件とも「Queue タブが remote 行を local 行と同じには扱えていない」という同一機能面の欠陥で、
   同じファイル群に触る。分割するとレビュー時に 3 つの差分を行き来することになる
 - **テスト:** マージ順序のユニット（local+remote を priority 降順に並べ index が昇格順と一致）
+- **実装時の判断:** 並べ替えは `Queue.sortByPromotionOrder()` を新設し、**連結済みリストを priority 降順で安定ソート**する。
+  `List.sort` が安定なので「local を先に連結 → 同priorityでは local が前」が自動的に成立し、
+  `proceedNextContext`（同値なら local 優先）と一致する。個別の比較規則を書かずに済む。
+  サーバ側 `doChangeQueueOrder` には手を入れない（remote id は範囲チェック通過後に
+  `error_queueDoesNotExist` で落ちるため、新しい i18n キーを増やす必要がない）
 - **設計書:** §6-3 / §6-5 / §6-6
 
 ---
@@ -288,5 +298,6 @@ D1/D2   すべての実装コミットの後（挙動が確定してから書く
 | 日付 | 内容 |
 |---|---|
 | 2026-08-08 (3) | issue #1025 本文の更新を取りやめ。並行作業と完了条件を「PR 本文に乖離セクションを書く／提出後に #1025 へ導線コメント」に差し替え |
+| 2026-08-08 (3) | **Phase A（A1〜A5）完了。** plugin コミット 5 本（`575f4fe` / `02fa4ba` / `507f4cb` / `c3347ec` / `43f177d`）。run-mvn-verify **BUILD SUCCESS 401/0/1skip・全ゲート ok**（`20260808102007-mvn-verify.md`。master の 394 から +7）、run-e2e **21/21 PASS**（`20260808104113-e2e-test.md`、作業ツリーを `start.sh --clean --in-place-build` でデプロイして実行）。A3・A5 に実装時の発見を追記。**計画外の追加作業 2 件**: (a) A2 の二重 release ガード（レコード保持により、2 回目の release が別クライアントのロックを解放しうる経路が生まれるため）、(b) `getRemoteLockRecord()` の Jenkins 非依存化（既存の `LockableResourceTest` が Jenkins 無しで `getLockCauseDetail()` を呼ぶため、A1 が `Jenkins.get()` を踏んで落ちた。フル verify で検出） |
 | 2026-08-08 (2) | B4 の機能仕様を確定（`GET /resources` が状態と `acceptNewAcquires` を返す）。C2 / C3 / S19 / S22 と負荷の完了条件を追従 |
 | 2026-08-08 | 初版。`design_01.md` の確定内容を 15 コミット（A5 + B4 + C4 + D2）に分解 |
