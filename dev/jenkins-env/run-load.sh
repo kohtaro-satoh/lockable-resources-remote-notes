@@ -18,6 +18,7 @@ LLOCK_TO=""
 JOB_TO=""
 ALLOW_SELF=false   # loopback (self as remote target) off by default for the load suite
 ONLY="grid-storm"
+DEBUG_MODE=false
 ORIGINAL_ARGS=("$@")
 
 apply_preset() {
@@ -41,6 +42,7 @@ Usage: ./run-load.sh [options]
   --local-timeout MIN
   --job-timeout MIN
   --allow-loopback     remote target may be SELF (25% loopback; default: cross-controller only)
+  --debug              allow uncommitted changes; report goes to reports/debug/, NOT reproducible
   (removed: --skip-start)
   -h, --help
 USAGE
@@ -50,6 +52,7 @@ apply_preset "$PRESET"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --debug) DEBUG_MODE=true; shift ;;
     --preset) PRESET="${2:?}"; apply_preset "$PRESET"; shift 2 ;;
     --jobs-per-controller) JOBS_PER_CONTROLLER="${2:?}"; shift 2 ;;
     --iterations) ITER="${2:?}"; shift 2 ;;
@@ -70,6 +73,12 @@ require_command python3
 
 RUN_ID="$(date '+%Y%m%d%H%M%S')"
 REPORTS_ROOT="$RUN_SCRIPT_DIR/../reports"
+if [[ "$DEBUG_MODE" == true ]]; then
+  # Keep debug output out of reports/: the retention policy keeps "the latest of each", and a
+  # throwaway run must not evict the report that closed a cycle.
+  REPORTS_ROOT="$REPORTS_ROOT/debug"
+  log "--debug: uncommitted changes allowed; report goes to reports/debug/ and is NOT reproducible"
+fi
 REPORT_NAME="$RUN_ID-load-test"
 RESULTS_DIR="$REPORTS_ROOT/$REPORT_NAME/grid-storm"
 CONSOLES_DIR="$RESULTS_DIR/consoles"
@@ -102,7 +111,11 @@ if [[ -z "${PLUGIN_DIR:-}" ]]; then
   exit 2
 fi
 log "Starting Jenkins controllers via start.sh --clean"
-PLUGIN_DIR="$PLUGIN_DIR" "$RUN_SCRIPT_DIR/start.sh" --clean
+if [[ "$DEBUG_MODE" == true ]]; then
+  PLUGIN_DIR="$PLUGIN_DIR" "$RUN_SCRIPT_DIR/start.sh" --clean --debug
+else
+  PLUGIN_DIR="$PLUGIN_DIR" "$RUN_SCRIPT_DIR/start.sh" --clean
+fi
 if ! wait_for_controllers_with_d 240; then
   err "Controllers a/b/c/d not all ready"; exit 10
 fi
@@ -342,6 +355,7 @@ HARNESS_COMMIT="$(harness_desc)"
   --out-classification "$RESULTS_DIR/job-classification.csv" \
   --report "$REPORT_FILE" \
   --run-id "$RUN_ID" --preset "$PRESET" --harness-commit "$HARNESS_COMMIT" \
+  $([[ "$DEBUG_MODE" == true ]] && echo --not-reproducible) \
   --jobs-per-controller "$JOBS_PER_CONTROLLER" --iter "$ITER" \
   --sleep "$SLEEP_SEC" --remote-timeout "$RLOCK_TO" --local-timeout "$LLOCK_TO" \
   --job-timeout "$JOB_TO" --loopback "$ALLOW_SELF" --plugin-commit "$PLUGIN_COMMIT" \

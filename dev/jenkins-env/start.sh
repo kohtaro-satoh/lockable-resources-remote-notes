@@ -3,6 +3,7 @@
 # 使い方: ./start.sh [--clean] [--in-place-build]
 #   --clean          : Jenkins home ボリュームを削除してから起動（初期化）
 #   --in-place-build : PLUGIN_DIR 直下で hpi をビルドする（既定は隔離 worktree）
+#   --debug          : 未コミットの作業ツリーをそのままビルドする（in-place）。再現不能な実行
 #
 # **未コミットの変更があるとエラーで停止する。** テストは常にコミット済みコードで走らせ、
 # レポートに書かれた SHA がその実行を再現できる状態を指すようにするため（2026-08-08）。
@@ -30,9 +31,11 @@ fi
 
 CLEAN=false
 IN_PLACE_BUILD=false
+DEBUG_MODE=false
 for arg in "$@"; do
   [[ "$arg" == "--clean" ]] && CLEAN=true
   [[ "$arg" == "--in-place-build" ]] && IN_PLACE_BUILD=true
+  [[ "$arg" == "--debug" ]] && { DEBUG_MODE=true; IN_PLACE_BUILD=true; }
 done
 
 JENKINS_HOME_DIRS=(jha jhb jhc jhd)
@@ -68,16 +71,19 @@ if ! git -C "$PLUGIN_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   echo "        The test harness records the deployed commit in every report, so it needs one."
   exit 1
 fi
-if [[ -n "$(git -C "$PLUGIN_DIR" status --porcelain)" ]]; then
+PLUGIN_DIRTY="$(git -C "$PLUGIN_DIR" status --porcelain)"
+if [[ -n "$PLUGIN_DIRTY" ]] && ! $DEBUG_MODE; then
   echo "[ERROR] Plugin repo has uncommitted changes:"
   git -C "$PLUGIN_DIR" status --short | sed 's/^/          /'
   echo ""
   echo "        Tests always run against committed code, so the SHA written into the report"
-  echo "        identifies exactly what was measured. Commit or stash first, then re-run."
+  echo "        identifies exactly what was measured. Commit or stash first, then re-run,"
+  echo "        or pass --debug to build the working tree as-is (report is not reproducible)."
   exit 1
 fi
 PLUGIN_SHA="$(git -C "$PLUGIN_DIR" rev-parse --short HEAD)"
 PLUGIN_SUBJECT="$(git -C "$PLUGIN_DIR" log -1 --format='%s')"
+if [[ -n "$PLUGIN_DIRTY" ]]; then PLUGIN_STATE="dirty"; else PLUGIN_STATE="clean"; fi
 HEAD_DESC="$PLUGIN_SHA $PLUGIN_SUBJECT"
 
 if ! $IN_PLACE_BUILD; then
@@ -181,7 +187,7 @@ echo "[INFO] Starting containers ..."
 docker compose up -d
 
 # デプロイしたコミットを記録する。run-e2e.sh / run-load.sh はこれを読んでレポートに書く。
-printf '%s\t%s\n' "$PLUGIN_SHA" "$PLUGIN_SUBJECT" > "$SCRIPT_DIR/.deployed-plugin"
+printf '%s\t%s\t%s\n' "$PLUGIN_SHA" "$PLUGIN_SUBJECT" "$PLUGIN_STATE" > "$SCRIPT_DIR/.deployed-plugin"
 echo "[INFO] Deployed plugin: $HEAD_DESC"
 
 

@@ -158,6 +158,7 @@ def main():
     ap.add_argument("--loopback", default="false")
     ap.add_argument("--plugin-commit", default="")
     ap.add_argument("--harness-commit", default="")
+    ap.add_argument("--not-reproducible", action="store_true")
     ap.add_argument("--jenkinsfile", default="")
     args = ap.parse_args()
 
@@ -410,6 +411,8 @@ def main():
     with open(args.report, "w") as f:
         f.write("# Load Test Report — grid-storm\n\n")
         f.write(f"- runId: {args.run_id}\n- preset: {args.preset}\n")
+        if args.not_reproducible:
+            f.write("> **NOT REPRODUCIBLE** - run with --debug, which allows uncommitted changes.\n\n")
         if args.plugin_commit:
             f.write(f"- plugin under test: `{args.plugin_commit}`\n")
         if args.harness_commit:

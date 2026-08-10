@@ -17,8 +17,11 @@
 #
 # Note: `mvn verify` stops at the first failing gate; fix it and re-run to reach the next.
 #
-# Usage: ./run-mvn-verify.sh [--skip-tests]
+# Usage: ./run-mvn-verify.sh [--skip-tests] [--debug]
 #   --skip-tests   add -DskipTests (fast: static gates + compile only, no test run)
+#   --debug        allow uncommitted changes; the report lands in reports/debug/ and is marked
+#                  NOT REPRODUCIBLE (normally a dirty tree is an error, so the SHA in a report
+#                  always identifies the tree that was verified)
 #
 # Target repo: defaults to ../../lockable-resources-plugin. Override with PLUGIN_DIR
 # (same convention as start.sh / run-e2e.sh); a relative path is resolved against this
@@ -41,10 +44,12 @@ MAVEN_BIN="${HOME}/.local/apache-maven-3.9.9/bin/mvn"
 REPORTS_DIR="${SCRIPT_DIR}/reports"
 
 SKIP_TESTS=false
+DEBUG_MODE=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip-tests) SKIP_TESTS=true; shift ;;
-        *) echo "Unknown option: $1"; echo "Usage: $0 [--skip-tests]"; exit 1 ;;
+        --debug) DEBUG_MODE=true; shift ;;
+        *) echo "Unknown option: $1"; echo "Usage: $0 [--skip-tests] [--debug]"; exit 1 ;;
     esac
 done
 
@@ -59,6 +64,11 @@ if [[ ! -x "$MAVEN_BIN" ]]; then
     exit 1
 fi
 
+if $DEBUG_MODE; then
+    # Keep debug output out of reports/: the retention policy keeps "the latest of each", and a
+    # throwaway run must not evict the report that closed a cycle.
+    REPORTS_DIR="${REPORTS_DIR}/debug"
+fi
 mkdir -p "$REPORTS_DIR"
 TS="$(date +%Y%m%d%H%M%S)"
 REPORT_MD="${REPORTS_DIR}/${TS}-mvn-verify.md"
@@ -73,27 +83,32 @@ HEAD_DESC="$(git -C "$PLUGIN_REPO" log -1 --format='%h %s' 2>/dev/null || echo '
 DIRTY_COUNT="$(git -C "$PLUGIN_REPO" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
 
 # Tests always run against committed code, so the SHA in the report identifies what was verified.
-if [[ "$DIRTY_COUNT" -ne 0 ]]; then
+if [[ "$DIRTY_COUNT" -ne 0 ]] && ! $DEBUG_MODE; then
     log_error "Plugin repo has uncommitted changes (${DIRTY_COUNT} files):"
     git -C "$PLUGIN_REPO" status --short | sed 's/^/          /'
     echo ""
     log_error "Commit or stash first, then re-run - a report whose SHA does not describe the tree"
-    log_error "that was built cannot be reproduced."
+    log_error "that was built cannot be reproduced. Pass --debug to verify the tree as-is."
     exit 1
 fi
 
 # The harness (this repo) shapes the gates and the report, so it has to be committed as well - with
 # one exception: dev/reports/ is where this run writes its own output.
 HARNESS_DIRTY="$(git -C "$SCRIPT_DIR/.." status --porcelain -- ':!dev/reports' 2>/dev/null || true)"
-if [[ -n "$HARNESS_DIRTY" ]]; then
+if [[ -n "$HARNESS_DIRTY" ]] && ! $DEBUG_MODE; then
     log_error "The test harness has uncommitted changes outside dev/reports/:"
     printf '%s\n' "$HARNESS_DIRTY" | sed 's/^/          /'
     echo ""
-    log_error "Commit or stash first, then re-run."
+    log_error "Commit or stash first, then re-run, or pass --debug."
     exit 1
 fi
 HARNESS_SHA="$(git -C "$SCRIPT_DIR/.." rev-parse --short HEAD 2>/dev/null || echo unknown)"
+if [[ -n "$HARNESS_DIRTY" ]]; then HARNESS_SHA="${HARNESS_SHA} + local changes"; fi
+if [[ "$DIRTY_COUNT" -ne 0 ]]; then HEAD_DESC="${HEAD_DESC} + local changes"; fi
 
+if $DEBUG_MODE; then
+    log_warn "--debug: uncommitted changes allowed; report goes to reports/debug/ and is NOT reproducible"
+fi
 log_info "run-mvn-verify (CI-equivalent local gate)"
 log_info "Plugin repo (in-place): $PLUGIN_REPO"
 log_info "Plugin: ${HEAD_DESC}   harness (notes): ${HARNESS_SHA}"
@@ -129,6 +144,10 @@ PMD="$(gate_status 'maven-pmd-plugin')"
 {
     echo "# mvn verify report (${TS})"
     echo ""
+    if $DEBUG_MODE; then
+        echo "> **NOT REPRODUCIBLE** - run with --debug, which allows uncommitted changes."
+        echo ""
+    fi
     echo "- Result: **BUILD ${RESULT}** (exit ${RC})"
     echo "- Duration: $(printf '%d:%02d' $((DUR / 60)) $((DUR % 60)))"
     echo "- Command: \`mvn ${MVN_ARGS[*]}\` (in-place)"

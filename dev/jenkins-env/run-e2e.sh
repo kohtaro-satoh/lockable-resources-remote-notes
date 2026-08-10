@@ -5,6 +5,7 @@ RUN_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$RUN_SCRIPT_DIR/lib/common.sh"
 
 ONLY="all"
+DEBUG_MODE=false
 ORIGINAL_ARGS=("$@")
 
 RUN_ID="$(date '+%Y%m%d%H%M%S')"
@@ -106,8 +107,12 @@ Environment:
   PLUGIN_DIR            Required. Passed to start.sh to locate lockable-resources-plugin.
 
 Options:
-  (no start options)    Every run rebuilds and redeploys from the plugin repo's committed HEAD,
-                        so a report always describes a state that can be reproduced.
+  --debug               Allow uncommitted changes in the plugin and in this harness. Still
+                        rebuilds and redeploys, but from the working tree as-is. The report
+                        lands in reports/debug/ and is marked NOT REPRODUCIBLE.
+
+  Without --debug every run rebuilds and redeploys from the plugin repo's committed HEAD,
+  so a report always describes a state that can be reproduced.
   --only <name>         Run specific scenario or group.
                         mutual-peer | fan-in-contention | server-self-use |
                         mixed-local-remote | skip-if-locked | three-way-mesh |
@@ -131,6 +136,10 @@ format_command_line() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --debug)
+      DEBUG_MODE=true
+      shift
+      ;;
     --only)
       ONLY="${2:-}"
       if [[ -z "$ONLY" ]]; then
@@ -164,6 +173,14 @@ if [[ "$is_valid_only" == false ]]; then
 fi
 
 require_clean_harness
+if [[ "$DEBUG_MODE" == true ]]; then
+  # Keep debug output out of reports/: the retention policy keeps "the latest of each", and a
+  # throwaway run must not evict the report that closed a cycle.
+  REPORTS_ROOT="$REPORTS_ROOT/debug"
+  RESULTS_DIR="$REPORTS_ROOT/$REPORT_NAME"
+  REPORT_FILE="$REPORTS_ROOT/$REPORT_NAME.md"
+  log "--debug: uncommitted changes allowed; report goes to reports/debug/ and is NOT reproducible"
+fi
 require_command curl
 require_command docker
 require_command python3
@@ -184,7 +201,11 @@ fi
 
 log "Starting Jenkins controllers via start.sh --clean"
 log "Using PLUGIN_DIR=$PLUGIN_DIR"
-PLUGIN_DIR="$PLUGIN_DIR" "$RUN_SCRIPT_DIR/start.sh" --clean
+if [[ "$DEBUG_MODE" == true ]]; then
+  PLUGIN_DIR="$PLUGIN_DIR" "$RUN_SCRIPT_DIR/start.sh" --clean --debug
+else
+  PLUGIN_DIR="$PLUGIN_DIR" "$RUN_SCRIPT_DIR/start.sh" --clean
+fi
 
 log "Waiting for controllers readiness (a/b/c)"
 if ! wait_for_controllers 240; then
@@ -306,6 +327,10 @@ log "Scenario summary: pass=$pass_count fail=$fail_count skip=$skip_count"
 {
   echo "# E2E Test Report"
   echo ""
+  if [[ "$DEBUG_MODE" == true ]]; then
+    echo "> **NOT REPRODUCIBLE** - run with --debug, which allows uncommitted changes."
+    echo ""
+  fi
   echo "- runId: $RUN_ID"
   echo "- executedAt: $(date '+%Y-%m-%d %H:%M:%S %z')"
   echo "- mode: ${ONLY}"

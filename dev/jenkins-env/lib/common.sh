@@ -39,10 +39,17 @@ err() {
 
 deployed_plugin_desc() {
   local f="$COMMON_ROOT_DIR/jenkins-env/.deployed-plugin"
-  if [[ -r "$f" ]]; then
-    cut -f1 <"$f"
-  else
+  if [[ ! -r "$f" ]]; then
     echo "unknown"
+    return
+  fi
+  local sha state
+  sha="$(cut -f1 <"$f")"
+  state="$(cut -f3 <"$f")"
+  if [[ "$state" == "dirty" ]]; then
+    echo "$sha + local changes"
+  else
+    echo "$sha"
   fi
 }
 
@@ -56,11 +63,29 @@ deployed_plugin_subject() {
 }
 
 harness_desc() {
-  git -C "$COMMON_ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown
+  local sha
+  sha="$(git -C "$COMMON_ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  if [[ "$(harness_state)" == "dirty" ]]; then
+    echo "$sha + local changes"
+  else
+    echo "$sha"
+  fi
+}
+
+harness_state() {
+  if [[ -n "$(git -C "$COMMON_ROOT_DIR" status --porcelain -- ':!dev/reports' 2>/dev/null)" ]]; then
+    echo "dirty"
+  else
+    echo "clean"
+  fi
 }
 
 # Refuses to run when the harness itself has uncommitted changes outside dev/reports/.
+# Skipped in --debug mode, where the report is filed as not reproducible instead.
 require_clean_harness() {
+  if [[ "${DEBUG_MODE:-false}" == true ]]; then
+    return 0
+  fi
   local dirty
   dirty="$(git -C "$COMMON_ROOT_DIR" status --porcelain -- ':!dev/reports' 2>/dev/null || true)"
   if [[ -n "$dirty" ]]; then
@@ -68,7 +93,8 @@ require_clean_harness() {
     printf '%s\n' "$dirty" | sed 's/^/          /' >&2
     err ""
     err "Scenarios, thresholds and analysis shape the result, so the harness commit recorded in the"
-    err "report has to describe them. Commit or stash first, then re-run."
+    err "report has to describe them. Commit or stash first, then re-run,"
+    err "or pass --debug (report goes to reports/debug/ and is not reproducible)."
     exit 2
   fi
 }
