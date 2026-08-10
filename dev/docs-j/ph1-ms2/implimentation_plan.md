@@ -92,7 +92,7 @@
 
 ---
 
-## Phase B: 機能追加（LR 画面以外、4 コミット）
+## Phase B: 機能追加（LR 画面以外、5 コミット）
 
 ### B1. `inversePrecedence` の透過等価
 
@@ -170,6 +170,28 @@
 - **実装メモ:** 公開判定は `RemoteResolver.exposedResources()` に切り出して `isExposed` を再利用（remote 独自判定を増やさない）。
   E2E は S19 が Phase C の計画なので、この時点ではユニットのみ
 - **設計書:** §3.1
+
+### B5. 接続ごとの有効／無効（`enabled`）
+
+> **2026-08-10 に追加。** 計画時には無かった項目。C1・C2 の後、**C3 の前**に実装する
+> （C3 の `/resources` 取得・表示が「無効な server は対象外」を前提に書けるため）。
+
+- [ ] `Let a client disable a configured remote without deleting it`
+- **対象:** `RemoteConnection`（`enabled`、既定 `true`、**`@DataBoundSetter`**）、`RemoteConnection/config.jelly`
+  ＋ `help-enabled.html`、`RemoteLockRouting`、`LockableResourcesManager#doCheckForcedServerId`、
+  `tableRemote/table.jelly`、JCasC（`casc_expected_output.yml` 含む）
+- **動機:** B3（サーバ側の「新規貸出を止める」）と対になる、借りる側のスイッチ。現状は設定を消すか URL を壊すしかなく、
+  消すと `credentialsId` の紐付けも失われる
+- **意味論:**
+  - 無効な server を `serverId:` で明示指定 → **即失敗**（ローカルにフォールバックしない）
+  - **保持中のリースは切らない**（heartbeat / release は継続。切ると相手側に資源が残る）
+  - `forcedServerId` が無効な server を指す → `doCheckForcedServerId` の警告に追加
+  - Remote タブで、無効な server に属する保持中エントリにその旨を表示
+- **注意:** `@DataBoundConstructor` の引数を増やすと既存 JCasC yaml が壊れるので **setter で足す**。
+  **`casc_expected_output.yml` の更新が必須**（B3 で踏んだ罠）
+- **テスト:** 無効 server への明示指定が失敗する／保持中リースの heartbeat・release が通る／
+  `forcedServerId` が無効を指すときの警告／JCasC の往復
+- **設計書:** §4.0 / §7.12
 
 ---
 
@@ -311,6 +333,7 @@ D1/D2   すべての実装コミットの後（挙動が確定してから書く
 | 日付 | 内容 |
 |---|---|
 | 2026-08-08 (3) | issue #1025 本文の更新を取りやめ。並行作業と完了条件を「PR 本文に乖離セクションを書く／提出後に #1025 へ導線コメント」に差し替え |
+| 2026-08-10 | **B5（接続ごとの `enabled`）を計画に追加**（設計書 §4.0）。C1・C2 実装済みだが、C3 の前に B5 を入れる。対外的には事前合意を取らず PR 本文で説明する |
 | 2026-08-08 (4) | **Phase B（B1〜B4）完了。** plugin コミット 4 本（`bb42b06` / `49c4686` / `4080658` / `ed2f5a9`）。run-mvn-verify **BUILD SUCCESS 412/0/1skip・全ゲート ok**（`20260808135020-mvn-verify.md`）、run-e2e **21/21 PASS**（`20260808140951-e2e-test.md`）、run-load stress **176 SUCCESS / 24 クリーン LOCK_WAIT_TIMEOUT・overlap 0・HUNG 0**（`20260808142517-load-test.md`）。B1〜B4 に実装時の発見を追記。**A5 のテストが Phase B の verify で flaky 発覚**（リモートのキューエントリを解放しないままだったため、ローカル待機ビルドが終了せず teardown が `DirectoryNotEmptyException`）。1 機能 1 コミット原則に従い **A5 に畳んで B1〜B4 を積み直し**（A5 = `2f7d384`） |
 | 2026-08-08 (3) | **Phase A（A1〜A5）完了。** plugin コミット 5 本（`575f4fe` / `02fa4ba` / `507f4cb` / `c3347ec` / `43f177d`）。run-mvn-verify **BUILD SUCCESS 401/0/1skip・全ゲート ok**（`20260808102007-mvn-verify.md`。master の 394 から +7）、run-e2e **21/21 PASS**（`20260808104113-e2e-test.md`、作業ツリーを `start.sh --clean --in-place-build` でデプロイして実行）。A3・A5 に実装時の発見を追記。**計画外の追加作業 2 件**: (a) A2 の二重 release ガード（レコード保持により、2 回目の release が別クライアントのロックを解放しうる経路が生まれるため）、(b) `getRemoteLockRecord()` の Jenkins 非依存化（既存の `LockableResourceTest` が Jenkins 無しで `getLockCauseDetail()` を呼ぶため、A1 が `Jenkins.get()` を踏んで落ちた。フル verify で検出） |
 | 2026-08-08 (2) | B4 の機能仕様を確定（`GET /resources` が状態と `acceptNewAcquires` を返す）。C2 / C3 / S19 / S22 と負荷の完了条件を追従 |

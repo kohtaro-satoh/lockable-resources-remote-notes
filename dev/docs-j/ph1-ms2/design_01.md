@@ -18,7 +18,7 @@
 1. [目的とスコープ](#1-目的とスコープ)
 2. [現状ギャップ（仕様 vs 実装）](#2-現状ギャップ仕様-vs-実装)
 3. [設計 A: サーバ側の追加分](#3-設計-a-サーバ側の追加分)
-4. [設計 B: クライアント側 LR ページ](#4-設計-b-クライアント側-lr-ページ)
+4. [設計 B: クライアント側（接続設定 ＋ LR ページ）](#4-設計-b-クライアント側接続設定--lr-ページ)
 5. [設計 C: delegated mode の表示切替（M2 本体）](#5-設計-c-delegated-mode-の表示切替m2-本体)
 6. [M1 やり残しの取り込み](#6-m1-やり残しの取り込み)
 7. [仕様と実装の乖離をどう扱うか](#7-仕様と実装の乖離をどう扱うか)
@@ -68,7 +68,7 @@ issue #1025 本文末尾の Phases 節にある `- [ ] Phase 1` は、**#1055 �
 |---|---|---|
 | M1: Core REST API + 明示 `serverId` | ✅ | #1055 |
 | M2: `forcedServerId` resolution **and the LR page mode-switching behavior** | ⚠️ 半分 | 解決ロジックのみ。LR ページ側は未実装（本書 [§5](#5-設計-c-delegated-mode-の表示切替m2-本体)） |
-| M3: `GET /resources` + client-side LR page integration | ❌ | 未着手（本書 [§3.1](#31-get-resources) / [§4](#4-設計-b-クライアント側-lr-ページ)） |
+| M3: `GET /resources` + client-side LR page integration | ❌ | 未着手（本書 [§3.1](#31-get-resources) / [§4](#4-設計-b-クライアント側接続設定--lr-ページ)） |
 | Phase 1 scope "LR page integration on **both** sides" | ⚠️ 半分 | サーバ側のみ実装済み |
 
 → **本書の A〜C を実装した時点で checked にできる**。逆に言えば、Phase 1 完了宣言はこの PR が唯一の残作業。
@@ -111,7 +111,7 @@ issue #1025 本文末尾の Phases 節にある `- [ ] Phase 1` は、**#1055 �
 | `remotes[]` / `forcedServerId`（クライアント側） | ✅ | `forcedServerId` の存在検証も実装済み |
 | `forcedServerId` による delegated ルーティング | ✅ | M1 で先食い（E2E S09） |
 | **サーバ側** LR ページに remote lease の clientId 表示 | ✅ | M1B Step6＋氏の follow-up で Held By 列も表示 |
-| **クライアント側** LR ページの remote ビュー | **未** | [§4](#4-設計-b-クライアント側-lr-ページ) |
+| **クライアント側** LR ページの remote ビュー | **未** | [§4](#4-設計-b-クライアント側接続設定--lr-ページ) |
 | **delegated mode バッジ** | **未** | [§5](#5-設計-c-delegated-mode-の表示切替m2-本体) |
 
 ---
@@ -321,7 +321,37 @@ Admission を先に置けば秘匿性は**無償で維持**され、canonical �
 
 ---
 
-## 4. 設計 B: クライアント側 LR ページ
+## 4. 設計 B: クライアント側（接続設定 ＋ LR ページ）
+
+### 4.0 接続ごとの有効／無効（`enabled`）— B5（2026-08-10 追加）
+
+**動機:** クライアント側には「この相手を今は使わない」という手段が無い。設定を消すか URL を壊すしかなく、
+消せば `credentialsId` の紐付けも失われる。B3 のメンテナンススイッチと**対になる欠けたピース**で、
+B3 が「資源の持ち主が新規貸出を止める」のに対し、こちらは「借りる側が特定の相手を使わなくする」。
+
+`RemoteConnection` に **`enabled`（既定 `true`）** を足し、Remote Server カード内のチェックボックスで切り替える。
+
+**意味論（4 点）:**
+
+| # | 状況 | 決定 |
+|---|---|---|
+| a | 無効な server を `lock(..., serverId:'X')` で明示指定 | **即失敗**。ローカルへフォールバックしない（M1 の「暗黙のローカル解決をしない」原則と同じ。「リモートのつもりでローカルを掴む」事故を防ぐ） |
+| b | 保持中のリース | **切らない**。heartbeat / release は継続する。切ると相手側に資源が取り残される。B3 と同じ「新規だけ止める」非対称 |
+| c | `forcedServerId` が無効な server を指す | 全 `lock()` が落ちる。既存の `doCheckForcedServerId`（remotes に無い ID を警告）に **「無効化されている」の警告も足す** |
+| d | Remote タブでの見え方 | 無効な server に対する保持中エントリは残るので、**その server が無効である旨を示す**。示さないと「なぜ新しいロックが増えないのか」が分からない |
+
+**実装上の注意:**
+
+- **`@DataBoundSetter` で足す。** `@DataBoundConstructor` の引数を増やすと、既存の JCasC yaml
+  （`serverId` / `url` / `credentialsId` の 3 つだけ）が壊れる
+- 既定値はフィールド初期化子で `true`（`acceptNewAcquires` / `allowEphemeralResources` と同じ流儀）
+- **CasC のエクスポート期待値 `casc_expected_output.yml` の更新が必ず要る**（B3 で踏んだ罠）
+
+**C3 より前に実装する理由:** C3 は `forcedServerId` の相手から `/resources` を取得してキャッシュ表示する。
+「無効な server は取りに行かない・出さない」を後付けすると、書いたばかりの取得・表示コードを触り直すことになる。
+
+**対外コミュニケーション（2026-08-10 ユーザー判断）:** 事前合意を要する類の設定ではないため、
+**PR 本文の説明にとどめる**（issue #1025 への事前提案はしない）。[§7.12](#712-クライアント側に-enabled-設定が増えている) にも記載。
 
 ### 4.1 何が無いのか
 
@@ -636,6 +666,14 @@ issue 本文末尾の Open questions は #1055 でほぼ決着している。**�
 
 ---
 
+### 7.12 クライアント側に `enabled` 設定が増えている
+
+仕様の Client-side settings 表は `remotes[]`（`serverId` / `url` / `credentialsId`）と `forcedServerId` のみ。
+実装は **接続ごとの `enabled`（既定 `true`）** を追加する（[§4.0](#40-接続ごとの有効無効enabledb52026-08-10-追加)）。
+
+→ **実装を維持し、PR 本文で説明する。** 事前合意を要する仕様変更ではなく、
+`clientId`（[§7.8](#78-クライアント側に-clientid-設定が増えている)）と同じ「運用上必要になった設定の追加」。
+
 ### 7.11 乖離の記載先を PR 本文にする（2026-08-08）
 
 本節（§7.1〜§7.10）で洗い出した「実装が正・issue 本文が古い」項目は、**本文を書き換えて解消しない**。
@@ -659,6 +697,7 @@ issue 本文末尾の Open questions は #1055 でほぼ決着している。**�
 | 9 | `cancel` は `release` に統合、`GET /lease` は後続 | M1 で決定済み（§3.2 / §3.3） |
 | 10 | `GET /resources` が状態と `acceptNewAcquires` を返す | 画面で local/remote の情報量を揃えるため（§3.1） |
 | 11 | 既定値の確定（poll 3s / heartbeat 10s / stale 60s / `UNKNOWN_*` は 404） | 実装で確定（§7.10） |
+| 12 | 接続ごとの `enabled` 設定 | 設定を消さずに相手を一時的に使わない手段が無かった（§7.12 / §4.0） |
 
 **副作用として受容すること:** 本文は古いまま残るため、**新規の読み手は本文を仕様として読む**。
 PR 提出後のコメントは時系列で流れるので、時間が経つほど届きにくくなる。
@@ -835,6 +874,7 @@ Resources の列にするか）。暫定 (a) 新規タブで作るが、並べ�
 | 日付 | 内容 |
 |---|---|
 | 2026-07-26 | 初版。issue #1025 の Phase 1 M2/M3 を統合し、M1 やり残し 9 件の取り込み先として定義 |
+| 2026-08-10 | **B5（接続ごとの `enabled`）を追加**。§4 を「クライアント側（接続設定 ＋ LR ページ）」に広げ、§4.0 を新設（意味論 4 点・`@DataBoundSetter` で足す理由・C3 より前に実装する理由）。§7.12 と §7.11 の転記表に乖離項目として追加。対外的には事前合意を取らず PR 本文で説明する方針 |
 | 2026-08-08 (3) | **issue #1025 本文の更新を取りやめ**（Q8 の方針変更）。乖離は**新 PR 本文に「乖離と理由」として記載**し、PR 提出後に #1025 へ導線コメントを置く形に変更。§7.11 を新設し、PR 本文へ転記する 11 項目を一覧化。本文が古いまま残る副作用と、採らなかった緩和策（本文冒頭の警告 1 行）も記録 |
 | 2026-08-08 (2) | `GET /resources` の仕様を確定（§3.1 全面書き換え）。**「状態を返さない」決定を撤回**し、local/remote の情報量を揃えるため `state`（FREE/LOCKED/RESERVED/QUEUED）＋ `heldByKind` ＋ `heldByClientId` ＋ `since` ＋ `queuedCount` を返す。**開示レベルは中間案**（ビルド名・reason・note は返さない = B のジョブ名を A の閲覧者に出さない）。**`acceptNewAcquires` を同じレスポンスに載せる**（別エンドポイントだとキャッシュ不整合で「FREE と表示しつつ受付停止中」の画面が作れてしまうため）。メンテ中も資源状態は真実を返し、表現は画面側で行う。§5.2 のキャッシュ TTL を 60s → **10s**、§10 Q5 は「**含める**」に確定 |
 | 2026-08-08 | 検証ロジックの再設計。**§3.5「サーバ側の判定順序（Wire → Admission → Canonical）」を新設**し、remote 固有判定を Wire と Admission の 2 層に閉じ込め、残りは `LockStepResource.validate()` に丸投げする構成に確定（境界の `MISSING_TARGET` / `INVALID_SELECT_STRATEGY` は削除。前者は `allowEmptyOrNullValues` を無視する既存の透過等価の破れでもあった）。**M1E-2（resource+label 同時指定）は「remote 固有コードを減らすことで自動的に閉じる」ため残置を解除**。秘匿性（一律 404）は Admission を先に置くことで無償維持。**M1E-1（孤児 ephemeral）は再検討のうえ残置を維持**し、機構・local との差・閉じ方 3 案・再開条件を §8.1 に記録 |
