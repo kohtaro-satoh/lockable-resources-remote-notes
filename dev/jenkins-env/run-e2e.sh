@@ -46,6 +46,12 @@ M1E_SCENARIOS=(
 M1I_SCENARIOS=(
   "remote-acquire-timeout"
 )
+M2M3_SCENARIOS=(
+  "remote-resources-endpoint"
+  "client-side-remote-view"
+  "delegated-mode-page"
+  "remote-maintenance-switch"
+)
 D_SCENARIOS=(
   "fan-in-4"
   "chain-4"
@@ -70,6 +76,10 @@ ALL_SCENARIOS=(
   "remote-resource-properties"
   "remote-unknown-rejected"
   "remote-acquire-timeout"
+  "remote-resources-endpoint"
+  "client-side-remote-view"
+  "delegated-mode-page"
+  "remote-maintenance-switch"
   "fan-in-4"
   "chain-4"
   "diamond"
@@ -94,6 +104,10 @@ declare -A SCENARIO_IDS=(
   ["remote-resource-properties"]="S16"
   ["remote-unknown-rejected"]="S17"
   ["remote-acquire-timeout"]="S18"
+  ["remote-resources-endpoint"]="S19"
+  ["client-side-remote-view"]="S20"
+  ["delegated-mode-page"]="S21"
+  ["remote-maintenance-switch"]="S22"
   ["fan-in-4"]="D01"
   ["chain-4"]="D02"
   ["diamond"]="D03"
@@ -121,9 +135,11 @@ Options:
                         priority-ordering | stale-admin-release |
                         extra-label-resources | label-quantity-all |
                         remote-resource-properties | remote-unknown-rejected |
-                        remote-acquire-timeout |
+                        remote-acquire-timeout | remote-resources-endpoint |
+                        client-side-remote-view | delegated-mode-page |
+                        remote-maintenance-switch |
                         fan-in-4 | chain-4 | diamond |
-                        s-series | m1a-series | m1b-series | m1c-series | m1d-series | m1e-series | m1i-series | d-series | all
+                        s-series | m1a-series | m1b-series | m1c-series | m1d-series | m1e-series | m1i-series | m2m3-series | d-series | all
   -h, --help            Show this help.
 USAGE
 }
@@ -161,7 +177,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 is_valid_only=false
-for allowed in all s-series m1a-series m1b-series m1c-series m1d-series m1e-series m1i-series d-series "${ALL_SCENARIOS[@]}"; do
+for allowed in all s-series m1a-series m1b-series m1c-series m1d-series m1e-series m1i-series m2m3-series d-series "${ALL_SCENARIOS[@]}"; do
   if [[ "$ONLY" == "$allowed" ]]; then
     is_valid_only=true
     break
@@ -281,6 +297,9 @@ select_scenarios() {
       ;;
     m1e-series)
       printf '%s\n' "${M1E_SCENARIOS[@]}"
+      ;;
+    m2m3-series)
+      printf '%s\n' "${M2M3_SCENARIOS[@]}"
       ;;
     m1i-series)
       printf '%s\n' "${M1I_SCENARIOS[@]}"
