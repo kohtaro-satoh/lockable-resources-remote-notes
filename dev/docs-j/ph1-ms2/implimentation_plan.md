@@ -176,7 +176,7 @@
 > **2026-08-10 に追加。** 計画時には無かった項目。C1・C2 の後、**C3 の前**に実装する
 > （C3 の `/resources` 取得・表示が「無効な server は対象外」を前提に書けるため）。
 
-- [ ] `Let a client disable a configured remote without deleting it`
+- [x] `Let a client disable a configured remote without deleting it`
 - **対象:** `RemoteConnection`（`enabled`、既定 `true`、**`@DataBoundSetter`**）、`RemoteConnection/config.jelly`
   ＋ `help-enabled.html`、`RemoteLockRouting`、`LockableResourcesManager#doCheckForcedServerId`、
   `tableRemote/table.jelly`、JCasC（`casc_expected_output.yml` 含む）
@@ -201,19 +201,22 @@
 
 ### C1. クライアント側レジストリ（表示のデータ源）
 
-- [ ] `Track the remote locks this controller holds or waits for`
+- [x] `Track the remote locks this controller holds or waits for`
 - **対象:** 新規 `RemoteClientRegistry`（`@Extension`、transient）、`RemoteLockSession` から登録・解除
 - **内容:** remote ロックの client 側状態は step ごとの `RemoteLockSession` にしかない。コントローラ横断で集約する
   レジストリを新設する。key = `lockId`、value = `serverId` / 要求内容 / state(QUEUED|ACQUIRED) / 取得済み資源名 /
   `enqueuedAt` / `acquiredAt` / 発信ビルド。**永続化しない**（再起動時は `onResume` から再登録）。
   `Run` は弱参照＋`getFullDisplayName()` のスナップショットを併せ持つ
 - **副産物:** M-1（`onResume` で displayTarget が劣化する）が解消する
+- **実装時の発見:** `GET /acquire/{lockId}` が**取得済みリソース名を返していなかった**。`lockEnvVars` は `variable`
+  指定時しか名前を含まないため、クライアントは「自分が何を掴んでいるか」を知る手段が無い。
+  Resources 列に必要なので、レスポンスに `resources` を追加した（後方互換の追加フィールド）
 - **テスト:** acquire/release での登録・解除／`onResume` 後の再構築／ビルド削除時に落ちない
 - **設計書:** §4.2
 
 ### C2. Remote タブ（保持中／待機中の可視化）
 
-- [ ] `Show the remote locks on the lockable resources page`
+- [x] `Show the remote locks on the lockable resources page`
 - **対象:** `LockableResourcesRootAction`、`_content.jelly`（タブ追加）、新規 `tableRemote/table.jelly` ＋ `.properties`
 - **内容:** #1035 のタブ構成（Overview / Resources / Labels / Queue）に **Remote タブを 1 つ足す**。
   列は Server（`serverId`）/ Request / State / Resources / Requested by / Since。
@@ -221,11 +224,15 @@
   **操作（cancel / release）は出さない**（Phase 1 は可視化まで）。
   待機中エントリについては、**リモートが受付停止中であることが待機理由なら**それを示す（B3 のリトライと対）
 - **暫定判断:** タブにするか Resources の列にするかは **§9.4 の新旧並走比較で最終決定**する。まず (a) タブで作る
+- **実装時の発見:** **タブバー全体が「ローカル資源が 1 つ以上ある」条件の内側**にあり、資源ゼロだと Remote タブごと消えていた。
+  delegated mode のコントローラは**ローカル資源ゼロが正常**なので、タブバーと空状態の条件を
+  「ローカル資源がある **or** remote 関係が設定済み」に変更し、資源ゼロのときは Remote タブを初期表示にした
+  （Overview に出すものが無いため）
 - **設計書:** §4.3 / §10 Q2 / Q6
 
 ### C3. delegated mode の表示（バッジ＋並存＋`/resources` キャッシュ）
 
-- [ ] `Show the delegated target resources next to the local ones`
+- [x] `Show the delegated target's resources next to the local ones`
 - **対象:** `_content.jelly`（バッジ）、Remote タブ、`GET /resources` のクライアント側キャッシュ（新規または `RemoteApiClient`）
 - **内容:**
   - `forcedServerId` 設定時にページ上部へ **delegated バッジ**を常時表示（ローカル資源が他コントローラからは
@@ -234,13 +241,15 @@
     ローカル側には「このコントローラの `lock()` 解決には使われない」と明示する
   - `GET /resources` の結果は **TTL 10s の短期キャッシュ**（状態を含むため 60s では誤情報になる）。取得失敗時は最後に取れた内容＋stale 表示に
     フォールバック（表示は best-effort。fail-closed はロック取得の話）。取得はページ表示スレッドではなく非同期
+  - **実装:** `RemoteCatalogCache`（`@Extension`）＋ スナップショット型 `RemoteCatalog`。描画スレッドは HTTP を叩かず、
+    古ければバックグラウンド更新を投げるだけ。B5 で無効化された接続は**そもそも取得しない**。`setRemotes` で全破棄
   - **メンテナンス中の表現** — `acceptNewAcquires=false` のとき「リソースは見えるが lock はできない」と示す
     （資源の状態表示は真実のまま変えない）。C4 のサーバ側バナーと対になるクライアント側の表現
 - **設計書:** §5.0 / §5.1 / §5.2
 
 ### C4. サーバ側の一時停止バナー
 
-- [ ] `Show a banner while new remote acquires are paused`
+- [x] `Show a banner while new remote acquires are paused`
 - **対象:** `_content.jelly`（または Overview カード）
 - **内容:** `acceptNewAcquires=false` のとき LR ページに一時停止バナーを出す（管理者が戻し忘れないように）
 - **B3 と分ける理由:** B3 は API とクライアント挙動、こちらは画面。LR 画面系を後ろに寄せる方針に従う。
@@ -333,6 +342,7 @@ D1/D2   すべての実装コミットの後（挙動が確定してから書く
 | 日付 | 内容 |
 |---|---|
 | 2026-08-08 (3) | issue #1025 本文の更新を取りやめ。並行作業と完了条件を「PR 本文に乖離セクションを書く／提出後に #1025 へ導線コメント」に差し替え |
+| 2026-08-10 (2) | **B5・C1〜C4 実装完了。** plugin コミット 5 本（`6bbe86c` B5 / `34c959f` C1 / `b759ab7` C2 / `e68b50d` C3 / `4ddc7d3` C4）。B5 は当初 C2 の後にコミットしたが、**計画順に合わせて B4 の直後へ並べ替え**（Remote タブへの「無効」表示だけは C2 に吸収。ツリー差分ゼロを確認）。B5・C1・C2 は各コミット単体でテストが緑であることを `target/` を消して確認済み |
 | 2026-08-10 | **B5（接続ごとの `enabled`）を計画に追加**（設計書 §4.0）。C1・C2 実装済みだが、C3 の前に B5 を入れる。対外的には事前合意を取らず PR 本文で説明する |
 | 2026-08-08 (4) | **Phase B（B1〜B4）完了。** plugin コミット 4 本（`bb42b06` / `49c4686` / `4080658` / `ed2f5a9`）。run-mvn-verify **BUILD SUCCESS 412/0/1skip・全ゲート ok**（`20260808135020-mvn-verify.md`）、run-e2e **21/21 PASS**（`20260808140951-e2e-test.md`）、run-load stress **176 SUCCESS / 24 クリーン LOCK_WAIT_TIMEOUT・overlap 0・HUNG 0**（`20260808142517-load-test.md`）。B1〜B4 に実装時の発見を追記。**A5 のテストが Phase B の verify で flaky 発覚**（リモートのキューエントリを解放しないままだったため、ローカル待機ビルドが終了せず teardown が `DirectoryNotEmptyException`）。1 機能 1 コミット原則に従い **A5 に畳んで B1〜B4 を積み直し**（A5 = `2f7d384`） |
 | 2026-08-08 (3) | **Phase A（A1〜A5）完了。** plugin コミット 5 本（`575f4fe` / `02fa4ba` / `507f4cb` / `c3347ec` / `43f177d`）。run-mvn-verify **BUILD SUCCESS 401/0/1skip・全ゲート ok**（`20260808102007-mvn-verify.md`。master の 394 から +7）、run-e2e **21/21 PASS**（`20260808104113-e2e-test.md`、作業ツリーを `start.sh --clean --in-place-build` でデプロイして実行）。A3・A5 に実装時の発見を追記。**計画外の追加作業 2 件**: (a) A2 の二重 release ガード（レコード保持により、2 回目の release が別クライアントのロックを解放しうる経路が生まれるため）、(b) `getRemoteLockRecord()` の Jenkins 非依存化（既存の `LockableResourceTest` が Jenkins 無しで `getLockCauseDetail()` を呼ぶため、A1 が `Jenkins.get()` を踏んで落ちた。フル verify で検出） |
