@@ -73,7 +73,7 @@ harness_desc() {
 }
 
 harness_state() {
-  if [[ -n "$(git -C "$COMMON_ROOT_DIR" status --porcelain -- ':!dev/reports' 2>/dev/null)" ]]; then
+  if [[ -n "$(git -C "$COMMON_ROOT_DIR" status --porcelain -- ':(exclude,top)dev/reports' 2>/dev/null)" ]]; then
     echo "dirty"
   else
     echo "clean"
@@ -87,7 +87,9 @@ require_clean_harness() {
     return 0
   fi
   local dirty
-  dirty="$(git -C "$COMMON_ROOT_DIR" status --porcelain -- ':!dev/reports' 2>/dev/null || true)"
+  # ":(exclude,top)" - a pathspec is relative to the working directory, and this one runs from
+  # jenkins-env, so without "top" the exclusion silently matched nothing and every report tripped it.
+  dirty="$(git -C "$COMMON_ROOT_DIR" status --porcelain -- ':(exclude,top)dev/reports' 2>/dev/null || true)"
   if [[ -n "$dirty" ]]; then
     err "The test harness has uncommitted changes outside dev/reports/:"
     printf '%s\n' "$dirty" | sed 's/^/          /' >&2
