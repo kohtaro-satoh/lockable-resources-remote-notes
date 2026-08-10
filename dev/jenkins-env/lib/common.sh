@@ -38,7 +38,7 @@ err() {
 # ---------------------------------------------------------------------------
 
 deployed_plugin_desc() {
-  local f="$COMMON_ROOT_DIR/jenkins-env/.deployed-plugin"
+  local f="$COMMON_ROOT_DIR/.deployed-plugin"
   if [[ ! -r "$f" ]]; then
     echo "unknown"
     return
@@ -54,7 +54,7 @@ deployed_plugin_desc() {
 }
 
 deployed_plugin_subject() {
-  local f="$COMMON_ROOT_DIR/jenkins-env/.deployed-plugin"
+  local f="$COMMON_ROOT_DIR/.deployed-plugin"
   if [[ -r "$f" ]]; then
     cut -f2 <"$f"
   else
