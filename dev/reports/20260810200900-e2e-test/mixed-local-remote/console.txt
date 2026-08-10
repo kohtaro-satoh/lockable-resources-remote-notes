@@ -1,0 +1,29 @@
+Started by user admin
+[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on Jenkins in /var/jenkins_home/workspace/s04-mixed-lock
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Mixed)
+[Pipeline] lock
+Trying to acquire lock on [Resource: s04-local-a-1786360321]
+Lock acquired on [Resource: s04-local-a-1786360321]
+[Pipeline] {
+[Pipeline] lock
+Trying to acquire remote lock on [Resource: s04-remote-b-1786360321] (serverId=b, serverUrl=http://jenkins-b:8080/jenkins)
+Remote lock acquired on [Resource: s04-remote-b-1786360321] (serverId=b, lockId=2356c4d2-9f49-4711-a59f-f05aff2e5218)
+[Pipeline] {
+[Pipeline] echo
+BOTH_ACQUIRED
+[Pipeline] }
+Remote lock released on [Resource: s04-remote-b-1786360321] (serverId=b, lockId=2356c4d2-9f49-4711-a59f-f05aff2e5218)
+[Pipeline] // lock
+[Pipeline] }
+Lock released on resource [Resource: s04-local-a-1786360321]
+[Pipeline] // lock
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // node
+[Pipeline] End of Pipeline
+Finished: SUCCESS

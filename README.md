@@ -76,7 +76,7 @@ P1M1 / P1M1A / P1M1B):
 High-load / stress test specification (a separate suite; this is how the M1I regression was found) + the latest run report:
 
 - [LOAD_TEST_SPECIFICATION](dev/docs-e/LOAD_TEST_SPECIFICATION.md) ([j](dev/docs-j/LOAD_TEST_SPECIFICATION.md))
-- latest run (plugin `ed2f5a9` = Phase 1 M2+M3 through B4, `stress`, 4×50=200 jobs): [20260808142517-load-test.md](dev/reports/20260808142517-load-test.md) — 176 SUCCESS / 24 FAILURE, all failures a clean `LOCK_WAIT_TIMEOUT`, overlaps 0, HUNG 0 (the report embeds the Jenkinsfile and the plots)
+- latest run (plugin `aa0c391` = Phase 1 M2+M3 through C4, `stress`, 4×50=200 jobs): [20260810202423-load-test.md](dev/reports/20260810202423-load-test.md) — 183 SUCCESS / 17 FAILURE, all failures a clean `LOCK_WAIT_TIMEOUT`, overlaps 0, HUNG 0 (the report embeds the Jenkinsfile and the plots)
 
 Reviews / レビュー:
 
