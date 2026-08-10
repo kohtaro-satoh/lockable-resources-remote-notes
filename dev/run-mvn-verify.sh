@@ -71,11 +71,32 @@ fi
 
 HEAD_DESC="$(git -C "$PLUGIN_REPO" log -1 --format='%h %s' 2>/dev/null || echo 'n/a')"
 DIRTY_COUNT="$(git -C "$PLUGIN_REPO" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
-if [[ "$DIRTY_COUNT" -eq 0 ]]; then TREE_LABEL="clean"; else TREE_LABEL="dirty (${DIRTY_COUNT} files)"; fi
+
+# Tests always run against committed code, so the SHA in the report identifies what was verified.
+if [[ "$DIRTY_COUNT" -ne 0 ]]; then
+    log_error "Plugin repo has uncommitted changes (${DIRTY_COUNT} files):"
+    git -C "$PLUGIN_REPO" status --short | sed 's/^/          /'
+    echo ""
+    log_error "Commit or stash first, then re-run - a report whose SHA does not describe the tree"
+    log_error "that was built cannot be reproduced."
+    exit 1
+fi
+
+# The harness (this repo) shapes the gates and the report, so it has to be committed as well - with
+# one exception: dev/reports/ is where this run writes its own output.
+HARNESS_DIRTY="$(git -C "$SCRIPT_DIR/.." status --porcelain -- ':!dev/reports' 2>/dev/null || true)"
+if [[ -n "$HARNESS_DIRTY" ]]; then
+    log_error "The test harness has uncommitted changes outside dev/reports/:"
+    printf '%s\n' "$HARNESS_DIRTY" | sed 's/^/          /'
+    echo ""
+    log_error "Commit or stash first, then re-run."
+    exit 1
+fi
+HARNESS_SHA="$(git -C "$SCRIPT_DIR/.." rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
 log_info "run-mvn-verify (CI-equivalent local gate)"
 log_info "Plugin repo (in-place): $PLUGIN_REPO"
-log_info "HEAD: ${HEAD_DESC}   working tree: ${TREE_LABEL}"
+log_info "Plugin: ${HEAD_DESC}   harness (notes): ${HARNESS_SHA}"
 log_info "Command: mvn ${MVN_ARGS[*]}"
 SKIP_NOTE=""
 [[ "$SKIP_TESTS" == "true" ]] && SKIP_NOTE=" (tests skipped)"
@@ -112,8 +133,8 @@ PMD="$(gate_status 'maven-pmd-plugin')"
     echo "- Duration: $(printf '%d:%02d' $((DUR / 60)) $((DUR % 60)))"
     echo "- Command: \`mvn ${MVN_ARGS[*]}\` (in-place)"
     echo "- Plugin repo: \`${PLUGIN_REPO}\`"
-    echo "- HEAD: \`${HEAD_DESC}\`"
-    echo "- Working tree: ${TREE_LABEL}"
+    echo "- Plugin: \`${HEAD_DESC}\`"
+    echo "- Harness (notes): \`${HARNESS_SHA}\`"
     echo ""
     echo "## Quality gates"
     echo ""

@@ -157,6 +157,7 @@ def main():
     ap.add_argument("--job-timeout", type=int, default=0)
     ap.add_argument("--loopback", default="false")
     ap.add_argument("--plugin-commit", default="")
+    ap.add_argument("--harness-commit", default="")
     ap.add_argument("--jenkinsfile", default="")
     args = ap.parse_args()
 
@@ -411,6 +412,8 @@ def main():
         f.write(f"- runId: {args.run_id}\n- preset: {args.preset}\n")
         if args.plugin_commit:
             f.write(f"- plugin under test: `{args.plugin_commit}`\n")
+        if args.harness_commit:
+            f.write(f"- harness (notes): `{args.harness_commit}`\n")
         f.write(f"- builds: {len(results)} (jobs with events: {len(jobs)})\n\n")
 
         # ---- Scenario: what was actually exercised ----

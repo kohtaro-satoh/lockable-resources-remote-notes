@@ -25,6 +25,54 @@ err() {
   printf '[%s] [ERROR] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >&2
 }
 
+# ---------------------------------------------------------------------------
+# Provenance: what exactly produced a report.
+#
+# The plugin commit comes from .deployed-plugin, written by start.sh when it built and deployed
+# the hpi - NOT from the plugin repo's HEAD at report time, which drifts if anything is committed
+# while a run is in flight (seen on 2026-08-08: a load report claimed a commit made mid-run).
+#
+# The harness commit matters too: the scenarios, thresholds and analysis live in this repo, so the
+# same plugin can score differently across harness revisions. It must be committed as well, with one
+# exception: dev/reports/ is where a run writes its own output, so that path is expected to be dirty.
+# ---------------------------------------------------------------------------
+
+deployed_plugin_desc() {
+  local f="$COMMON_ROOT_DIR/jenkins-env/.deployed-plugin"
+  if [[ -r "$f" ]]; then
+    cut -f1 <"$f"
+  else
+    echo "unknown"
+  fi
+}
+
+deployed_plugin_subject() {
+  local f="$COMMON_ROOT_DIR/jenkins-env/.deployed-plugin"
+  if [[ -r "$f" ]]; then
+    cut -f2 <"$f"
+  else
+    echo ""
+  fi
+}
+
+harness_desc() {
+  git -C "$COMMON_ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown
+}
+
+# Refuses to run when the harness itself has uncommitted changes outside dev/reports/.
+require_clean_harness() {
+  local dirty
+  dirty="$(git -C "$COMMON_ROOT_DIR" status --porcelain -- ':!dev/reports' 2>/dev/null || true)"
+  if [[ -n "$dirty" ]]; then
+    err "The test harness has uncommitted changes outside dev/reports/:"
+    printf '%s\n' "$dirty" | sed 's/^/          /' >&2
+    err ""
+    err "Scenarios, thresholds and analysis shape the result, so the harness commit recorded in the"
+    err "report has to describe them. Commit or stash first, then re-run."
+    exit 2
+  fi
+}
+
 wait_for_url() {
   local url="$1"
   local timeout_seconds="$2"

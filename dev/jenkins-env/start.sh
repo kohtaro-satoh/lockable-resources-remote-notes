@@ -4,6 +4,11 @@
 #   --clean          : Jenkins home ボリュームを削除してから起動（初期化）
 #   --in-place-build : PLUGIN_DIR 直下で hpi をビルドする（既定は隔離 worktree）
 #
+# **未コミットの変更があるとエラーで停止する。** テストは常にコミット済みコードで走らせ、
+# レポートに書かれた SHA がその実行を再現できる状態を指すようにするため（2026-08-08）。
+# デプロイしたコミットは .deployed-plugin に記録し、run-e2e.sh / run-load.sh が
+# レポートに転記する（解析時点の HEAD を読むと、走行中にコミットしただけでズレる）。
+#
 # 既定では PLUGIN_DIR のコミット済み HEAD を隔離 worktree（/tmp 配下）でビルドする。
 # VS Code の Java 拡張 (jdt.ls) がリポジトリ直下の target/ に ECJ コンパイル結果を
 # 書き込むため、リポジトリ直下で mvn package すると Extension index 欠落の壊れた
@@ -57,12 +62,25 @@ cleanup_worktree() {
   rm -rf "$(dirname "$WORKTREE_DIR")"
 }
 
+# 再現性のため、ビルド対象はコミット済みでなければならない。
+if ! git -C "$PLUGIN_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+  echo "[ERROR] $PLUGIN_DIR is not a git repository."
+  echo "        The test harness records the deployed commit in every report, so it needs one."
+  exit 1
+fi
+if [[ -n "$(git -C "$PLUGIN_DIR" status --porcelain)" ]]; then
+  echo "[ERROR] Plugin repo has uncommitted changes:"
+  git -C "$PLUGIN_DIR" status --short | sed 's/^/          /'
+  echo ""
+  echo "        Tests always run against committed code, so the SHA written into the report"
+  echo "        identifies exactly what was measured. Commit or stash first, then re-run."
+  exit 1
+fi
+PLUGIN_SHA="$(git -C "$PLUGIN_DIR" rev-parse --short HEAD)"
+PLUGIN_SUBJECT="$(git -C "$PLUGIN_DIR" log -1 --format='%s')"
+HEAD_DESC="$PLUGIN_SHA $PLUGIN_SUBJECT"
+
 if ! $IN_PLACE_BUILD; then
-  HEAD_DESC="$(git -C "$PLUGIN_DIR" log -1 --format='%h %s')"
-  if [[ -n "$(git -C "$PLUGIN_DIR" status --porcelain)" ]]; then
-    echo "[WARN] Plugin repo has uncommitted changes. Worktree build uses committed HEAD only."
-    echo "       Use --in-place-build to build the working tree as-is (stop the VS Code Java extension first)."
-  fi
   WORKTREE_DIR="$(mktemp -d -t lrr-env-build-XXXXXX)/plugin"
   git -C "$PLUGIN_DIR" worktree add --detach "$WORKTREE_DIR" HEAD >/dev/null
   trap cleanup_worktree EXIT
@@ -161,6 +179,10 @@ docker compose build
 echo ""
 echo "[INFO] Starting containers ..."
 docker compose up -d
+
+# デプロイしたコミットを記録する。run-e2e.sh / run-load.sh はこれを読んでレポートに書く。
+printf '%s\t%s\n' "$PLUGIN_SHA" "$PLUGIN_SUBJECT" > "$SCRIPT_DIR/.deployed-plugin"
+echo "[INFO] Deployed plugin: $HEAD_DESC"
 
 
 # ---------------------------------------------------------------------------

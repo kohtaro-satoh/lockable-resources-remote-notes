@@ -4,8 +4,6 @@ set -euo pipefail
 RUN_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$RUN_SCRIPT_DIR/lib/common.sh"
 
-SKIP_START=false
-CLEAN_START=false
 ONLY="all"
 ORIGINAL_ARGS=("$@")
 
@@ -105,12 +103,11 @@ usage() {
 Usage: ./run-e2e.sh [options]
 
 Environment:
-  PLUGIN_DIR            Required unless --skip-start is used.
-                        Passed to start.sh to locate lockable-resources-plugin.
+  PLUGIN_DIR            Required. Passed to start.sh to locate lockable-resources-plugin.
 
 Options:
-  --skip-start          Do not call ./start.sh before scenarios.
-  --clean-start         Call ./start.sh --clean before scenarios.
+  (no start options)    Every run rebuilds and redeploys from the plugin repo's committed HEAD,
+                        so a report always describes a state that can be reproduced.
   --only <name>         Run specific scenario or group.
                         mutual-peer | fan-in-contention | server-self-use |
                         mixed-local-remote | skip-if-locked | three-way-mesh |
@@ -134,14 +131,6 @@ format_command_line() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --skip-start)
-      SKIP_START=true
-      shift
-      ;;
-    --clean-start)
-      CLEAN_START=true
-      shift
-      ;;
     --only)
       ONLY="${2:-}"
       if [[ -z "$ONLY" ]]; then
@@ -174,11 +163,7 @@ if [[ "$is_valid_only" == false ]]; then
   exit 2
 fi
 
-if [[ "$SKIP_START" == true && "$CLEAN_START" == true ]]; then
-  err "--skip-start and --clean-start cannot be used together"
-  exit 2
-fi
-
+require_clean_harness
 require_command curl
 require_command docker
 require_command python3
@@ -189,23 +174,17 @@ log "E2E run id: $RUN_ID"
 log "Results dir: $RESULTS_DIR"
 log "Report file: $REPORT_FILE"
 
-if [[ "$SKIP_START" == false ]]; then
-  if [[ -z "${PLUGIN_DIR:-}" ]]; then
-    err "PLUGIN_DIR is required when run-e2e.sh starts controllers."
-    err "Example: PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh"
-    exit 2
-  fi
-
-  log "Starting Jenkins controllers via start.sh"
-  log "Using PLUGIN_DIR=$PLUGIN_DIR"
-  if [[ "$CLEAN_START" == true ]]; then
-    PLUGIN_DIR="$PLUGIN_DIR" "$RUN_SCRIPT_DIR/start.sh" --clean
-  else
-    PLUGIN_DIR="$PLUGIN_DIR" "$RUN_SCRIPT_DIR/start.sh"
-  fi
-else
-  log "Skipping start.sh (requested by --skip-start)"
+# Always a clean start: the containers are rebuilt from the plugin repo's committed HEAD, so the
+# SHA this report carries is the one that was actually measured. start.sh refuses a dirty tree.
+if [[ -z "${PLUGIN_DIR:-}" ]]; then
+  err "PLUGIN_DIR is required."
+  err "Example: PLUGIN_DIR=../../../lockable-resources-plugin ./run-e2e.sh"
+  exit 2
 fi
+
+log "Starting Jenkins controllers via start.sh --clean"
+log "Using PLUGIN_DIR=$PLUGIN_DIR"
+PLUGIN_DIR="$PLUGIN_DIR" "$RUN_SCRIPT_DIR/start.sh" --clean
 
 log "Waiting for controllers readiness (a/b/c)"
 if ! wait_for_controllers 240; then
@@ -331,8 +310,8 @@ log "Scenario summary: pass=$pass_count fail=$fail_count skip=$skip_count"
   echo "- executedAt: $(date '+%Y-%m-%d %H:%M:%S %z')"
   echo "- mode: ${ONLY}"
   echo "- commandLine: ${COMMAND_LINE}"
-  echo "- skipStart: ${SKIP_START}"
-  echo "- cleanStart: ${CLEAN_START}"
+  echo "- plugin: \`$(deployed_plugin_desc)\` $(deployed_plugin_subject)"
+  echo "- harness (notes): \`$(harness_desc)\`"
   echo "- reportFile: $REPORT_FILE"
   echo "- captureDir: $RESULTS_DIR"
   echo ""

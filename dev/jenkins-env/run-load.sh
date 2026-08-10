@@ -17,7 +17,6 @@ RLOCK_TO=""
 LLOCK_TO=""
 JOB_TO=""
 ALLOW_SELF=false   # loopback (self as remote target) off by default for the load suite
-SKIP_START=false
 ONLY="grid-storm"
 ORIGINAL_ARGS=("$@")
 
@@ -42,7 +41,7 @@ Usage: ./run-load.sh [options]
   --local-timeout MIN
   --job-timeout MIN
   --allow-loopback     remote target may be SELF (25% loopback; default: cross-controller only)
-  --skip-start
+  (removed: --skip-start)
   -h, --help
 USAGE
 }
@@ -59,13 +58,13 @@ while [[ $# -gt 0 ]]; do
     --local-timeout) LLOCK_TO="${2:?}"; shift 2 ;;
     --job-timeout) JOB_TO="${2:?}"; shift 2 ;;
     --allow-loopback) ALLOW_SELF=true; shift ;;
-    --skip-start) SKIP_START=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) err "Unknown option: $1"; usage; exit 2 ;;
   esac
 done
 
 require_command curl
+require_clean_harness
 require_command docker
 require_command python3
 
@@ -94,9 +93,16 @@ JOB_NAME="grid-storm"
 log "Load run id: $RUN_ID  preset=$PRESET jobs/ctrl=$JOBS_PER_CONTROLLER iter=$ITER sleep=${SLEEP_SEC}s loopback=$ALLOW_SELF"
 log "Results dir: $RESULTS_DIR"
 
-if [[ "$SKIP_START" == false ]]; then
-  log "Assuming controllers already started (use start.sh separately). Proceeding to readiness check."
+# Always a clean start. This harness used to assume the containers were already running, which meant
+# it measured whatever happened to be deployed - and labelled the report with the plugin repo's HEAD
+# at analysis time, which is not the same thing. Rebuild, then measure, then report the deployed SHA.
+if [[ -z "${PLUGIN_DIR:-}" ]]; then
+  err "PLUGIN_DIR is required."
+  err "Example: PLUGIN_DIR=../../../lockable-resources-plugin ./run-load.sh --preset stress"
+  exit 2
 fi
+log "Starting Jenkins controllers via start.sh --clean"
+PLUGIN_DIR="$PLUGIN_DIR" "$RUN_SCRIPT_DIR/start.sh" --clean
 if ! wait_for_controllers_with_d 240; then
   err "Controllers a/b/c/d not all ready"; exit 10
 fi
@@ -323,15 +329,9 @@ log "Analyzing"
 # Prefer the venv python (has matplotlib for PNG plots) if it exists
 PY="python3"
 if [[ -x "$RUN_SCRIPT_DIR/../.venv/bin/python" ]]; then PY="$RUN_SCRIPT_DIR/../.venv/bin/python"; fi
-# Which repo was the deployed hpi built from? PLUGIN_DIR (same convention as start.sh /
-# run-e2e.sh) wins; otherwise assume the sibling default. Without this the report labels the
-# run with the default repo's HEAD even when another clone was deployed.
-if [[ -n "${PLUGIN_DIR:-}" ]]; then
-  PLUGIN_REPO_FOR_LABEL="$(cd "$RUN_SCRIPT_DIR" && cd "$PLUGIN_DIR" && pwd)"
-else
-  PLUGIN_REPO_FOR_LABEL="$RUN_SCRIPT_DIR/../../../lockable-resources-plugin"
-fi
-PLUGIN_COMMIT="$(git -C "$PLUGIN_REPO_FOR_LABEL" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+# What was actually deployed, recorded by start.sh at deploy time - not the repo's HEAD now.
+PLUGIN_COMMIT="$(deployed_plugin_desc)"
+HARNESS_COMMIT="$(harness_desc)"
 "$PY" "$RUN_SCRIPT_DIR/lib/analyze_load.py" \
   --events "$EVENTS_FILE" \
   --results "$SUMMARY_FILE" \
@@ -341,7 +341,7 @@ PLUGIN_COMMIT="$(git -C "$PLUGIN_REPO_FOR_LABEL" rev-parse --short HEAD 2>/dev/n
   --out-overlaps "$RESULTS_DIR/overlaps.txt" \
   --out-classification "$RESULTS_DIR/job-classification.csv" \
   --report "$REPORT_FILE" \
-  --run-id "$RUN_ID" --preset "$PRESET" \
+  --run-id "$RUN_ID" --preset "$PRESET" --harness-commit "$HARNESS_COMMIT" \
   --jobs-per-controller "$JOBS_PER_CONTROLLER" --iter "$ITER" \
   --sleep "$SLEEP_SEC" --remote-timeout "$RLOCK_TO" --local-timeout "$LLOCK_TO" \
   --job-timeout "$JOB_TO" --loopback "$ALLOW_SELF" --plugin-commit "$PLUGIN_COMMIT" \
