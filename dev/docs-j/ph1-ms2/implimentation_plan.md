@@ -97,7 +97,7 @@
 > Phase A は既にコミット済みのため、リベースせず **D1/D2 の前**に積む
 > （A を先に置いた理由「以降の機能追加が同じファイルに触る」は B/C 完了済みの今は当てはまらない）。
 
-- [ ] `Enforce the allocate timeout of a queued remote request`
+- [x] `Enforce the allocate timeout of a queued remote request`
 - **対象:** `LockableResourcesManager#queueRemote()` / `#getNextQueuedContext()`
 - **内容:** remote のキューエントリは deadline を正しく計算するが、**それを評価しに来る起床を予約しない**。
   結果 `timeoutForAllocateResource` は待ち時間の上限として機能せず、
@@ -370,6 +370,7 @@ D1/D2   すべての実装コミットの後（挙動が確定してから書く
 
 | 日付 | 内容 |
 |---|---|
+| 2026-08-11 | **A6 完了**（`761f993`）。E2E 拡充の過程で発見した「remote の allocate timeout が期限どおりに発火しない」を修正。`queueRemote()` に起床予約を追加し、`getNextQueuedContext()` の最早期限計算を両キューにまたがるものにした（`scheduleTimeoutAt()` が貼り直し前にキャンセルするため、後者が無いと remote の起床が消える）。回帰テスト `queuedRequestTimesOutOnItsOwnDeadlineWithoutOutsideHelp` は **`checkTimeouts()` を呼ばない** — 既存テストはこれを手で呼んでおり、本番コードが決してやらないことを代行して緑になっていた。検証: run-mvn-verify **BUILD SUCCESS 433/0/1skip・全ゲート ok**（`20260811104146-mvn-verify.md`）、run-e2e **32/32 PASS**（`20260811101418-e2e-test.md`）。実機での効果: 期限 124s に対し修正前 183s（59 秒遅れ）→ **134s（10 秒）**、保持者は 184 秒保持し続けたまま。**E2E ハーネスも全面リファクタし境界シリーズ B01〜B07 を追加**（notes `010afa8`）。S18 は holder 保持を期限 +60 秒にして「期限で失敗」と「解放で失敗」を区別できるようにし、CP08 をハード判定にした（旧設計では両者が近く構造的に区別できなかった） |
 | 2026-08-08 (3) | issue #1025 本文の更新を取りやめ。並行作業と完了条件を「PR 本文に乖離セクションを書く／提出後に #1025 へ導線コメント」に差し替え |
 | 2026-08-10 (3) | **Phase C 検証完了。** run-mvn-verify **BUILD SUCCESS 432/0/1skip・全ゲート ok**（`20260810192956-mvn-verify.md`、plugin `aa0c391`）、run-e2e **21/21 PASS**（`20260810200900-e2e-test.md`）、run-load stress **183 SUCCESS / 17 クリーン LOCK_WAIT_TIMEOUT・overlap 0・HUNG 0**（`20260810202423-load-test.md`）。実装で 1 件修正: `RemoteCatalogCache.requestRefresh` の `@SuppressFBWarnings` が不要と SpotBugs に指摘され除去（C3 に畳んだ）。**ハーネス側のバグ 2 件も修正**（いずれも `COMMON_ROOT_DIR` が `dev/jenkins-env` である前提の取り違え）: 未コミット検査の除外パススペックが効かず E2E が自分のレポートで起動拒否／`.deployed-plugin` の参照が 1 階層ずれてレポートの plugin が `unknown` に。**E2E は既存 21 本のみで、S19〜S22 は未着手** |
 | 2026-08-10 (2) | **B5・C1〜C4 実装完了。** plugin コミット 5 本（`6bbe86c` B5 / `34c959f` C1 / `b759ab7` C2 / `e68b50d` C3 / `4ddc7d3` C4）。B5 は当初 C2 の後にコミットしたが、**計画順に合わせて B4 の直後へ並べ替え**（Remote タブへの「無効」表示だけは C2 に吸収。ツリー差分ゼロを確認）。B5・C1・C2 は各コミット単体でテストが緑であることを `target/` を消して確認済み |

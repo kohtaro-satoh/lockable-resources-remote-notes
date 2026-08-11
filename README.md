@@ -69,9 +69,14 @@ Per-cycle result summaries: [LRR_RESULT_P1_M1C](dev/docs-e/ph1-ms1/LRR_RESULT_P1
 [LRR_RESULT_P1_M1I](dev/docs-e/ph1-ms1/LRR_RESULT_P1_M1I.md) ([j](dev/docs-j/ph1-ms1/LRR_RESULT_P1_M1I.md)).
 
 E2E test specification (unified across milestones; each test item is tagged
-P1M1 / P1M1A / P1M1B):
+P1M1 / P1M1A / P1M1B / Boundary) + the latest run report:
 
 - [E2E_TEST_SPECIFICATION](dev/docs-e/E2E_TEST_SPECIFICATION.md) ([j](dev/docs-j/E2E_TEST_SPECIFICATION.md))
+- [BOUNDARY_COVERAGE_ANALYSIS](dev/docs-j/BOUNDARY_COVERAGE_ANALYSIS.md) — what the suite covers on the
+  data / time / scale axes, what it does not, and the findings that came out of closing the gaps.
+  This is how the A6 defect (a queued remote request never timing out on its own deadline) was found
+- latest run (plugin `761f993`): [20260811101418-e2e-test.md](dev/reports/20260811101418-e2e-test.md) —
+  32/32 PASS (20 function / 4 data / 6 time / 2 scale)
 
 High-load / stress test specification (a separate suite; this is how the M1I regression was found) + the latest run report:
 
