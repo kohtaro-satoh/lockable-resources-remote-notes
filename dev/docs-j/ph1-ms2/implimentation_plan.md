@@ -90,6 +90,34 @@
   `error_queueDoesNotExist` で落ちるため、新しい i18n キーを増やす必要がない）
 - **設計書:** §6-3 / §6-5 / §6-6
 
+### A6. remote の allocate timeout が期限どおりに発火しない
+
+> **2026-08-11 に追加。** 計画時には無かった項目。**E2E 拡充の過程で発見**したもので、
+> A1〜A5 とは違い **#1055 でマージ済みの upstream コードに存在する**バグ。
+> Phase A は既にコミット済みのため、リベースせず **D1/D2 の前**に積む
+> （A を先に置いた理由「以降の機能追加が同じファイルに触る」は B/C 完了済みの今は当てはまらない）。
+
+- [ ] `Enforce the allocate timeout of a queued remote request`
+- **対象:** `LockableResourcesManager#queueRemote()` / `#getNextQueuedContext()`
+- **内容:** remote のキューエントリは deadline を正しく計算するが、**それを評価しに来る起床を予約しない**。
+  結果 `timeoutForAllocateResource` は待ち時間の上限として機能せず、
+  **他の理由でキュー整備が走ったときにしか発火しない**（実測では保持者の解放時）。
+  ローカル経路は `queueContext()` と `getNextQueuedContext()` の 2 箇所で `scheduleTimeoutAt()` を呼んでいる。
+  1. `queueRemote()` に同じ「期限が現行より早ければ起床予約」を追加
+  2. `getNextQueuedContext()` の最早期限計算を**両キューにまたがる**ものにする（`earliestRemoteDeadline()` 新設）
+- **2 が必須な理由:** `scheduleTimeoutAt()` は**貼り直す前に既存タスクをキャンセル**する。
+  ローカルキューだけで再計算すると、remote が頼っていた起床を消して二度と戻さない。1 だけでは直らない
+- **影響:** リソースが解放されない限り、有限の待ちを要求したクライアントが無期限に待つ。
+  STALE 保持（管理者対応待ち）や長時間ビルドが相手だと実質無効
+- **テスト:** `queuedRequestTimesOutOnItsOwnDeadlineWithoutOutsideHelp` —
+  **`checkTimeouts()` を呼ばず release もしない**。既存の timeout テストはこれを手で呼んでおり、
+  本番コードが決してやらないことをテストが代行していたため緑のままだった。
+  修正前: `expected: <FAILED> but was: <QUEUED>`（500ms の期限に 10 秒待っても QUEUED）
+- **E2E:** S18 に CP08（期限どおりに発火したか）を**ハード判定**で追加。
+  旧 S18 は holder 保持 150s / 期限 130s と両者が近く、判定も `>= 120s` だったため
+  「期限で失敗」と「解放で失敗」を構造的に区別できなかった。holder 保持を期限 +60 秒にして両者を離した
+- **発見の経緯:** `BOUNDARY_COVERAGE_ANALYSIS.md` §4 F1（証拠 4 点）
+
 ---
 
 ## Phase B: 機能追加（LR 画面以外、5 コミット）
@@ -308,7 +336,7 @@ plugin のコミットには含めない。
 ## 完了条件
 
 - [ ] `dev/run-mvn-verify.sh` — BUILD SUCCESS、全ゲート ok（spotless / spotbugs / checkstyle / pmd）
-- [ ] `dev/jenkins-env/run-e2e.sh --clean-start` — 全 25 シナリオ PASS（既存 21 ＋ 新規 4）
+- [ ] `dev/jenkins-env/run-e2e.sh` — 全 32 シナリオ PASS（S01〜S22 ＋ 境界 B01〜B07 ＋ D01〜D03）
 - [ ] `dev/jenkins-env/run-load.sh --preset stress` — overlap 0 / HUNG 0。
       **LR ページが正式な挙動で更新されている状態のまま**計測する（§9.3）。
       `/resources` を **10s 間隔で相互に引く負荷を含める**（§10 Q5 で「含める」に確定。TTL 短縮で頻度が 6 倍）。
@@ -325,6 +353,7 @@ plugin のコミットには含めない。
 
 ```
 A1..A5  独立（ただし A2 → A3 の順に入れると 404 の文言調整が 1 回で済む）
+A6      独立。B/C 完了後に発見したため、リベースせず D1/D2 の前に積む
 B1      独立
 B2      A2 の後（release まわりのテストと干渉しない順序）
 B3      独立。ただし C4 が B3 に依存
