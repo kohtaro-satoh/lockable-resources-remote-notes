@@ -101,43 +101,73 @@ require_clean_harness() {
   fi
 }
 
-wait_for_url() {
-  local url="$1"
-  local timeout_seconds="$2"
+# poll_until <timeout_seconds> <command...>
+#
+# The one polling loop. Four helpers below used to carry their own copy of "run this every 2s until
+# it works or the clock runs out", each with its own drift and its own idea of the interval.
+# Returns 0 as soon as the command succeeds, 1 on timeout.
+POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-2}"
+
+poll_until() {
+  local timeout_seconds="$1"
+  shift
   local elapsed=0
 
-  while [[ "$elapsed" -lt "$timeout_seconds" ]]; do
-    if curl -fsS "$url" >/dev/null 2>&1; then
+  _POLL_ABORT=""
+  while ((elapsed < timeout_seconds)); do
+    if "$@"; then
       return 0
     fi
-    sleep 2
-    elapsed=$((elapsed + 2))
+    # A probe can end the wait early when it learns the answer will never come (a cancelled queue
+    # item will not become executable no matter how long we look at it).
+    [[ -n "$_POLL_ABORT" ]] && return 2
+    sleep "$POLL_INTERVAL_SECONDS"
+    elapsed=$((elapsed + POLL_INTERVAL_SECONDS))
   done
 
   return 1
 }
 
-wait_for_controllers() {
-  local timeout_seconds="${1:-180}"
-  local ok=true
-
-  for url in "$CONTROLLER_A_URL" "$CONTROLLER_B_URL" "$CONTROLLER_C_URL"; do
-    if wait_for_url "$url/login" "$timeout_seconds"; then
-      log "Controller ready: $url"
-    else
-      err "Controller not ready within ${timeout_seconds}s: $url"
-      ok=false
-    fi
-  done
-
-  [[ "$ok" == true ]]
+wait_for_url() {
+  local url="$1"
+  local timeout_seconds="$2"
+  poll_until "$timeout_seconds" curl -fsS -o /dev/null "$url"
 }
 
-wait_for_controllers_with_d() {
-  local timeout_seconds="${1:-180}"
-  local ok=true
+# controller_url <a|b|c|d>
+controller_url() {
+  case "$1" in
+    a) printf '%s' "$CONTROLLER_A_URL" ;;
+    b) printf '%s' "$CONTROLLER_B_URL" ;;
+    c) printf '%s' "$CONTROLLER_C_URL" ;;
+    d) printf '%s' "$CONTROLLER_D_URL" ;;
+    *) err "Unknown controller: $1"; return 1 ;;
+  esac
+}
 
-  for url in "$CONTROLLER_A_URL" "$CONTROLLER_B_URL" "$CONTROLLER_C_URL" "$CONTROLLER_D_URL"; do
+# controller_internal_url <a|b|c|d> - the address controllers reach each other by, inside the
+# compose network. A remote connection configured with the host-side URL would not resolve.
+controller_internal_url() {
+  case "$1" in
+    a) printf '%s' "$CONTROLLER_A_INTERNAL_URL" ;;
+    b) printf '%s' "$CONTROLLER_B_INTERNAL_URL" ;;
+    c) printf '%s' "$CONTROLLER_C_INTERNAL_URL" ;;
+    d) printf '%s' "$CONTROLLER_D_INTERNAL_URL" ;;
+    *) err "Unknown controller: $1"; return 1 ;;
+  esac
+}
+
+# wait_for_controllers <timeout> [keys...] - defaults to a b c.
+wait_for_controllers() {
+  local timeout_seconds="${1:-180}"
+  shift || true
+  local keys=("$@")
+  ((${#keys[@]} == 0)) && keys=(a b c)
+
+  local ok=true
+  local key url
+  for key in "${keys[@]}"; do
+    url="$(controller_url "$key")"
     if wait_for_url "$url/login" "$timeout_seconds"; then
       log "Controller ready: $url"
     else
@@ -672,83 +702,127 @@ trigger_job() {
   printf '%s\n' "$location"
 }
 
+_probe_queue_executable() {
+  local queue_url="$1"
+  local json
+  json="$(curl -fsS -u "$JENKINS_USER:$JENKINS_PASSWORD" "$queue_url/api/json")" || return 1
+
+  _POLL_RESULT="$(json_extract "$json" 'executable.url')"
+  [[ -n "$_POLL_RESULT" ]] && return 0
+
+  local cancelled
+  cancelled="$(json_extract "$json" 'cancelled')"
+  if [[ "$cancelled" == "True" || "$cancelled" == "true" ]]; then
+    _POLL_ABORT="cancelled"
+  fi
+  return 1
+}
+
 wait_for_queue_executable() {
   local queue_url="$1"
   local timeout_seconds="$2"
-  local elapsed=0
 
-  while [[ "$elapsed" -lt "$timeout_seconds" ]]; do
-    local json
-    json="$(curl -fsS -u "$JENKINS_USER:$JENKINS_PASSWORD" "$queue_url/api/json")"
-    local executable_url
-    executable_url="$(json_extract "$json" 'executable.url')"
-    local cancelled
-    cancelled="$(json_extract "$json" 'cancelled')"
+  if poll_until "$timeout_seconds" _probe_queue_executable "$queue_url"; then
+    printf '%s\n' "$_POLL_RESULT"
+    return 0
+  fi
 
-    if [[ -n "$executable_url" ]]; then
-      printf '%s\n' "$executable_url"
-      return 0
-    fi
-    if [[ "$cancelled" == "True" || "$cancelled" == "true" ]]; then
-      err "Queue item was cancelled: $queue_url"
-      return 1
-    fi
-
-    sleep 2
-    elapsed=$((elapsed + 2))
-  done
-
-  err "Timeout waiting queue executable: $queue_url"
+  if [[ -n "$_POLL_ABORT" ]]; then
+    err "Queue item was cancelled: $queue_url"
+  else
+    err "Timeout waiting queue executable: $queue_url"
+  fi
   return 1
+}
+
+_probe_build_finished() {
+  local build_url="$1"
+  local json
+  json="$(curl -fsS -u "$JENKINS_USER:$JENKINS_PASSWORD" "$build_url/api/json")" || return 1
+
+  local building
+  building="$(json_extract "$json" 'building')"
+  [[ "$building" == "False" || "$building" == "false" ]] || return 1
+
+  _POLL_RESULT="$(json_extract "$json" 'result')"
+  return 0
 }
 
 wait_for_build_result() {
   local build_url="$1"
   local timeout_seconds="$2"
-  local elapsed=0
 
-  while [[ "$elapsed" -lt "$timeout_seconds" ]]; do
-    local json
-    json="$(curl -fsS -u "$JENKINS_USER:$JENKINS_PASSWORD" "$build_url/api/json")"
-    local building
-    building="$(json_extract "$json" 'building')"
-
-    if [[ "$building" == "False" || "$building" == "false" ]]; then
-      printf '%s\n' "$(json_extract "$json" 'result')"
-      return 0
-    fi
-
-    sleep 2
-    elapsed=$((elapsed + 2))
-  done
+  if poll_until "$timeout_seconds" _probe_build_finished "$build_url"; then
+    printf '%s\n' "$_POLL_RESULT"
+    return 0
+  fi
 
   err "Timeout waiting build completion: $build_url"
   return 1
+}
+
+_probe_console_contains() {
+  curl -fsS -u "$JENKINS_USER:$JENKINS_PASSWORD" "$1/consoleText" 2>/dev/null | grep -Fq "$2"
 }
 
 wait_for_console_contains() {
   local build_url="$1"
   local needle="$2"
   local timeout_seconds="$3"
-  local elapsed=0
-
-  while [[ "$elapsed" -lt "$timeout_seconds" ]]; do
-    local console
-    console="$(curl -fsS -u "$JENKINS_USER:$JENKINS_PASSWORD" "$build_url/consoleText")"
-    if printf '%s' "$console" | grep -Fq "$needle"; then
-      return 0
-    fi
-    sleep 2
-    elapsed=$((elapsed + 2))
-  done
-
-  return 1
+  poll_until "$timeout_seconds" _probe_console_contains "$build_url" "$needle"
 }
 
 save_console_log() {
   local build_url="$1"
   local output_file="$2"
   curl -fsS -u "$JENKINS_USER:$JENKINS_PASSWORD" "$build_url/consoleText" >"$output_file"
+}
+
+# console_value <console_file> <NAME> - the value a pipeline echoed as `NAME=...`.
+# Values can contain '=' (and commas, for a multi-resource variable), so everything after the first
+# '=' is the value.
+console_value() {
+  grep -E "^$2=" "$1" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r'
+}
+
+# abort_build <base_url> <build_url> - what a user pressing the red X does.
+#
+# Aborting is the most common way a lock's lifetime ends unexpectedly, and it is the one path that
+# never runs the pipeline's own next line - so whether the lease is released depends entirely on the
+# step's cleanup. Scenarios need to be able to cause it.
+abort_build() {
+  local base_url="$1"
+  local build_url="${2%/}"
+
+  local cookie_jar
+  cookie_jar="$(mktemp)"
+  local crumb_header
+  crumb_header="$(get_crumb_header "$base_url" "$cookie_jar")"
+
+  if [[ -n "$crumb_header" ]]; then
+    curl -sS -u "$JENKINS_USER:$JENKINS_PASSWORD" -b "$cookie_jar" -H "$crumb_header" \
+      -X POST -o /dev/null "$build_url/stop" || true
+  else
+    curl -sS -u "$JENKINS_USER:$JENKINS_PASSWORD" -b "$cookie_jar" \
+      -X POST -o /dev/null "$build_url/stop" || true
+  fi
+  rm -f "$cookie_jar"
+}
+
+# wait_for_resource_free <controller_key> <resource> <timeout_seconds>
+# Succeeds as soon as the resource carries no lock, lease or reservation.
+wait_for_resource_free() {
+  local key="$1"
+  local name="$2"
+  local timeout="$3"
+  poll_until "$timeout" _probe_resource_free "$key" "$name"
+}
+
+_probe_resource_free() {
+  local state
+  state="$(resource_state "$1" "$2")" || return 1
+  [[ "$(resource_field "$state" LOCKED)" == "false" &&
+     -z "$(resource_field "$state" REMOTE_LOCK_ID)" ]]
 }
 
 trigger_and_resolve_build_url() {
@@ -822,6 +896,393 @@ println(\"OK: forcedServerId cleared on $base_url\")
 " "OK: forcedServerId cleared" >/dev/null
 }
 
+# ---------------------------------------------------------------------------
+# Pair setup
+#
+# Standing a client up against a server takes five calls in a fixed order - expose the resource,
+# verify it, issue a token on the server, store it as a credential on the client, point the client
+# at the server - and every scenario but one repeated all five with its own prefix. The order is not
+# arbitrary (the credential cannot exist before the token, the client config cannot be verified
+# before it is written), so each copy was a chance to get it subtly wrong.
+#
+# setup_remote_pair <prefix> <client_key> <server_key> <resource> [auth_mode]
+# Leaves the credentials id in REMOTE_PAIR_CREDENTIALS_ID.
+# ---------------------------------------------------------------------------
+
+setup_remote_pair() {
+  local prefix="$1"
+  local client_key="$2"
+  local server_key="$3"
+  local resource_name="$4"
+  local auth_mode="${5:-authenticated}"
+
+  local client_url server_url server_internal_url
+  client_url="$(controller_url "$client_key")"
+  server_url="$(controller_url "$server_key")"
+  server_internal_url="$(controller_internal_url "$server_key")"
+
+  REMOTE_PAIR_CREDENTIALS_ID="${prefix}-${client_key}-for-${server_key}"
+
+  configure_remote_server "$server_url" "$resource_name" "remote-enabled" "$auth_mode"
+  verify_remote_server_config "$server_url" "$resource_name" "$auth_mode"
+
+  local token
+  token="$(issue_user_api_token "$server_url" "admin" "e2e-${prefix}-${server_key}-token")"
+  upsert_username_password_credential "$client_url" "$REMOTE_PAIR_CREDENTIALS_ID" "admin" "$token"
+
+  configure_remote_client_for_server \
+    "$client_url" "jenkins-${client_key}" "$server_key" "$server_internal_url" "$REMOTE_PAIR_CREDENTIALS_ID"
+  verify_remote_client_for_server \
+    "$client_url" "jenkins-${client_key}" "$server_key" "$server_internal_url" "$REMOTE_PAIR_CREDENTIALS_ID"
+}
+
+# expose_resource <server_key> <resource> - an additional exposed resource on an already configured
+# server, for scenarios that need more than the one setup_remote_pair created.
+expose_resource() {
+  local server_key="$1"
+  local resource_name="$2"
+  configure_remote_server "$(controller_url "$server_key")" "$resource_name" "remote-enabled" "authenticated"
+}
+
+# ---------------------------------------------------------------------------
+# The remote API, spoken directly
+#
+# Most scenarios drive the API through lock(), which is the right level for behaviour but the wrong
+# one for boundaries: the client never sends a malformed body, never asks about a lease it does not
+# own, and never posts a megabyte. The contract those cases exercise - which status code, which
+# errorCode - is only reachable by making the request itself.
+#
+# Bodies are passed as files rather than strings, because one of the boundaries under test is the
+# 1 MiB body cap and a megabyte does not belong on a command line.
+# ---------------------------------------------------------------------------
+
+REMOTE_API_BASE="/lockable-resources/remote/v1"
+
+# api_request <method> <server_key> <token> <path> <body_file|-> <out_file> [curl args...]
+# Prints the HTTP status code; the response body lands in out_file.
+api_request() {
+  local method="$1"
+  local key="$2"
+  local token="$3"
+  local path="$4"
+  local body="$5"
+  local out="$6"
+  shift 6
+
+  local args=(-sS -o "$out" -w '%{http_code}'
+    -u "admin:$token"
+    -H 'Accept: application/json'
+    -X "$method")
+  if [[ "$body" != "-" ]]; then
+    args+=(-H 'Content-Type: application/json' --data-binary "@$body")
+  fi
+
+  curl "${args[@]}" "$@" "$(controller_url "$key")${REMOTE_API_BASE}${path}"
+}
+
+# api_acquire <server_key> <token> <json_body> <out_file> - body as a string, for the common case.
+api_acquire() {
+  local body_file
+  body_file="$(mktemp)"
+  printf '%s' "$3" >"$body_file"
+  api_request POST "$1" "$2" "/acquire/" "$body_file" "$4"
+  rm -f "$body_file"
+}
+
+# api_acquire_file <server_key> <token> <body_file> <out_file> - for bodies too big to pass inline.
+api_acquire_file() {
+  api_request POST "$1" "$2" "/acquire/" "$3" "$4"
+}
+
+api_poll() {
+  api_request GET "$1" "$2" "/acquire/$3/" - "$4"
+}
+
+api_heartbeat() {
+  api_request POST "$1" "$2" "/lease/$3/heartbeat" - "$4"
+}
+
+api_release() {
+  api_request POST "$1" "$2" "/lease/$3/release" - "$4"
+}
+
+api_resources() {
+  api_request GET "$1" "$2" "/resources/" - "$3"
+}
+
+# api_field <response_file> <key> - a top-level field of a JSON response.
+api_field() {
+  json_extract "$(cat "$1")" "$2" 2>/dev/null || true
+}
+
+# remote_record_state <server_key> <lock_id> - the server's view of a record: a state name, or GONE
+# once the record has been cleaned up. GONE and a state are different answers and scenarios turn on
+# the difference, so it is spelled rather than left empty.
+remote_record_state() {
+  run_groovy_script "$(controller_url "$1")" "
+import org.jenkins.plugins.lockableresources.remote.RemoteLockManager
+
+def rec = RemoteLockManager.get().find('$2')
+println('RECORD=' + (rec == null ? 'GONE' : rec.getState().name()))
+" | tr -d '\r' | awk -F= '/^RECORD=/{print $2}' | tail -n1
+}
+
+# scenario_check_api <label> <expected_status> <actual_status> <expected_error_code> <response_file>
+# A rejection is a status *and* an errorCode; checking only the status lets a 400 that means
+# something else entirely pass for the one the scenario asked about.
+scenario_check_api() {
+  local label="$1"
+  local want_status="$2"
+  local got_status="$3"
+  local want_code="$4"
+  local response_file="$5"
+
+  local got_code=""
+  [[ -s "$response_file" ]] && got_code="$(api_field "$response_file" errorCode)"
+
+  if [[ -z "$want_code" ]]; then
+    scenario_check "$label" "HTTP status" "$want_status" "$got_status"
+    return
+  fi
+
+  scenario_check "$label" "HTTP status + errorCode" \
+    "$want_status/$want_code" "$got_status/${got_code:-<none>}"
+}
+
+# ---------------------------------------------------------------------------
+# Relay batches
+#
+# The topology scenarios - mesh, chain, fan-in, diamond - all do the same thing: start one job per
+# controller, wait for every one, then assert that each finished and each got into its lock body.
+# Written out longhand that was four near-identical blocks, and each of them collapsed the whole
+# batch into a single `[[ $ar == SUCCESS && $br == SUCCESS && $cr == SUCCESS ]] || exit 1`, which
+# tells you a topology failed but not which leg of it.
+#
+#   relay_reset
+#   relay_trigger a d01-a A_ACQUIRED
+#   relay_trigger b d01-b B_ACQUIRED
+#   relay_await_all 900
+# ---------------------------------------------------------------------------
+
+_RELAY_KEYS=()
+_RELAY_JOBS=()
+_RELAY_MARKERS=()
+_RELAY_URLS=()
+
+relay_reset() {
+  _RELAY_KEYS=()
+  _RELAY_JOBS=()
+  _RELAY_MARKERS=()
+  _RELAY_URLS=()
+}
+
+# relay_trigger <controller_key> <job_name> [console_marker]
+relay_trigger() {
+  local key="$1"
+  local job="$2"
+  local marker="${3:-}"
+  local url
+  url="$(trigger_and_resolve_build_url "$(controller_url "$key")" "$job" 120)"
+  _RELAY_KEYS+=("$key")
+  _RELAY_JOBS+=("$job")
+  _RELAY_MARKERS+=("$marker")
+  _RELAY_URLS+=("$url")
+}
+
+# relay_await_all [timeout_seconds] - one checkpoint per leg, so a failed topology names its leg.
+relay_await_all() {
+  local timeout="${1:-900}"
+  local i key job marker url console result
+
+  for i in "${!_RELAY_URLS[@]}"; do
+    key="${_RELAY_KEYS[$i]}"
+    job="${_RELAY_JOBS[$i]}"
+    marker="${_RELAY_MARKERS[$i]}"
+    url="${_RELAY_URLS[$i]}"
+    console="$SCENARIO_DIR/${job}-console.txt"
+
+    result="$(wait_for_build_result "$url" "$timeout")" || result="TIMEOUT"
+    save_console_log "$url" "$console" || true
+    scenario_artifact "$job console (on $key)" "$console"
+
+    scenario_check "$job on $key finished" "Build API" "SUCCESS" "$result"
+    if [[ -n "$marker" ]]; then
+      scenario_check_contains "$job on $key entered its lock body" "$console" "$marker"
+    fi
+
+    scenario_fact "${job}_url" "$url"
+    scenario_fact "${job}_result" "$result"
+  done
+}
+
+# ---------------------------------------------------------------------------
+# Resource state
+#
+# "Is the resource free again afterwards?" is the check that catches a leaked lease, and almost every
+# scenario ended up asking it with its own inline Groovy - each one looking at a slightly different
+# subset (some checked isLocked, some getRemoteLockedBy, some both). A leaked lease that only shows
+# up in the field nobody looked at is exactly the bug this check exists to find, so it asks once,
+# here, and looks at all of them.
+# ---------------------------------------------------------------------------
+
+# resource_state <controller_key> <resource> - newline separated key=value facts.
+resource_state() {
+  local key="$1"
+  local name="$2"
+  run_groovy_script "$(controller_url "$key")" "
+import org.jenkins.plugins.lockableresources.LockableResourcesManager
+
+def r = LockableResourcesManager.get().fromName('$name')
+println('EXISTS=' + (r != null))
+println('LOCKED=' + (r != null && r.isLocked()))
+println('QUEUED=' + (r != null && r.isQueued()))
+println('REMOTE_LOCK_ID=' + (r == null ? '' : (r.getRemoteLockedBy() ?: '')))
+println('RESERVED_BY=' + (r == null ? '' : (r.getReservedBy() ?: '')))
+" | tr -d '\r'
+}
+
+# resource_field <state> <key>
+resource_field() {
+  printf '%s\n' "$1" | awk -F= -v k="$2" '$1 == k { print substr($0, length(k) + 2); exit }'
+}
+
+# scenario_check_resource_free <label> <controller_key> <resource>
+# Free means all of: not locked, no remote lease, not reserved. Checking one of the three is how a
+# leak hides.
+scenario_check_resource_free() {
+  local label="$1"
+  local key="$2"
+  local name="$3"
+
+  local state
+  state="$(resource_state "$key" "$name")"
+  local one_line
+  one_line="$(printf '%s' "$state" | tr '\n' ' ')"
+
+  if [[ "$(resource_field "$state" LOCKED)" == "false" &&
+        -z "$(resource_field "$state" REMOTE_LOCK_ID)" &&
+        -z "$(resource_field "$state" RESERVED_BY)" ]]; then
+    scenario_record "$label" "Groovy resource state on $key" "free: not locked, no lease, not reserved" "free" "PASS"
+  else
+    scenario_record "$label" "Groovy resource state on $key" "free: not locked, no lease, not reserved" "$one_line" "FAIL"
+  fi
+}
+
+# scenario_check_resource_locked <label> <controller_key> <resource> [remote|any]
+scenario_check_resource_locked() {
+  local label="$1"
+  local key="$2"
+  local name="$3"
+  local kind="${4:-any}"
+
+  local state
+  state="$(resource_state "$key" "$name")"
+  local one_line
+  one_line="$(printf '%s' "$state" | tr '\n' ' ')"
+  local locked lease
+  locked="$(resource_field "$state" LOCKED)"
+  lease="$(resource_field "$state" REMOTE_LOCK_ID)"
+
+  if [[ "$kind" == "remote" ]]; then
+    if [[ -n "$lease" ]]; then
+      scenario_record "$label" "Groovy resource state on $key" "held by a remote lease" "lease=$lease" "PASS"
+    else
+      scenario_record "$label" "Groovy resource state on $key" "held by a remote lease" "$one_line" "FAIL"
+    fi
+  else
+    if [[ "$locked" == "true" ]]; then
+      scenario_record "$label" "Groovy resource state on $key" "locked" "locked" "PASS"
+    else
+      scenario_record "$label" "Groovy resource state on $key" "locked" "$one_line" "FAIL"
+    fi
+  fi
+}
+
+# remote_lease_id <controller_key> <resource> - empty when the resource carries no remote lease.
+remote_lease_id() {
+  resource_field "$(resource_state "$1" "$2")" REMOTE_LOCK_ID
+}
+
+# drop_resources <controller_key> <resource...> - remove resources a scenario created.
+#
+# Scenarios name their resources with a per-run stamp, which keeps two runs from colliding on a
+# name but does nothing about the pile: every run leaves its resources behind, and on a long-lived
+# container they accumulate. For a resource that is only ever addressed by name that is untidy;
+# for one addressed by *label* it is a defect, because a label acquire matches across runs and can
+# hand a scenario a resource an earlier run created. That is exactly how S08 was passing - its
+# assertion was a prefix match, so binding to the previous run's board looked identical.
+#
+# Best-effort and free-only: a resource still held is a finding for the scenario to report, not
+# something to delete out from under it.
+drop_resources() {
+  local key="$1"
+  shift
+  local names=""
+  local name
+  for name in "$@"; do
+    names+="'${name}',"
+  done
+  [[ -z "$names" ]] && return 0
+
+  run_groovy_script "$(controller_url "$key")" "
+import org.jenkins.plugins.lockableresources.LockableResourcesManager
+
+def lrm = LockableResourcesManager.get()
+[${names%,}].each { n ->
+  def r = lrm.fromName(n)
+  if (r != null && !r.isLocked() && r.getRemoteLockedBy() == null && r.getReservedBy() == null) {
+    lrm.getResources().remove(r)
+  }
+}
+lrm.save()
+println('OK')
+" >/dev/null 2>&1 || true
+}
+
+# ---------------------------------------------------------------------------
+# The scenario registry (lib/scenarios.tsv)
+# ---------------------------------------------------------------------------
+
+REGISTRY_FILE="$COMMON_SCRIPT_DIR/scenarios.tsv"
+
+registry_rows() {
+  grep -v '^#' "$REGISTRY_FILE" | grep -v '^[[:space:]]*$'
+}
+
+# registry_names [series] - in declaration order, which is also the run order.
+registry_names() {
+  local series="${1:-all}"
+  if [[ "$series" == "all" ]]; then
+    registry_rows | cut -f2
+  else
+    registry_rows | awk -F'\t' -v s="$series" '$3 == s {print $2}'
+  fi
+}
+
+# registry_field <name> <column-number>
+registry_field() {
+  registry_rows | awk -F'\t' -v n="$1" -v c="$2" '$2 == n {print $c; exit}'
+}
+
+registry_id() { registry_field "$1" 1; }
+registry_series() { registry_field "$1" 3; }
+registry_controllers() { registry_field "$1" 4; }
+registry_axis() { registry_field "$1" 5; }
+registry_summary() { registry_field "$1" 6; }
+
+registry_series_list() {
+  registry_rows | cut -f3 | awk '!seen[$0]++'
+}
+
+registry_has() {
+  registry_rows | cut -f2 | grep -Fxq "$1"
+}
+
+# The controllers a scenario needs, as separate keys: "abcd" -> a b c d
+registry_controller_keys() {
+  registry_controllers "$1" | grep -o . | tr '\n' ' '
+}
+
 configure_label_resource() {
   local base_url="$1"
   local resource_name="$2"
@@ -846,3 +1307,12 @@ lrm.save()
 println(\"OK: label resource $resource_name ($label_name) on $base_url\")
 " "OK: label resource $resource_name" >/dev/null
 }
+
+# ---------------------------------------------------------------------------
+# Sourced last: both need log/err, and scenario.sh installs an EXIT trap that must not be in place
+# while common.sh is still defining things.
+# ---------------------------------------------------------------------------
+# shellcheck source=./timings.sh
+source "$COMMON_SCRIPT_DIR/timings.sh"
+# shellcheck source=./scenario.sh
+source "$COMMON_SCRIPT_DIR/scenario.sh"

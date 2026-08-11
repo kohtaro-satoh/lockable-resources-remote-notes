@@ -30,6 +30,10 @@ lockable-resources-plugin の remote lock 機能について、次を自動検�
 | 14 | label 指定 extra のアトミック取得（main + label-extra が単一 lease で取得） | P1M1C |
 | 15 | label の quantity 未指定 = マッチ全部のロック（local "0 = all" と等価） | P1M1C |
 | 16 | リソースプロパティ env var の remote 伝搬（`VAR0_<PROP>` が body に届く） | P1M1D |
+| 17 | **データ境界**: POST /acquire の拒否契約（status + errorCode）と 1 MiB body 上限 | Boundary |
+| 18 | **データ境界**: リソース名のエンコーディング往復（空白 / 多バイト / 長名 / カンマ） | Boundary |
+| 19 | **時系列境界**: 終端レコード TTL・カタログ TTL・中断（abort）の各しきい値の内外両側 | Boundary |
+| 20 | **スケール境界**: カタログ規模に対する discovery のコストと、lock 取得への干渉 | Boundary |
 
 ---
 
@@ -57,9 +61,20 @@ lockable-resources-plugin の remote lock 機能について、次を自動検�
 | S16 | `remote-resource-properties` | リソースプロパティ env var の伝搬 | `VAR0_<PROP>` が remote body に届く（M1D 共有 env var 生成） | a, b | P1M1D |
 | S17 | `remote-unknown-rejected` | 未知/未公開リソースの acquire | 一律 404 で即時拒否＋サーバーに ephemeral 非作成（H-1 回帰） | a, b | P1M1E |
 | S18 | `remote-acquire-timeout` | 枯渇 allocate timeout（>120s）| timeout が `LOCK_WAIT_TIMEOUT` で fail-closed（404/通信失敗でない）。queued-expiry-poll-404 回帰 | a, b | P1M1I |
+| B01 | `acquire-payload-boundaries` | POST /acquire の値域 | 拒否 13 種の status+errorCode、1 MiB 上限の両側 | a, b | Boundary |
+| B02 | `lease-lifecycle-edges` | lease の状態不整合な操作 | 未知/解放済/QUEUED への heartbeat・release・poll、TERMINAL_TTL の両側 | a, b | Boundary |
+| B03 | `resource-name-boundaries` | リソース名のエンコーディング | 空白 / 多バイト / 244 文字 / カンマ入り名の往復 | a, b | Boundary |
+| B04 | `catalog-cache-ttl` | クライアント側カタログの鮮度 | TTL 内は据え置き / TTL 超で追随 / サーバー停止中も描画 | a, b | Boundary |
+| B05 | `acquire-abort-races` | ビルド中断 | QUEUED 中断＝幽霊ロック無し、ACQUIRED 中断＝STALE 前に解放 | a, b | Boundary |
+| B06 | `catalog-scale` | カタログ規模 | 100/500/2000 件の応答時間・全件性、discovery 負荷下の acquire レイテンシ | a, b | Boundary |
+| B07 | `queue-depth-scale` | 待機列の深さ | 同一リソースに 1/10/50 件並べたときの昇格スループットと公平性 | b | Boundary |
 | D01 | `fan-in-4` | A, B, C が D のリソースを競合取得 | 4 クライアント→1 サーバー キュー安定性 | a, b, c, d | P1M1 |
 | D02 | `chain-4` | A→B, B→C, C→D（独立チェーン） | n 個の一方通行リレー並走 | a, b, c, d | P1M1 |
 | D03 | `diamond` | A→(B+C), B→D, C→D（菱形依存） | 間接共有依存での deadlock 非発生 | a, b, c, d | P1M1 |
+
+> **B シリーズ（境界）について**: S/D シリーズが「機能が動くこと」を確かめるのに対し、B シリーズは
+> **値域・時間しきい値・規模**の境界を突く。設計の背景・残ギャップ・実測所見は
+> `BOUNDARY_COVERAGE_ANALYSIS.md` を参照。B01 は API を直接叩くため 21 チェックポイントを 3 秒弱で回す。
 
 **歴史的経緯**: 初期の `peer-basic` シナリオは S01/S02 に包含され廃止。旧 `fail-closed` は S07 として引き継ぎ。
 
@@ -274,29 +289,93 @@ flowchart TD
 | `jenkins-c` | `lrr-jenkins-c` | 8083 | `http://jenkins-c:8080/jenkins` | `jhc/` |
 | `jenkins-d` | `lrr-jenkins-d` | 8084 | `http://jenkins-d:8080/jenkins` | `jhd/` |
 
-S シリーズは a/b/c の 3 台、D シリーズは d を加えた 4 台を使用します。
-D シリーズはシナリオ開始前に jenkins-d の起動を確認し、未起動なら SKIP（exit 10）。
+各シナリオが必要とするコントローラーは `lib/scenarios.tsv` の `controllers` 列で宣言します。
+**run-e2e.sh は選択されたシナリオが必要とする台数だけ起動確認し、揃わないシナリオを名指しで SKIP**
+します（旧: 各 D シリーズスクリプトが自前で jenkins-d を probe していた）。
+
+### ハーネス構成
+
+```
+run-e2e.sh              シナリオ選択・実行・レポート生成。シナリオ定義は持たない
+lib/scenarios.tsv       シナリオ登録簿（唯一の定義元）
+                          id / name / series / controllers / axis / summary
+lib/scenario.sh         チェックポイント記録・narrative・成果物・details 生成
+lib/timings.sh          プラグインの時間定数（名前付き）とドリフト検出
+lib/common.sh           Jenkins 操作・REST クライアント・リソース状態・リレー実行
+scenarios/<name>.sh     シナリオ本体
+```
+
+**シナリオの追加は `lib/scenarios.tsv` に 1 行足すだけ**で、`--only` の選択肢・実行順序・
+レポートの行・軸別集計にすべて反映されます（旧: run-e2e.sh 内の 4 箇所を同期させる必要があった）。
+
+### lib/scenario.sh: 判定の記録
+
+チェックポイントは**判定した場所で記録**し、`scenario-details.md` は EXIT トラップで必ず生成されます。
+
+```
+scenario_init <id> <name> <results_dir>     初期化（EXIT トラップ設置）
+scenario_step "<text>"                       narrative（SEQnn）
+scenario_check <label> <action> <expected> <actual>
+scenario_check_contains / _absent / _matches / _ge / _lt
+scenario_check_resource_free / _resource_locked <label> <ctrl> <resource>
+scenario_check_api <label> <status> <actual> <errorCode> <response_file>
+scenario_observe <label> <action> <value>    測定値の記録（合否にしない）
+scenario_require*                            前提条件（失敗で即停止）
+scenario_fact / scenario_artifact / scenario_cleanup_hook / scenario_skip
+scenario_finish                              正常終了マーク
+```
+
+既定は**累積**（1 回の実行で壊れている箇所を全部出す）。前提条件だけ `scenario_require*` で即停止。
+`set -e` による予期しない停止も「どのステップの途中で落ちたか」を含む ABORT 行として記録されます。
+
+### lib/timings.sh: 時間定数
+
+プラグイン側の定数を名前付きで保持し、**実行のたびにプラグインソースと突き合わせて乖離を検出**します
+（一致しなければ実行を止める）。時系列シナリオは裸の `sleep 25` ではなくこれらから待ち時間を導出します。
+
+| 変数 | 値 | 出典 |
+|---|---|---|
+| `RLR_POLL_INTERVAL_S` | 3 | `RemoteClientDefaults.DEFAULT_POLL_INTERVAL_SECONDS` |
+| `RLR_HEARTBEAT_INTERVAL_S` | 10 | `RemoteClientDefaults.DEFAULT_HEARTBEAT_INTERVAL_SECONDS` |
+| `RLR_REQUEST_TIMEOUT_S` | 5 | `RemoteClientDefaults.DEFAULT_REQUEST_TIMEOUT_SECONDS` |
+| `RLR_MAX_POLL_FAILURES` | 20 | `RemoteLockSession.MAX_CONSECUTIVE_POLL_FAILURES` |
+| `RLR_STALE_THRESHOLD_S` | 60 | `RemoteLockManager.STALE_THRESHOLD_MS` |
+| `RLR_TERMINAL_TTL_S` | 120 | `RemoteLockManager.TERMINAL_TTL_MS` |
+| `RLR_CATALOG_TTL_S` | 10 | `RemoteCatalogCache.TTL_MILLIS` |
+| `RLR_MAX_BODY_CHARS` | 1048576 | `RemoteApiV1Action.MAX_BODY_CHARS` |
+
+`rlr_inside <threshold>` / `rlr_past <threshold>` でしきい値の内側・外側の待ち時間を導出します
+（余裕はポーリング間隔 +1 秒）。
 
 ### common.sh 主要ヘルパー
 
 ```
-configure_remote_server(base_url, resource_name, label, auth_mode)
-  → 任意 controller の remoteApiEnabled/exposeLabel/resource を設定する
+# セットアップ
+setup_remote_pair(prefix, client_key, server_key, resource, [auth_mode])
+  → server 公開 → token 発行 → client に credential 登録 → remote 設定 → 検証 を一括で行う
+     （この 5 手順が全シナリオで重複していたのを集約）
+expose_resource(server_key, resource)         既存 server に公開リソースを追加
+configure_local_resource(base_url, resource)  ローカル専用リソース
+configure_label_resource(base_url, resource, label, [expose_label])
+configure_forced_server_id / _empty(base_url) 委譲モードの設定・解除
+drop_resources(server_key, resource...)       シナリオが作ったリソースの後始末（free のみ削除）
 
-configure_local_resource(base_url, resource_name)
-  → remote expose なし・serverId なしのローカル専用リソースを作成する
+# REST（lock() を通さず API を直接叩く。境界テスト用）
+api_acquire / api_acquire_file / api_poll / api_heartbeat / api_release / api_resources
+api_field(response_file, key)                 レスポンスのフィールド
+remote_record_state(server_key, lock_id)      サーバー側レコードの状態（無ければ GONE）
 
-wait_for_controllers_with_d(timeout_seconds)
-  → a/b/c/d の 4 台分ヘルスチェック（D シリーズ専用）
+# 状態
+resource_state(controller_key, resource)      EXISTS/LOCKED/QUEUED/REMOTE_LOCK_ID/RESERVED_BY
+remote_lease_id(controller_key, resource)     lease id（未保持なら空）
+wait_for_resource_free(controller_key, resource, timeout)
 
-configure_forced_server_id(base_url, forced_server_id)          # P1M1A 追加
-  → Controller の forcedServerId を設定する
-
-configure_forced_server_id_empty(base_url)                       # P1M1A 追加
-  → forcedServerId を空文字（無効化）に戻す
-
-configure_label_resource(base_url, resource_name, label_name)    # P1M1A 追加
-  → resource を作成し、exposeLabel と一致するラベル + 任意ラベルを付与する
+# 実行
+relay_reset / relay_trigger(key, job, marker) / relay_await_all(timeout)
+  → 複数コントローラーの同時実行を 1 レッグ 1 チェックポイントで検証する
+abort_build(base_url, build_url)              ビルド中断（赤 X 相当）
+console_value(console_file, NAME)             パイプラインが echo した NAME=... の値
+poll_until(timeout, command...)               唯一のポーリングループ
 ```
 
 ### 必須コマンド
@@ -309,38 +388,49 @@ configure_label_resource(base_url, resource_name, label_name)    # P1M1A 追加
 ### run-e2e.sh オプション
 
 ```
---skip-start          start.sh を呼ばずに既存環境で実行する
---clean-start         start.sh --clean で Jenkins home を初期化してから実行する
---only <name>         単一シナリオまたはグループのみ実行する。指定可能値:
-                        mutual-peer | fan-in-contention | server-self-use |
-                        mixed-local-remote | skip-if-locked | three-way-mesh |
-                        fail-closed | label-env-vars | delegated-mode |
-                        extra-resources | heartbeat-resilience |
-                        priority-ordering | stale-admin-release |
-                        extra-label-resources | label-quantity-all |
-                        remote-resource-properties |
-                        fan-in-4 | chain-4 | diamond |
-                        s-series | m1a-series | m1b-series | m1c-series | m1d-series | d-series | all
+PLUGIN_DIR=<path> ./run-e2e.sh [options]
+
+--only <name|series>  単一シナリオまたはシリーズのみ実行する（既定: all）
+--list                シナリオ登録簿を表示して終了する
+--debug               plugin / harness の未コミット変更を許可する。
+                      レポートは reports/debug/ に出力され NOT REPRODUCIBLE と明記される
 -h, --help            ヘルプを表示する
 ```
 
-| グループ | 内容 |
+`--debug` なしの実行は必ずプラグインの commit 済み HEAD からビルド・デプロイし直すため、
+レポートは常に再現可能な状態を記述します。実行前に `lib/timings.sh` とプラグイン定数の
+乖離チェックが走ります。
+
+| シリーズ | 内容 |
 |---|---|
-| `s-series` | S01〜S07（P1M1） |
-| `m1a-series` | S08〜S09（P1M1A） |
-| `m1b-series` | S10〜S13（P1M1B） |
-| `m1c-series` | S14〜S15（P1M1C） |
-| `m1d-series` | S16（P1M1D） |
-| `m1e-series` | S17（P1M1E） |
-| `m1i-series` | S18（P1M1I。allocate timeout 130s で単体 ~150 秒） |
-| `d-series` | D01〜D03（P1M1。jenkins-d が起動済みであること） |
-| `all` | S01〜S18 + D01〜D03 |
+| `s` | S01〜S07（P1M1） |
+| `m1a` | S08〜S09（P1M1A） |
+| `m1b` | S10〜S13（P1M1B） |
+| `m1c` | S14〜S15（P1M1C） |
+| `m1d` | S16（P1M1D） |
+| `m1e` | S17（P1M1E） |
+| `m1i` | S18（P1M1I。allocate timeout は TERMINAL_TTL から導出。単体 ~150 秒） |
+| `m2m3` | S19〜S22（Phase C） |
+| `boundary` | B01〜B07（データ / 時系列 / スケール境界） |
+| `d` | D01〜D03（jenkins-d が必要。未起動なら run-e2e.sh が SKIP） |
+| `all` | 全 32 シナリオ |
 
 ### 実行順序（all）
 
+`lib/scenarios.tsv` の記載順がそのまま実行順です。
+
 ```
-S01 → … → S16 → S17 → S18 → D01 → D02 → D03
+S01 → … → S22 → B01 → … → B07 → D01 → D02 → D03
 ```
+
+### レポート
+
+`reports/<runId>-e2e-test.md` に以下を出力します。
+
+- 実行環境（plugin commit / harness commit / commandLine）
+- 合否サマリと**軸別カバレッジ**（function / data / time / scale ごとの pass/fail/skip）
+- シナリオ一覧（ID / 軸 / 状態 / 成果物リンク）
+- 各シナリオの詳細（Result 行・Sequence・Checkpoints 表・Summary・Artifacts）
 
 ---
 
@@ -1286,11 +1376,22 @@ may have restarted / communication failure」**になっていた（正当な ti
 | CP03b | waiter コンソールに `server may have restarted` / `communication failure` / `HTTP 404` が**出ない**こと | `true` |
 | CP04 | waiter コンソールに `SHOULD_NOT_RUN` が**出ない**こと（fail-closed・body 未実行） | `true` |
 | CP05 | waiter の待機時間 ≥ 120 秒（即失敗でなく真の allocate timeout） | `true` |
+| CP08 | **timeout が自身の期限で発火したか**（保持者の解放時ではなく） | 期限 +20 秒以内 |
 | —    | 完了後 R が free に復帰 | （holder 解放で確認） |
+
+> **CP08 の由来（F1）**: allocate timeout は「最長どれだけ待つか」の約束である。他の理由で走った
+> キュー整備でしか気づかれない期限はその約束ではない — 他の通信がキューを動かし続けている間しか成立せず、
+> **リソースが詰まったとき、つまり上限が最も必要な場面でこそ効かない**。
+>
+> 旧 S18 は holder 保持 150s / 期限 130s と両者が近く、判定も `>= 120s` だったため
+> **「期限で失敗」と「解放で失敗」を構造的に区別できなかった**。現在は holder 保持を期限 +60 秒にし、
+> 両者が離れる設計にしてある。修正前の実測は期限 124s に対し 183s（59 秒遅れ）。
+> 詳細は `BOUNDARY_COVERAGE_ANALYSIS.md` §4 F1。
 
 ### 所要時間
 
-allocate timeout 130s（> 120s TTL）＋ holder 保持 150s のため、S18 単体で**約 150 秒**かかる。
+allocate timeout は `RLR_TERMINAL_TTL_S` から導出（124s）、holder 保持はその +60 秒。
+S18 単体で**約 190 秒**かかる。
 
 ### 出力ファイル
 
@@ -1300,6 +1401,211 @@ reports/<runId>-e2e-test/remote-acquire-timeout/remote-waiter-console.txt
 reports/<runId>-e2e-test/remote-acquire-timeout/summary.txt
 reports/<runId>-e2e-test/remote-acquire-timeout/scenario-details.md
 ```
+
+---
+
+## B01: acquire-payload-boundaries — POST /acquire の値域 【Boundary / data】
+
+### テスト意図
+
+他の全シナリオは `lock()` 経由で API に到達する。クライアントは整形された要求しか送らないため、
+**契約の拒否側（どの status・どの errorCode を返すか）が丸ごと未検証**だった。
+呼び出し側は「400」だけでは行動を決められない（再試行するのか、パイプラインを直すのか）ため、
+status と errorCode の**対**を検証する。
+
+加えて、**エンドポイントが拒否しない値**を観測値として固定する。これらは仕様として宣言されたものではなく
+現在の挙動なので合否にはしないが、ここに固定しておけば変化がレポートの差分として現れる。
+
+### 検証基準
+
+| 分類 | ケース | 期待 |
+|---|---|---|
+| 構造 | JSON でない / `lockRequest` 欠落 / `lockRequest` が非オブジェクト | 400 `INVALID_JSON` / `MISSING_LOCK_REQUEST` ×2 |
+| lock() 意味論 | ターゲット無し / resource+label 併記 / 未知 strategy / priority+inversePrecedence | 400 `INVALID_REQUEST` |
+| extra | resource も label も無い要素 | 400 `INVALID_EXTRA` |
+| heartbeat | `heartbeatIntervalSeconds` = 0 / 負 / 非整数 | 400 `INVALID_HEARTBEAT_INTERVAL` |
+| 権限外 | 存在しない resource / マッチしない label | 404 `UNKNOWN_RESOURCE` / `UNKNOWN_LABEL` |
+| **body 上限** | ちょうど 1 MiB / +1 文字 | **202** / **413 `PAYLOAD_TOO_LARGE`**（両側） |
+| 観測のみ | `quantity` 非数値・負値、`timeoutUnit` 不正、`timeoutForAllocateResource` 負値 | 記録して固定 |
+| 後始末 | 拒否された要求が何も残していないこと | リソース free・ephemeral 非作成 |
+
+> 所見: `timeoutUnit` の不正値は 400 にならず、`RemoteQueueEntry` で deadline 0（＝無期限待ち）に化ける。
+> 同じ列挙値のタイポでも `resourceSelectStrategy` は 400 で弾いており非対称。
+> 詳細は `BOUNDARY_COVERAGE_ANALYSIS.md` §4 F1。
+
+---
+
+## B02: lease-lifecycle-edges — lease の状態不整合な操作 【Boundary / time】
+
+### テスト意図
+
+正しいクライアントは acquire → heartbeat → release を 1 回ずつ順に辿る。実際のクライアントはそうしない
+（中断でその間に終わる、再試行で release が 2 回飛ぶ、復帰したセッションが終わった lease を heartbeat する）。
+いずれも**期待した状態にない lease への呼び出し**であり、返答はクライアントが行動できるものでなければならない。
+
+時系列側は終端レコード TTL。解放・失敗したレコードは `RLR_TERMINAL_TTL_S` の間読める（クライアントが
+直後に poll して何が起きたか知るため）が、それを過ぎれば 404 になる。**両側**を検証する。
+
+### 検証基準
+
+| ケース | 期待 |
+|---|---|
+| 未知 lockId への heartbeat / poll | 410 `LOCK_NOT_FOUND` / 404 `LOCK_NOT_FOUND` |
+| 未知 lockId への release | **204**（冪等。再試行を失敗にしない） |
+| 生存 lease への heartbeat / release | 204 / 204 |
+| 二重 release | 204 |
+| release 後の heartbeat | 410 `LOCK_NOT_FOUND` |
+| release 直後の poll | 200 かつ `state=FAILED` / `errorCode=RELEASED`（RELEASED という state は無い） |
+| QUEUED への heartbeat | 410 `LOCK_NOT_FOUND` |
+| QUEUED の release（取り下げ） | 204。保持者解放後もそのリソースを取らない |
+| TERMINAL_TTL 経過後の poll | 404 `LOCK_NOT_FOUND`、レコードは GONE |
+
+---
+
+## B03: resource-name-boundaries — リソース名のエンコーディング 【Boundary / data】
+
+### テスト意図
+
+サーバー上の名前は JSON → JSON パーサ → 環境変数 → シェル と長い経路を通る。既存シナリオは
+英小文字＋ハイフン＋数字しか使っておらず、経路上のエンコーディングを一切検証していない。
+
+カンマだけは性質が異なる。`lock(variable: 'V')` は取得したリソース名を**カンマ連結**して `V` に入れるため、
+名前自体がカンマを含むと 1 リソースでも 2 リソースと区別がつかない。インデックス付き `V0` は影響を受けない。
+
+### 検証基準
+
+| ケース | 期待 |
+|---|---|
+| 空白入りの名前 | `V0` が完全一致で往復する |
+| 多バイト（日本語）の名前 | 同上。カタログ応答にも生の UTF-8 で載る |
+| 244 文字の名前 | 切り詰められない |
+| カンマ入りの名前 | `V0` は正確。`V` を `,` で split した要素数を**観測値として記録** |
+| カタログ健全性 | 上記の名前があっても `GET /resources` が 200 で全件返る |
+
+> 所見: 1 リソースのロックに対し `V.split(',')` は 2 要素を返す（どちらも存在しない名前）。
+> 詳細は `BOUNDARY_COVERAGE_ANALYSIS.md` §4 F3。
+
+---
+
+## B04: catalog-cache-ttl — クライアント側カタログの鮮度 【Boundary / time】
+
+### テスト意図
+
+ページ描画は HTTP 呼び出しをしない。手元のスナップショットを表示し、`RLR_CATALOG_TTL_S` より古ければ
+バックグラウンドで更新を要求する。ここから**互いに緊張関係にある 2 つの挙動**が出る。
+
+- TTL 内はわざと古い（サーバーに増えたリソースはまだ見えない）＝ページが安いことの根拠
+- TTL 超では追随しなければならない＝でなければ「キャッシュ」が「永久に間違い」になる
+
+3 つめがこの設計の正当化: **サーバー到達不能でもページは描画されなければならない**。
+表示は best-effort（ロック取得の fail-closed とは違う）であり、障害は「表示の陳腐化」であって
+「ページのハング」であってはならない。
+
+更新は非同期なので、「TTL 超」の確認は 2 回読む（1 回目が更新を起動し、2 回目が結果を見る）。
+
+### 検証基準
+
+| ケース | 期待 |
+|---|---|
+| ウォームアップ後 | サーバーのリソースがクライアントページに出る |
+| リソース追加直後（TTL 内） | **まだ出ない**（キャッシュが効いている証拠） |
+| TTL 経過後 | 新リソースが出る。既存も残る |
+| サーバー停止中 | ページは描画され、直前に知っていた内容を保つ。描画は `RLR_REQUEST_TIMEOUT_S`+10 秒未満 |
+| サーバー復帰後 | 表示が回復する |
+
+---
+
+## B05: acquire-abort-races — ビルド中断 【Boundary / time】
+
+### テスト意図
+
+他のシナリオはすべて同じ終わり方をする（body が終わり、step が抜けざまに解放する）。
+中断はその経路を通らず、しかも**実運用でロックの生涯が終わる最も一般的な形**である。
+2 つの瞬間があり、壊れ方が異なる。
+
+- **QUEUED 中の中断**: 要求はまだ待機中。取り下げがサーバーのキューに届かなければ、
+  聞いていないクライアントにリソースが昇格される＝ロック済みに見えるが誰も使っていない、管理者しか解けない状態。
+- **ACQUIRED 中の中断**: lease は生きている。解放されなければ STALE（`RLR_STALE_THRESHOLD_S`）まで
+  保持され続け、人手が要る。
+
+後者の判定は STALE 閾値の**十分内側**の境界で行う。STALE に到達するのは安全網が働いた証拠ではなく、
+このテストがゆっくり失敗している状態である。
+
+### 検証基準
+
+| ケース | 期待 |
+|---|---|
+| QUEUED 中に中断 | build = ABORTED、body 未実行 |
+| 保持者の解放後 | リソースは free（中断された要求に渡らない） |
+| ACQUIRED 中に中断 | build = ABORTED |
+| 中断からの解放時間 | STALE 閾値の 1/2 以内に free。実測値も記録 |
+
+---
+
+## B06: catalog-scale — カタログ規模と干渉 【Boundary / scale】
+
+### テスト意図
+
+負荷スイートは「同時にロックするクライアント数」という 1 次元だけを振り、他は「一握り」に固定している。
+カタログ規模は誰も振っていない次元であり、しかも新設の discovery エンドポイントには構造的リスクがある:
+`GET /resources` は**ページングなしで全公開リソースを 1 応答に直列化**し、それを
+`syncResources`（＝あらゆるロック取得が必要とする同じモニタ）を保持したまま行う。
+
+したがって規模の問題と干渉の問題は同じ 1 つの問いになる。数百台なら問題ない。数千台の現場が
+自分で気づく前に知っておきたいのは、**一覧の配信が lock のレイテンシを食い始めるか**である。
+
+判定は緩い絶対値（健全なシステムが楽に通る値）にしてある。回帰しきい値にしないのは、
+数値がホスト性能に依存するため。**測定値は合否と無関係に必ず記録**するので、実行間の比較はできる。
+
+### 検証基準
+
+| ケース | 期待 |
+|---|---|
+| 100 / 500 / 2000 件 | 応答時間・サイズを記録。**全件が載る**（無ページング＝短い応答は切り詰め） |
+| 2000 件での応答時間 | 15 秒未満 |
+| discovery 4 並列負荷下の acquire | 中央値 5 秒未満。無負荷との倍率も記録 |
+
+規模は `B06_SIZES="100 1000 5000" ./scenarios/catalog-scale.sh <dir>` で変更可能。
+
+> 基準値（2026-08-10・当該ホスト）: 100 件 12ms/15KB、500 件 21ms/53KB、2000 件 42ms/197KB。
+> acquire 中央値 71ms →（2000 件を 4 並列取得中）119ms = 1.68 倍。
+> クリフは無いが干渉は測定可能な形で存在する。
+
+---
+
+## B07: queue-depth-scale — 待機列の深さ 【Boundary / scale】
+
+### テスト意図
+
+負荷スイートは「同時にロックするクライアント数」を、多数のリソースに散らして振る。こちらが振るのは
+**同一リソースを待つ件数**であり、ロック機構が本来評価されるのはこの次元。他のシナリオは待機 1〜2 件しか作らない。
+
+- **スループット**: 保持者が解放してから次の 1 件が入るまで。昇格のたびにキューを先頭から
+  再スキャンしていれば二次的に劣化し、それが最初に見えるのは深いキュー。
+- **公平性**: 全員がいつか服されるか。片端だけを昇格し続けるキューは反対端を飢餓させるが、
+  深さ 2 では**どんな順序でも全員に順番が回る**ので見えない。
+
+公平性は合否判定、時間は測定値として記録（ホスト性能に依存するため）。
+
+### 検証基準
+
+| ケース | 期待 |
+|---|---|
+| 深さ 1 / 10 / 50 の受理 | 全件 202 で受理される |
+| 公平性 | **accepted 件数 = served 件数**（飢餓なし） |
+| 昇格レイテンシ | 記録（解放→最初の 1 件が服されるまで。サーバー側の純粋な指標） |
+| ドレイン時間 | 記録（全件。**クライアントの検知遅延を含むためサーバー指標ではない**） |
+| 後始末 | 各深さの後にリソースが free |
+
+深さは `B07_DEPTHS="1 10 100 500" ./scenarios/queue-depth-scale.sh <dir>` で変更可能。
+
+> 基準値（2026-08-10・当該ホスト、2 回実行）: 昇格レイテンシ 深さ1=50/55ms・深さ10=54/106ms・深さ50=125/99ms。
+> 深さ 50 が深さ 10 より速い実行もあり、差は深さでなくノイズ＝**キュー再スキャンによる二次劣化は無い**。
+> 公平性は全深さで 100%。
+
+> **測定上の注意**: 待機 1 件につき 1 クライアントが**自分の lease だけ**を見る。
+> 全 ID を 1 ループで走査すると深さ N の監視に O(N²) リクエストを要し、
+> 測定結果がハーネス自身のポーリングで埋まる（初版はこれで深さ 50 のドレインが 33 秒→修正後 15 秒）。
 
 ---
 
@@ -1516,3 +1822,17 @@ reports/<runId>-e2e-test/          ← シナリオ別アーティファクト
 - 2026-06-22: M1I シナリオ S18 (remote-acquire-timeout) を追加。高負荷テストで発見した queued-expiry-poll-404
   回帰の決定的ガード。allocate timeout（130s > 120s terminal TTL）が `LOCK_WAIT_TIMEOUT` でクリーンに
   fail-closed すること（404/通信失敗でない）を実証。`m1i-series` 追加。TTL 境界を突くため timeout > 120s が必須。
+- 2026-08-10: **ハーネスをリファクタリングし、境界シリーズ B01〜B06 を追加。**
+  (1) `lib/scenario.sh` を新設。チェックポイントを判定した場所で記録し、`scenario-details.md` を
+  EXIT トラップで必ず生成する（旧: 22 シナリオが末尾ヒアドキュメントで `PASS` をべた書きしており、
+  **失敗すると details がまったく生成されなかった**）。既定は累積判定、前提条件のみ即停止。
+  (2) `lib/scenarios.tsv` を唯一のシナリオ定義元にし、run-e2e.sh から定義を排除（旧: 同じ一覧が 4 箇所）。
+  `controllers` 列により jenkins-d の probe は run-e2e.sh 側に集約（D シリーズから自前 probe を削除）。
+  (3) `lib/timings.sh` にプラグインの時間定数を名前付きで集約し、実行時にソースとの乖離を検出。
+  時系列シナリオの裸の `sleep` を定数由来に変更。
+  (4) `setup_remote_pair` / `poll_until` / REST クライアント / `resource_state` / relay 実行を共通化。
+  シナリオ合計 3534 行 → 2090 行。同時に検証は強化（解放確認・排他の時間的証拠を追加）。
+  (5) 境界シリーズ B01〜B07（data 2 / time 3 / scale 2）を追加。`--only boundary`。
+  分析と残ギャップは `BOUNDARY_COVERAGE_ANALYSIS.md`。
+  副産物: S08 が固定ラベル `hw` を使っていたため**前回実行のリソースを掴んでいた**ことを検出・修正
+  （旧アサーションが前方一致だったため露見していなかった）。

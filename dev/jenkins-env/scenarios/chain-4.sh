@@ -1,101 +1,59 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# D02: A->B, B->C, C->D as three independent relays running at once.
+#
+# A chain is the topology that would expose transitive holding: if B's own lock on C were somehow
+# coupled to A's lock on B, the legs would serialise instead of overlapping. They are independent, so
+# all three run in the time of one.
+#
+# Needs jenkins-d; declared as controllers=abcd in lib/scenarios.tsv.
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
 
-RESULTS_DIR="${1:-}"
-if [[ -z "$RESULTS_DIR" ]]; then
-  err "Results directory argument is required"
-  exit 2
-fi
+scenario_init "D02" "chain-4" "${1:-}"
 
-if ! wait_for_url "$CONTROLLER_D_URL/login" 20; then
-  log "chain-4: jenkins-d is not available, skip"
-  exit 10
-fi
+STAMP="$(scenario_stamp)"
+B_RES="d02-b-$STAMP"
+C_RES="d02-c-$STAMP"
+D_RES="d02-d-$STAMP"
+HOLD_SECONDS=15
 
-SCENARIO="chain-4"
-SCENARIO_ID="D02"
-SCENARIO_DIR="$RESULTS_DIR/$SCENARIO"
-mkdir -p "$SCENARIO_DIR"
+scenario_step "Wire the chain: A->B, B->C, C->D"
+setup_remote_pair "d02" "a" "b" "$B_RES"
+setup_remote_pair "d02" "b" "c" "$C_RES"
+setup_remote_pair "d02" "c" "d" "$D_RES"
 
-B_RES="d02-b-$(date +%s)"
-C_RES="d02-c-$(date +%s)"
-D_RES="d02-d-$(date +%s)"
-
-configure_remote_server "$CONTROLLER_B_URL" "$B_RES" "remote-enabled" "authenticated"
-configure_remote_server "$CONTROLLER_C_URL" "$C_RES" "remote-enabled" "authenticated"
-configure_remote_server "$CONTROLLER_D_URL" "$D_RES" "remote-enabled" "authenticated"
-
-TOKEN_B="$(issue_user_api_token "$CONTROLLER_B_URL" "admin" "e2e-d02-b-token")"
-TOKEN_C="$(issue_user_api_token "$CONTROLLER_C_URL" "admin" "e2e-d02-c-token")"
-TOKEN_D="$(issue_user_api_token "$CONTROLLER_D_URL" "admin" "e2e-d02-d-token")"
-
-upsert_username_password_credential "$CONTROLLER_A_URL" "d02-a-for-b" "admin" "$TOKEN_B"
-upsert_username_password_credential "$CONTROLLER_B_URL" "d02-b-for-c" "admin" "$TOKEN_C"
-upsert_username_password_credential "$CONTROLLER_C_URL" "d02-c-for-d" "admin" "$TOKEN_D"
-
-configure_remote_client_for_server "$CONTROLLER_A_URL" "jenkins-a" "b" "$CONTROLLER_B_INTERNAL_URL" "d02-a-for-b"
-configure_remote_client_for_server "$CONTROLLER_B_URL" "jenkins-b" "c" "$CONTROLLER_C_INTERNAL_URL" "d02-b-for-c"
-configure_remote_client_for_server "$CONTROLLER_C_URL" "jenkins-c" "d" "$CONTROLLER_D_INTERNAL_URL" "d02-c-for-d"
-
-A_SCRIPT="$(cat <<EOF
-pipeline { agent any; stages { stage('AtoB') { steps { lock(resource: "${B_RES}", serverId: 'b') { echo 'A_ACQUIRED'; sleep time: 15, unit: 'SECONDS' } } } } }
+relay_script() {
+  local resource="$1" server="$2" marker="$3"
+  cat <<EOF
+pipeline { agent any; stages { stage('Relay') { steps { lock(resource: "${resource}", serverId: '${server}') { echo '${marker}'; sleep time: ${HOLD_SECONDS}, unit: 'SECONDS' } } } } }
 EOF
-)"
-B_SCRIPT="$(cat <<EOF
-pipeline { agent any; stages { stage('BtoC') { steps { lock(resource: "${C_RES}", serverId: 'c') { echo 'B_ACQUIRED'; sleep time: 15, unit: 'SECONDS' } } } } }
-EOF
-)"
-C_SCRIPT="$(cat <<EOF
-pipeline { agent any; stages { stage('CtoD') { steps { lock(resource: "${D_RES}", serverId: 'd') { echo 'C_ACQUIRED'; sleep time: 15, unit: 'SECONDS' } } } } }
-EOF
-)"
+}
 
-upsert_pipeline_job "$CONTROLLER_A_URL" "d02-a" "$A_SCRIPT"
-upsert_pipeline_job "$CONTROLLER_B_URL" "d02-b" "$B_SCRIPT"
-upsert_pipeline_job "$CONTROLLER_C_URL" "d02-c" "$C_SCRIPT"
+upsert_pipeline_job "$CONTROLLER_A_URL" "d02-a" "$(relay_script "$B_RES" b A_ACQUIRED)"
+upsert_pipeline_job "$CONTROLLER_B_URL" "d02-b" "$(relay_script "$C_RES" c B_ACQUIRED)"
+upsert_pipeline_job "$CONTROLLER_C_URL" "d02-c" "$(relay_script "$D_RES" d C_ACQUIRED)"
 
+scenario_step "Run all three legs at once"
 start_epoch="$(date +%s)"
-a_url="$(trigger_and_resolve_build_url "$CONTROLLER_A_URL" "d02-a" 120)"
-b_url="$(trigger_and_resolve_build_url "$CONTROLLER_B_URL" "d02-b" 120)"
-c_url="$(trigger_and_resolve_build_url "$CONTROLLER_C_URL" "d02-c" 120)"
+relay_reset
+relay_trigger a d02-a A_ACQUIRED
+relay_trigger b d02-b B_ACQUIRED
+relay_trigger c d02-c C_ACQUIRED
+relay_await_all 900
+duration="$(($(date +%s) - start_epoch))"
 
-ar="$(wait_for_build_result "$a_url" 900)"
-br="$(wait_for_build_result "$b_url" 900)"
-cr="$(wait_for_build_result "$c_url" 900)"
-end_epoch="$(date +%s)"
+scenario_step "Check the chain left nothing held"
+scenario_check_resource_free "B's resource released" "b" "$B_RES"
+scenario_check_resource_free "C's resource released" "c" "$C_RES"
+scenario_check_resource_free "D's resource released" "d" "$D_RES"
 
-save_console_log "$a_url" "$SCENARIO_DIR/a-console.txt"
-save_console_log "$b_url" "$SCENARIO_DIR/b-console.txt"
-save_console_log "$c_url" "$SCENARIO_DIR/c-console.txt"
+parallel_bound=$((HOLD_SECONDS * 3))
+scenario_check_soft "Legs are independent" "elapsed time" "< ${parallel_bound}s (one hold, not three)" \
+  "${duration}s" "$([[ "$duration" -lt "$parallel_bound" ]] && echo true || echo false)"
 
-[[ "$ar" == "SUCCESS" && "$br" == "SUCCESS" && "$cr" == "SUCCESS" ]] || exit 1
+scenario_fact "duration_seconds" "$duration"
 
-cat >"$SCENARIO_DIR/summary.txt" <<EOF
-a_result=$ar
-b_result=$br
-c_result=$cr
-duration_seconds=$((end_epoch - start_epoch))
-EOF
-
-cat >"$SCENARIO_DIR/scenario-details.md" <<EOF
-### ${SCENARIO_ID}: ${SCENARIO}
-
-#### Summary
-
-- a result: $ar
-- b result: $br
-- c result: $cr
-- duration: $((end_epoch - start_epoch))s
-
-#### Artifacts
-
-- a console: $SCENARIO_DIR/a-console.txt
-- b console: $SCENARIO_DIR/b-console.txt
-- c console: $SCENARIO_DIR/c-console.txt
-- summary: $SCENARIO_DIR/summary.txt
-EOF
-
-log "chain-4: completed"
+scenario_finish

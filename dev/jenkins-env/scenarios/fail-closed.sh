@@ -1,122 +1,43 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# S07: everything that can go wrong between the client and the server must leave the body unrun.
+#
+# The one invariant: a lock the client could not prove it holds is not a lock. Five different faults
+# - the server gone, the network black-holed, a bad token, a credentials id that resolves to nothing,
+# and one that resolves to the wrong type of credential - must all end the same way, with the build
+# FAILED and the body never entered. The cases run in one scenario because they share the setup and
+# because "all five" is the actual claim.
+#
+# Each case restores what it broke before the next one starts, and the cleanup hook puts the world
+# back even if the scenario dies in the middle - otherwise a failure here leaves B stopped and every
+# scenario after it fails for the wrong reason.
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=../lib/common.sh
 source "$SCRIPT_DIR/../lib/common.sh"
 
-RESULTS_DIR="${1:-}"
-if [[ -z "$RESULTS_DIR" ]]; then
-  err "Results directory argument is required"
-  exit 2
-fi
+scenario_init "S07" "fail-closed" "${1:-}"
 
-SCENARIO_DIR="$RESULTS_DIR/fail-closed"
-SCENARIO_ID="S07"
-mkdir -p "$SCENARIO_DIR"
-RESOURCE_NAME="s07-fail-board-$(date +%s)"
-VALID_CREDENTIALS_ID="s07-valid-creds"
+RESOURCE_NAME="s07-fail-board-$(scenario_stamp)"
+VALID_CREDENTIALS_ID="s07-a-for-b"
 INVALID_AUTH_CREDENTIALS_ID="s07-invalid-auth-creds"
 MISSING_CREDENTIALS_ID="s07-missing-creds"
 TYPE_MISMATCH_CREDENTIALS_ID="s07-type-mismatch-creds"
-DETAIL_FILE="$SCENARIO_DIR/scenario-details.md"
-SEQ_FILE="$SCENARIO_DIR/.sequence.tmp"
-CP_FILE="$SCENARIO_DIR/.checkpoints.tmp"
-SEQ_NO=0
-CP_NO=0
 
-: >"$SEQ_FILE"
-: >"$CP_FILE"
-
-scenario_sequence() {
-  local text="$1"
-  SEQ_NO=$((SEQ_NO + 1))
-  printf -- "- SEQ%02d %s\n" "$SEQ_NO" "$text" >>"$SEQ_FILE"
+restore_environment() {
+  docker_compose up -d jenkins-b
+  wait_for_url "$CONTROLLER_B_URL/login" 240
+  configure_remote_server "$CONTROLLER_B_URL" "$RESOURCE_NAME" "remote-enabled" "authenticated"
+  configure_remote_client_for_server \
+    "$CONTROLLER_A_URL" "jenkins-a" "b" "$CONTROLLER_B_INTERNAL_URL" "$VALID_CREDENTIALS_ID"
 }
+scenario_cleanup_hook restore_environment
 
-scenario_checkpoint() {
-  local step="$1"
-  local api_action="$2"
-  local expected="$3"
-  local actual="$4"
-  local result="$5"
+scenario_step "Expose the resource on B and link A to it with a working credential"
+setup_remote_pair "s07" "a" "b" "$RESOURCE_NAME"
+scenario_check "Baseline setup" "Groovy /scriptText" "A->B configured and verified" "A->B configured and verified"
 
-  CP_NO=$((CP_NO + 1))
-  printf '| CP%02d | %s | %s | %s | %s | %s |\n' \
-    "$CP_NO" "$step" "$api_action" "$expected" "$actual" "$result" >>"$CP_FILE"
-}
-
-finalize_scenario_details() {
-  {
-    echo "### ${SCENARIO_ID}: fail-closed"
-    echo ""
-    echo "#### Sequence"
-    echo ""
-    cat "$SEQ_FILE"
-    echo ""
-    echo "#### Checkpoints"
-    echo ""
-    echo "| ID | Step | API / Action | Expected | Actual | Result |"
-    echo "|---|---|---|---|---|---|"
-    cat "$CP_FILE"
-    echo ""
-    echo "#### Artifacts"
-    echo ""
-    echo "- scenario dir: $SCENARIO_DIR"
-    echo "- remote-down console: $SCENARIO_DIR/remote-down/console.txt"
-    echo "- timeout console: $SCENARIO_DIR/timeout/console.txt"
-    echo "- auth-error console: $SCENARIO_DIR/auth-error/console.txt"
-    echo "- missing-credentials-id console: $SCENARIO_DIR/missing-credentials-id/console.txt"
-    echo "- credentials-type-mismatch console: $SCENARIO_DIR/credentials-type-mismatch/console.txt"
-  } >"$DETAIL_FILE"
-
-  rm -f "$SEQ_FILE" "$CP_FILE"
-}
-
-setup_base() {
-  scenario_sequence "Configure Controller B as authenticated remote server and create exposed resource ${RESOURCE_NAME}"
-  configure_controller_b_remote_server "$RESOURCE_NAME" "authenticated"
-  verify_controller_b_remote_server_config "$RESOURCE_NAME" "authenticated"
-  scenario_checkpoint \
-    "Controller B remote server configuration" \
-    "Groovy /scriptText (set auth mode, remoteApiEnabled, exposeLabel, resource)" \
-    "authenticatedMode=true, remoteApiEnabled=true and resourceExposed=true" \
-    "verify_controller_b_remote_server_config(authenticated) passed" \
-    "PASS"
-
-  scenario_sequence "Issue API token for Controller B admin and create valid username/password credential on Controller A"
-  local valid_remote_token
-  valid_remote_token="$(issue_user_api_token "$CONTROLLER_B_URL" "admin" "e2e-s07-valid-token")"
-  upsert_username_password_credential "$CONTROLLER_A_URL" "$VALID_CREDENTIALS_ID" "admin" "$valid_remote_token"
-  scenario_checkpoint \
-    "Controller A credentials upsert" \
-    "Groovy /scriptText (ApiTokenProperty issue + SystemCredentialsProvider upsert)" \
-    "credential id=${VALID_CREDENTIALS_ID} exists on A and password field contains B-side API token" \
-    "issue_user_api_token + upsert_username_password_credential completed" \
-    "PASS"
-
-  scenario_sequence "Configure Controller A as remote client with credentials (serverId=b)"
-  configure_remote_client "$CONTROLLER_A_URL" "jenkins-a" "$CONTROLLER_B_INTERNAL_URL" "$VALID_CREDENTIALS_ID"
-  verify_remote_client_config "$CONTROLLER_A_URL" "jenkins-a" "$CONTROLLER_B_INTERNAL_URL" "$VALID_CREDENTIALS_ID"
-  scenario_checkpoint \
-    "Controller A remote client configuration" \
-    "Groovy /scriptText (set remotes=[b->8082], credentialsId)" \
-    "Controller A remotes point to B with credentialsId=${VALID_CREDENTIALS_ID}" \
-    "configure_remote_client + verify_remote_client_config completed" \
-    "PASS"
-}
-
-cleanup() {
-  docker_compose up -d jenkins-b >/dev/null 2>&1 || true
-  wait_for_url "$CONTROLLER_B_URL/login" 240 >/dev/null 2>&1 || true
-  configure_controller_b_remote_server "$RESOURCE_NAME" "authenticated" >/dev/null 2>&1 || true
-  configure_remote_client "$CONTROLLER_A_URL" "jenkins-a" "$CONTROLLER_B_INTERNAL_URL" "$VALID_CREDENTIALS_ID" >/dev/null 2>&1 || true
-}
-trap 'cleanup; finalize_scenario_details' EXIT
-
-setup_base
-
-failure_script="$(cat <<EOF
+FAILURE_SCRIPT="$(cat <<EOF
 pipeline {
   agent any
   stages {
@@ -132,145 +53,82 @@ pipeline {
 EOF
 )"
 
+# run_failure_case <case> <job> <what the client should hit> <console evidence regex>
 run_failure_case() {
   local case_name="$1"
   local job_name="$2"
-  local timeout_seconds="$3"
-  local expected_api_behavior="$4"
-  local expected_error_hint="$5"
+  local api_behaviour="$3"
+  local error_hint="$4"
   local case_dir="$SCENARIO_DIR/$case_name"
 
   mkdir -p "$case_dir"
-  upsert_pipeline_job "$CONTROLLER_A_URL" "$job_name" "$failure_script"
-  scenario_checkpoint \
-    "$case_name: pipeline job upsert" \
-    "Groovy /scriptText (WorkflowJob upsert)" \
-    "$job_name is updated" \
-    "upsert_pipeline_job completed" \
-    "PASS"
+  upsert_pipeline_job "$CONTROLLER_A_URL" "$job_name" "$FAILURE_SCRIPT"
 
-  log "fail-closed: trigger case=$case_name"
-  scenario_sequence "Run case=$case_name and verify it fails closed without executing lock body"
-  local build_url
+  local build_url result
   build_url="$(trigger_and_resolve_build_url "$CONTROLLER_A_URL" "$job_name" 120)"
-  local result
-  result="$(wait_for_build_result "$build_url" "$timeout_seconds")"
-
+  result="$(wait_for_build_result "$build_url" 600)"
   save_console_log "$build_url" "$case_dir/console.txt"
-  cat >"$case_dir/summary.txt" <<EOF
-build_url=$build_url
-result=$result
-EOF
+  scenario_artifact "$case_name console" "$case_dir/console.txt"
 
-  if [[ "$result" != "FAILURE" ]]; then
-    scenario_checkpoint \
-      "$case_name: build result" \
-      "$expected_api_behavior" \
-      "FAILURE (fail-closed)" \
-      "$result" \
-      "FAIL"
-    return 1
-  fi
-  scenario_checkpoint \
-    "$case_name: build result" \
-    "$expected_api_behavior" \
-    "FAILURE (fail-closed)" \
-    "$result" \
-    "PASS"
+  scenario_check "$case_name: build failed closed" "$api_behaviour" "FAILURE" "$result"
+  scenario_check_absent "$case_name: body never ran" "$case_dir/console.txt" "UNEXPECTED_BODY_EXECUTION"
 
-  if grep -Eqi "$expected_error_hint" "$case_dir/console.txt"; then
-    scenario_checkpoint \
-      "$case_name: expected error evidence" \
-      "$expected_api_behavior" \
-      "Console contains expected error hint" \
-      "Matched /$expected_error_hint/" \
-      "PASS"
-  else
-    scenario_checkpoint \
-      "$case_name: expected error evidence" \
-      "$expected_api_behavior" \
-      "Console contains expected error hint" \
-      "No match for /$expected_error_hint/" \
-      "WARN"
-  fi
+  # The wording of a client-side error is not a contract, so a missing hint is a WARN: it means the
+  # scenario can no longer prove the build failed for the reason it engineered, not that it passed.
+  local matched="false"
+  grep -Eqi "$error_hint" "$case_dir/console.txt" && matched="true"
+  scenario_check_soft "$case_name: failed for the engineered reason" "console evidence" \
+    "matches /$error_hint/" "$matched" "$matched"
 
-  if grep -Fq "UNEXPECTED_BODY_EXECUTION" "$case_dir/console.txt"; then
-    err "fail-closed: case=$case_name unexpectedly executed lock body"
-    scenario_checkpoint \
-      "$case_name: lock body guard" \
-      "Pipeline lock body" \
-      "UNEXPECTED_BODY_EXECUTION is absent" \
-      "UNEXPECTED_BODY_EXECUTION found" \
-      "FAIL"
-    return 1
-  fi
-  scenario_checkpoint \
-    "$case_name: lock body guard" \
-    "Pipeline lock body" \
-    "UNEXPECTED_BODY_EXECUTION is absent" \
-    "Marker not found" \
-    "PASS"
+  scenario_fact "${case_name}_result" "$result"
+  scenario_fact "${case_name}_build_url" "$build_url"
 }
 
-log "fail-closed: case remote-down"
-scenario_sequence "Case remote-down: stop Controller B to simulate remote API unavailability"
+scenario_step "Case remote-down: stop the server outright"
 docker_compose stop jenkins-b
-run_failure_case \
-  "remote-down" \
-  "s07-fail-remote-down" \
-  600 \
-  "POST /acquire/ or GET /acquire/{lockId}/ fails due to connection issue" \
+run_failure_case "remote-down" "s07-fail-remote-down" \
+  "POST /acquire cannot connect" \
   "Remote API communication failure|Connection refused|ConnectException|No route to host"
 docker_compose up -d jenkins-b
-if ! wait_for_url "$CONTROLLER_B_URL/login" 240; then
-  err "fail-closed: controller B did not recover after remote-down case"
-  exit 1
-fi
-configure_controller_b_remote_server "$RESOURCE_NAME" "authenticated"
+wait_for_url "$CONTROLLER_B_URL/login" 240 ||
+  scenario_require_ok "Controller B recovers" "wait_for_url" "B did not come back after remote-down"
+configure_remote_server "$CONTROLLER_B_URL" "$RESOURCE_NAME" "remote-enabled" "authenticated"
 
-log "fail-closed: case timeout"
-scenario_sequence "Case timeout: point Controller A remote URL to unroutable IP to trigger timeout"
-configure_remote_client "$CONTROLLER_A_URL" "jenkins-a" "http://10.255.255.1:18082/jenkins" "$VALID_CREDENTIALS_ID"
-run_failure_case \
-  "timeout" \
-  "s07-fail-timeout" \
-  600 \
-  "POST /acquire/ times out" \
+scenario_step "Case timeout: point the client at an unroutable address"
+configure_remote_client_for_server \
+  "$CONTROLLER_A_URL" "jenkins-a" "b" "http://10.255.255.1:18082/jenkins" "$VALID_CREDENTIALS_ID"
+run_failure_case "timeout" "s07-fail-timeout" \
+  "POST /acquire times out" \
   "timed out|HttpTimeoutException|timeout"
-configure_remote_client "$CONTROLLER_A_URL" "jenkins-a" "$CONTROLLER_B_INTERNAL_URL" "$VALID_CREDENTIALS_ID"
+configure_remote_client_for_server \
+  "$CONTROLLER_A_URL" "jenkins-a" "b" "$CONTROLLER_B_INTERNAL_URL" "$VALID_CREDENTIALS_ID"
 
-log "fail-closed: case auth-error"
-scenario_sequence "Case auth-error: use invalid API token credential and expect 401/403"
+scenario_step "Case auth-error: a credential holding a token the server will not accept"
 upsert_username_password_credential "$CONTROLLER_A_URL" "$INVALID_AUTH_CREDENTIALS_ID" "admin" "not-a-valid-api-token"
-configure_remote_client "$CONTROLLER_A_URL" "jenkins-a" "$CONTROLLER_B_INTERNAL_URL" "$INVALID_AUTH_CREDENTIALS_ID"
-run_failure_case \
-  "auth-error" \
-  "s07-fail-auth" \
-  600 \
-  "POST /acquire/ returns HTTP 401/403 due to invalid Authorization" \
+configure_remote_client_for_server \
+  "$CONTROLLER_A_URL" "jenkins-a" "b" "$CONTROLLER_B_INTERNAL_URL" "$INVALID_AUTH_CREDENTIALS_ID"
+run_failure_case "auth-error" "s07-fail-auth" \
+  "POST /acquire is rejected with 401/403" \
   "HTTP 401|HTTP 403|returned HTTP 401|returned HTTP 403|Sign in to access"
 
-log "fail-closed: case missing-credentials-id"
-scenario_sequence "Case missing-credentials-id: configure unknown credentialsId and expect fail-fast"
-configure_remote_client "$CONTROLLER_A_URL" "jenkins-a" "$CONTROLLER_B_INTERNAL_URL" "$MISSING_CREDENTIALS_ID"
-run_failure_case \
-  "missing-credentials-id" \
-  "s07-fail-missing-credentials" \
-  600 \
-  "LockStepExecution.resolveAuthorizationHeader() cannot resolve credentialsId" \
+scenario_step "Case missing-credentials-id: a credentials id that resolves to nothing"
+configure_remote_client_for_server \
+  "$CONTROLLER_A_URL" "jenkins-a" "b" "$CONTROLLER_B_INTERNAL_URL" "$MISSING_CREDENTIALS_ID"
+run_failure_case "missing-credentials-id" "s07-fail-missing-credentials" \
+  "the client cannot resolve credentialsId, and must not fall back to anonymous" \
   "Remote credentials not found for serverId=b, credentialsId=${MISSING_CREDENTIALS_ID}"
 
-log "fail-closed: case credentials-type-mismatch"
-scenario_sequence "Case credentials-type-mismatch: configure secret-text credential id and expect fail-fast"
+scenario_step "Case credentials-type-mismatch: a secret-text credential where a username/password is required"
 upsert_string_credential "$CONTROLLER_A_URL" "$TYPE_MISMATCH_CREDENTIALS_ID" "dummy-secret"
-configure_remote_client "$CONTROLLER_A_URL" "jenkins-a" "$CONTROLLER_B_INTERNAL_URL" "$TYPE_MISMATCH_CREDENTIALS_ID"
-run_failure_case \
-  "credentials-type-mismatch" \
-  "s07-fail-credentials-type-mismatch" \
-  600 \
-  "LockStepExecution.resolveAuthorizationHeader() rejects non-username/password credential" \
+configure_remote_client_for_server \
+  "$CONTROLLER_A_URL" "jenkins-a" "b" "$CONTROLLER_B_INTERNAL_URL" "$TYPE_MISMATCH_CREDENTIALS_ID"
+run_failure_case "credentials-type-mismatch" "s07-fail-credentials-type-mismatch" \
+  "the client rejects a credential of the wrong type rather than coercing it" \
   "Remote credentials not found for serverId=b, credentialsId=${TYPE_MISMATCH_CREDENTIALS_ID}"
 
-configure_remote_client "$CONTROLLER_A_URL" "jenkins-a" "$CONTROLLER_B_INTERNAL_URL" "$VALID_CREDENTIALS_ID"
+scenario_step "Check no fault left the resource held on B"
+configure_remote_client_for_server \
+  "$CONTROLLER_A_URL" "jenkins-a" "b" "$CONTROLLER_B_INTERNAL_URL" "$VALID_CREDENTIALS_ID"
+scenario_check_resource_free "Resource free after all five faults" "b" "$RESOURCE_NAME"
 
-log "fail-closed: completed"
+scenario_finish

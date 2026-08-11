@@ -1,40 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# S09: forcedServerId sends a lock() with no serverId to a remote, transparently.
+#
+# The point of delegated mode is that existing pipelines need no edit: the same `lock(resource: 'x')`
+# goes remote when the controller is configured to delegate, and goes back to being an ordinary local
+# lock when it is not. Both halves are asserted, and the second one matters most - a controller that
+# stays in delegated mode after the setting is cleared would route every local lock off-box.
+#
+# forcedServerId is controller-wide state, so clearing it is a cleanup hook rather than a final line:
+# left set by a scenario that died here, it would silently redirect every scenario that follows.
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
 
-RESULTS_DIR="${1:-}"
-if [[ -z "$RESULTS_DIR" ]]; then
-  err "Results directory argument is required"
-  exit 2
-fi
+scenario_init "S09" "delegated-mode" "${1:-}"
 
-SCENARIO="delegated-mode"
-SCENARIO_ID="S09"
-SCENARIO_DIR="$RESULTS_DIR/$SCENARIO"
-mkdir -p "$SCENARIO_DIR"
+STAMP="$(scenario_stamp)"
+B_RESOURCE="s09-res-b-$STAMP"
+A_LOCAL_RESOURCE="s09-local-a-$STAMP"
 
-TS="$(date +%s)"
-B_RESOURCE="s09-res-b-${TS}"
-A_LOCAL_RESOURCE="s09-local-a-${TS}"
-CREDENTIALS_ID="s09-a-for-b"
-DETAIL_FILE="$SCENARIO_DIR/scenario-details.md"
+scenario_cleanup_hook configure_forced_server_id_empty "$CONTROLLER_A_URL"
 
-# --- Setup B: remote API + auth + exposed resource ---
-configure_remote_server "$CONTROLLER_B_URL" "$B_RESOURCE" "remote-enabled" "authenticated"
-verify_remote_server_config "$CONTROLLER_B_URL" "$B_RESOURCE" "authenticated"
-
-# --- Setup A: local resource + credentials + remote client ---
+scenario_step "Expose a resource on B, add a local one on A, and link A to B"
+setup_remote_pair "s09" "a" "b" "$B_RESOURCE"
 configure_local_resource "$CONTROLLER_A_URL" "$A_LOCAL_RESOURCE"
-TOKEN_B="$(issue_user_api_token "$CONTROLLER_B_URL" "admin" "e2e-s09-b-token")"
-upsert_username_password_credential "$CONTROLLER_A_URL" "$CREDENTIALS_ID" "admin" "$TOKEN_B"
-configure_remote_client_for_server "$CONTROLLER_A_URL" "jenkins-a" "b" "$CONTROLLER_B_INTERNAL_URL" "$CREDENTIALS_ID"
 
-# --- Setup A: forcedServerId = 'b' ---
+scenario_step "Set forcedServerId=b on A and run a lock() that names no serverId"
 configure_forced_server_id "$CONTROLLER_A_URL" "b"
 
-# --- Pipeline s09-delegated (no serverId in DSL) ---
 DELEGATED_PIPELINE="$(cat <<EOF
 pipeline {
   agent any
@@ -52,30 +46,19 @@ EOF
 )"
 
 upsert_pipeline_job "$CONTROLLER_A_URL" "s09-delegated" "$DELEGATED_PIPELINE"
-delegated_build_url="$(trigger_and_resolve_build_url "$CONTROLLER_A_URL" "s09-delegated" 120)"
-delegated_result="$(wait_for_build_result "$delegated_build_url" 600)"
-save_console_log "$delegated_build_url" "$SCENARIO_DIR/delegated-console.txt"
+delegated_url="$(trigger_and_resolve_build_url "$CONTROLLER_A_URL" "s09-delegated" 120)"
+delegated_result="$(wait_for_build_result "$delegated_url" 600)"
+save_console_log "$delegated_url" "$SCENARIO_DIR/delegated-console.txt"
+scenario_artifact "delegated console" "$SCENARIO_DIR/delegated-console.txt"
 
-# CP01: build result SUCCESS
-[[ "$delegated_result" == "SUCCESS" ]] \
-  || { err "S09 CP01 FAIL: s09-delegated build result=$delegated_result"; exit 1; }
+scenario_check "Delegated build result" "Build API" "SUCCESS" "$delegated_result"
+scenario_check_contains "Body ran" "$SCENARIO_DIR/delegated-console.txt" "DELEGATED_ACQUIRED"
+scenario_check_contains "Went over the remote path" "$SCENARIO_DIR/delegated-console.txt" "Remote lock acquired on"
+scenario_check_contains "Delegated to the configured server" "$SCENARIO_DIR/delegated-console.txt" "serverId=b"
 
-# CP02: DELEGATED_ACQUIRED in console
-grep -Fq "DELEGATED_ACQUIRED" "$SCENARIO_DIR/delegated-console.txt" \
-  || { err "S09 CP02 FAIL: DELEGATED_ACQUIRED not found in console"; exit 1; }
-
-# CP03: Remote lock acquired on in console
-grep -Fq "Remote lock acquired on" "$SCENARIO_DIR/delegated-console.txt" \
-  || { err "S09 CP03 FAIL: 'Remote lock acquired on' not found in console"; exit 1; }
-
-# CP04: serverId=b in console (proof of forcedServerId delegation)
-grep -Fq "serverId=b" "$SCENARIO_DIR/delegated-console.txt" \
-  || { err "S09 CP04 FAIL: 'serverId=b' not found in console"; exit 1; }
-
-# --- Clear forcedServerId on A ---
+scenario_step "Clear forcedServerId and run a lock() on a local resource"
 configure_forced_server_id_empty "$CONTROLLER_A_URL"
 
-# --- Pipeline s09-local-fallback (forcedServerId cleared) ---
 FALLBACK_PIPELINE="$(cat <<EOF
 pipeline {
   agent any
@@ -93,72 +76,21 @@ EOF
 )"
 
 upsert_pipeline_job "$CONTROLLER_A_URL" "s09-local-fallback" "$FALLBACK_PIPELINE"
-fallback_build_url="$(trigger_and_resolve_build_url "$CONTROLLER_A_URL" "s09-local-fallback" 120)"
-fallback_result="$(wait_for_build_result "$fallback_build_url" 600)"
-save_console_log "$fallback_build_url" "$SCENARIO_DIR/fallback-console.txt"
+fallback_url="$(trigger_and_resolve_build_url "$CONTROLLER_A_URL" "s09-local-fallback" 120)"
+fallback_result="$(wait_for_build_result "$fallback_url" 600)"
+save_console_log "$fallback_url" "$SCENARIO_DIR/fallback-console.txt"
+scenario_artifact "fallback console" "$SCENARIO_DIR/fallback-console.txt"
 
-# CP05: fallback build result SUCCESS
-[[ "$fallback_result" == "SUCCESS" ]] \
-  || { err "S09 CP05 FAIL: s09-local-fallback build result=$fallback_result"; exit 1; }
+scenario_check "Fallback build result" "Build API" "SUCCESS" "$fallback_result"
+scenario_check_contains "Local body ran" "$SCENARIO_DIR/fallback-console.txt" "LOCAL_ACQUIRED"
+scenario_check_absent "Delegation stopped with the setting" "$SCENARIO_DIR/fallback-console.txt" "Remote lock acquired on"
 
-# CP06: LOCAL_ACQUIRED in fallback console
-grep -Fq "LOCAL_ACQUIRED" "$SCENARIO_DIR/fallback-console.txt" \
-  || { err "S09 CP06 FAIL: LOCAL_ACQUIRED not found in fallback console"; exit 1; }
+scenario_check_resource_free "Delegated resource released on B" "b" "$B_RESOURCE"
+scenario_check_resource_free "Local resource released on A" "a" "$A_LOCAL_RESOURCE"
 
-# CP07: Remote lock acquired on NOT in fallback console (local mode restored)
-if grep -Fq "Remote lock acquired on" "$SCENARIO_DIR/fallback-console.txt"; then
-  err "S09 CP07 FAIL: 'Remote lock acquired on' should not appear in fallback console"
-  exit 1
-fi
+scenario_fact "delegated_build_url" "$delegated_url"
+scenario_fact "delegated_result" "$delegated_result"
+scenario_fact "fallback_build_url" "$fallback_url"
+scenario_fact "fallback_result" "$fallback_result"
 
-# CP08: B resource released after jobs complete
-b_state="$(run_groovy_script "$CONTROLLER_B_URL" "
-import org.jenkins.plugins.lockableresources.LockableResourcesManager
-def r = LockableResourcesManager.get().fromName('${B_RESOURCE}')
-println('EXISTS=' + (r != null))
-println('LOCKED=' + (r != null && r.isLocked()))
-" | tr -d '\r')"
-
-if ! printf '%s' "$b_state" | grep -Fq "LOCKED=false"; then
-  err "S09 CP08 FAIL: B resource ${B_RESOURCE} not released (state: $b_state)"
-  exit 1
-fi
-
-cat >"$SCENARIO_DIR/summary.txt" <<EOF
-delegated_build_url=$delegated_build_url
-delegated_result=$delegated_result
-fallback_build_url=$fallback_build_url
-fallback_result=$fallback_result
-b_resource_state=$(printf '%s' "$b_state" | tr '\n' ';')
-EOF
-
-cat >"$DETAIL_FILE" <<EOF
-### ${SCENARIO_ID}: ${SCENARIO}
-
-#### Summary
-
-- s09-delegated result: $delegated_result
-- s09-local-fallback result: $fallback_result
-- B resource state: $(printf '%s' "$b_state" | tr '\n' ';')
-
-#### Checkpoints
-
-| ID | Result |
-|---|---|
-| CP01 | PASS (s09-delegated SUCCESS) |
-| CP02 | PASS (DELEGATED_ACQUIRED found) |
-| CP03 | PASS (Remote lock acquired on found) |
-| CP04 | PASS (serverId=b found) |
-| CP05 | PASS (s09-local-fallback SUCCESS) |
-| CP06 | PASS (LOCAL_ACQUIRED found) |
-| CP07 | PASS (Remote lock acquired on absent in fallback) |
-| CP08 | PASS (B resource released) |
-
-#### Artifacts
-
-- delegated console: $SCENARIO_DIR/delegated-console.txt
-- fallback console: $SCENARIO_DIR/fallback-console.txt
-- summary: $SCENARIO_DIR/summary.txt
-EOF
-
-log "delegated-mode: completed"
+scenario_finish

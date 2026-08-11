@@ -1,109 +1,57 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# S21 (P1M2M3): what delegated mode looks like on the page.
+# S21: in delegated mode the page shows the target's resources next to the local ones.
 #
-# The original design replaced the local resources with the remote's. That was reversed: roles are
-# per relation, so a controller that delegates its own lock() calls can still be the server others
-# lock against, and hiding its resources would hide the ones they are actively locking. This scenario
-# is the regression guard for that decision - it fails if the local resources ever disappear again.
+# Delegated mode changes what `lock('x')` means on this controller, so the page has to say so - an
+# administrator reading a resource list that no longer describes where locks go has been misled.
+# The design decision worth protecting is the second one: local resources stay listed. They are
+# still there and still lockable by other controllers, and hiding them would make a resource that
+# exists look like one that does not.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
 
-RESULTS_DIR="${1:-}"
-if [[ -z "$RESULTS_DIR" ]]; then
-  err "Results directory argument is required"
-  exit 2
-fi
+scenario_init "S21" "delegated-mode-page" "${1:-}"
 
-SCENARIO="delegated-mode-page"
-SCENARIO_ID="S21"
-SCENARIO_DIR="$RESULTS_DIR/$SCENARIO"
-mkdir -p "$SCENARIO_DIR"
-
-TS="$(date +%s)"
-REMOTE_RESOURCE="s21-remote-${TS}"
-LOCAL_RESOURCE="s21-local-${TS}"
-CREDENTIALS_ID="s21-a-for-b"
-DETAIL_FILE="$SCENARIO_DIR/scenario-details.md"
+STAMP="$(scenario_stamp)"
+REMOTE_RESOURCE="s21-remote-$STAMP"
+LOCAL_RESOURCE="s21-local-$STAMP"
 
 fetch_lr_page() {
-  curl -sS -u "admin:admin" -o "$1" "${CONTROLLER_A_URL}/lockable-resources/"
+  curl -sS -u "$JENKINS_USER:$JENKINS_PASSWORD" -o "$1" "${CONTROLLER_A_URL}/lockable-resources/"
 }
 
-cleanup() {
-  configure_forced_server_id_empty "$CONTROLLER_A_URL" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT
+scenario_cleanup_hook configure_forced_server_id_empty "$CONTROLLER_A_URL"
 
-# --- B publishes a resource; A has one of its own and delegates to B ---
-configure_remote_server "$CONTROLLER_B_URL" "$REMOTE_RESOURCE" "remote-enabled" "authenticated"
-verify_remote_server_config "$CONTROLLER_B_URL" "$REMOTE_RESOURCE" "authenticated"
+scenario_step "B publishes a resource, A has one of its own, and A delegates to B"
+setup_remote_pair "s21" "a" "b" "$REMOTE_RESOURCE"
 configure_local_resource "$CONTROLLER_A_URL" "$LOCAL_RESOURCE"
-
-TOKEN_B="$(issue_user_api_token "$CONTROLLER_B_URL" "admin" "e2e-s21-b-token")"
-upsert_username_password_credential "$CONTROLLER_A_URL" "$CREDENTIALS_ID" "admin" "$TOKEN_B"
-configure_remote_client_for_server "$CONTROLLER_A_URL" "jenkins-a" "b" "$CONTROLLER_B_INTERNAL_URL" "$CREDENTIALS_ID"
 configure_forced_server_id "$CONTROLLER_A_URL" "b"
 
-# The catalog is fetched in the background with a short TTL; give the first refresh a moment.
+# The catalogue is fetched in the background and cached for RLR_CATALOG_TTL_S; the first read only
+# triggers the fetch, so the page is read again once the cache has had time to fill.
 fetch_lr_page "$SCENARIO_DIR/page-warmup.html"
-sleep 12
+sleep "$(rlr_past "$RLR_CATALOG_TTL_S")"
 fetch_lr_page "$SCENARIO_DIR/page-delegated.html"
+scenario_artifact "page in delegated mode" "$SCENARIO_DIR/page-delegated.html"
 
-# --- CP01: the badge tells the administrator the resolution semantics changed ---
-grep -Fq "Delegated mode" "$SCENARIO_DIR/page-delegated.html" \
-  || { err "S21 CP01 FAIL: no delegated-mode badge on the page"; exit 1; }
+scenario_check_contains "The page announces delegated mode" "$SCENARIO_DIR/page-delegated.html" "Delegated mode"
+scenario_check_contains "Local resources are still listed" "$SCENARIO_DIR/page-delegated.html" "$LOCAL_RESOURCE"
+scenario_check_contains "And the page explains why they still matter" \
+  "$SCENARIO_DIR/page-delegated.html" "remain lockable by other controllers"
+scenario_check_contains "The delegated target's resources are shown" \
+  "$SCENARIO_DIR/page-delegated.html" "$REMOTE_RESOURCE"
 
-# --- CP02: local resources are still listed (the reversal of "replace them") ---
-grep -Fq "$LOCAL_RESOURCE" "$SCENARIO_DIR/page-delegated.html" \
-  || { err "S21 CP02 FAIL: local resources vanished in delegated mode"; exit 1; }
-grep -Fq "remain lockable by other controllers" "$SCENARIO_DIR/page-delegated.html" \
-  || { err "S21 CP02 FAIL: the page does not explain why local resources are still listed"; exit 1; }
-
-# --- CP03: what the delegated target publishes is shown too ---
-grep -Fq "$REMOTE_RESOURCE" "$SCENARIO_DIR/page-delegated.html" \
-  || { err "S21 CP03 FAIL: the delegated target's resources are not shown"; exit 1; }
-
-# --- CP04: turning delegation off returns the page to its ordinary state ---
+scenario_step "Turn delegation off and read the page again"
 configure_forced_server_id_empty "$CONTROLLER_A_URL"
 fetch_lr_page "$SCENARIO_DIR/page-peer.html"
-if grep -Fq "Delegated mode" "$SCENARIO_DIR/page-peer.html"; then
-  err "S21 CP04 FAIL: the delegated badge survives clearing forcedServerId"
-  exit 1
-fi
-grep -Fq "$LOCAL_RESOURCE" "$SCENARIO_DIR/page-peer.html" \
-  || { err "S21 CP04 FAIL: local resources are missing after leaving delegated mode"; exit 1; }
+scenario_artifact "page after leaving delegated mode" "$SCENARIO_DIR/page-peer.html"
 
-cat >"$SCENARIO_DIR/summary.txt" <<EOF
-local_resource=$LOCAL_RESOURCE
-remote_resource=$REMOTE_RESOURCE
-page_delegated=$SCENARIO_DIR/page-delegated.html
-page_peer=$SCENARIO_DIR/page-peer.html
-EOF
+scenario_check_absent "The badge goes with the setting" "$SCENARIO_DIR/page-peer.html" "Delegated mode"
+scenario_check_contains "Local resources survive the transition" "$SCENARIO_DIR/page-peer.html" "$LOCAL_RESOURCE"
 
-cat >"$DETAIL_FILE" <<EOF
-### ${SCENARIO_ID}: ${SCENARIO}
+scenario_fact "local_resource" "$LOCAL_RESOURCE"
+scenario_fact "remote_resource" "$REMOTE_RESOURCE"
 
-#### Summary
-
-- local resource on A: $LOCAL_RESOURCE (must stay visible while delegating)
-- resource published by B: $REMOTE_RESOURCE
-
-#### Checkpoints
-
-| ID | Result |
-|---|---|
-| CP01 | PASS (delegated-mode badge shown) |
-| CP02 | PASS (local resources still listed, with the reason) |
-| CP03 | PASS (the delegated target's published resources are shown) |
-| CP04 | PASS (clearing forcedServerId removes the badge and keeps local resources) |
-
-#### Artifacts
-
-- page in delegated mode: $SCENARIO_DIR/page-delegated.html
-- page after leaving delegated mode: $SCENARIO_DIR/page-peer.html
-EOF
-
-log "delegated-mode-page: completed"
+scenario_finish

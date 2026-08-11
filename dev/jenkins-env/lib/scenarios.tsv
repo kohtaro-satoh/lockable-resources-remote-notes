@@ -1,0 +1,48 @@
+# The scenario registry - the one place a scenario is declared.
+#
+# run-e2e.sh used to carry the same list four times over: the per-series arrays, ALL_SCENARIOS, the
+# SCENARIO_IDS map and the --only help text. Adding a scenario meant four edits, and the run order
+# was whatever ALL_SCENARIOS happened to say rather than what the series arrays did.
+#
+# Columns (tab separated):
+#   id           Scenario id used in the report (S01.., D01.., B01..).
+#   name         Script base name: scenarios/<name>.sh
+#   series       --only group this belongs to; also the milestone that introduced it.
+#   controllers  Controllers the scenario needs. run-e2e.sh waits for these and skips the scenario
+#                when one is unavailable, so a script no longer hand-rolls its own d-is-down check.
+#   axis         What kind of coverage this is: function | data | time | scale
+#   summary      One line, shown in --list.
+#
+# id	name	series	controllers	axis	summary
+S01	mutual-peer	s	ab	function	A->B and B->A relays run without interfering
+S02	fan-in-contention	s	abc	function	Two clients contend for one resource; queue and QUEUED transitions
+S03	server-self-use	s	ab	function	Local hold on the server excludes a remote client
+S04	mixed-local-remote	s	ab	function	One pipeline holds a local and a remote lock at once
+S05	skip-if-locked	s	ab	function	skipIfLocked over the remote path
+S06	three-way-mesh	s	abc	function	Three relays in a ring, no phantom locks
+S07	fail-closed	s	ab	function	Transport, auth and credential faults leave the body unexecuted
+S08	label-env-vars	m1a	ab	function	Label acquire plus lockEnvVars expansion equivalence
+S09	delegated-mode	m1a	ab	function	forcedServerId delegates a serverId-less lock(), and falls back
+S10	extra-resources	m1b	ab	function	main + extra acquired atomically under one lease
+S11	heartbeat-resilience	m1b	ab	time	Heartbeat outage shorter than STALE leaves the job running
+S12	priority-ordering	m1b	ab	function	priority dispatches across local and remote waiters
+S13	stale-admin-release	m1b	b	time	Ghost lease goes STALE, is held fail-closed, and force-released
+S14	extra-label-resources	m1c	ab	function	A label-selected extra joins the same lease
+S15	label-quantity-all	m1c	ab	data	quantity unset on a label means every match, as local lock() does
+S16	remote-resource-properties	m1d	ab	function	Resource properties reach the remote body as env vars
+S17	remote-unknown-rejected	m1e	ab	data	Unknown or unexposed selectors 404 without creating anything
+S18	remote-acquire-timeout	m1i	ab	time	An allocate timeout past the terminal TTL ends as LOCK_WAIT_TIMEOUT
+S19	remote-resources-endpoint	m2m3	ab	function	GET /resources exposes state without leaking holders
+S20	client-side-remote-view	m2m3	ab	function	The client page shows what this controller holds remotely
+S21	delegated-mode-page	m2m3	ab	function	The delegated target's resources render next to the local ones
+S22	remote-maintenance-switch	m2m3	ab	function	Paused acquires answer 503 while live leases are undisturbed
+B01	acquire-payload-boundaries	boundary	ab	data	Every documented rejection at POST /acquire, including the 1 MiB cap
+B02	lease-lifecycle-edges	boundary	ab	time	Heartbeat, release and poll against absent, released and terminal leases
+B03	resource-name-boundaries	boundary	ab	data	Names carrying comma, space and multibyte survive the round trip
+B04	catalog-cache-ttl	boundary	ab	time	The client catalog serves within TTL and refreshes past it
+B05	acquire-abort-races	boundary	ab	time	Aborting while QUEUED or ACQUIRED leaves no resource held
+B06	catalog-scale	boundary	ab	scale	Discovery latency and acquire interference as the catalog grows
+B07	queue-depth-scale	boundary	b	scale	Promotion throughput and fairness as waiters pile up on one resource
+D01	fan-in-4	d	abcd	function	Four clients contend for one server's resource
+D02	chain-4	d	abcd	function	A->B->C->D independent relays in parallel
+D03	diamond	d	abcd	function	Diamond dependency does not deadlock

@@ -1,98 +1,54 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# D01: three clients contend for one resource on a fourth controller.
+#
+# Same shape as S02 but with the queue two deep instead of one, which is where a queue that promotes
+# the wrong waiter, or forgets one, starts to show.
+#
+# jenkins-d availability is declared in lib/scenarios.tsv (controllers=abcd); run-e2e.sh skips this
+# scenario when d is down, so there is no probe here.
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
 
-RESULTS_DIR="${1:-}"
-if [[ -z "$RESULTS_DIR" ]]; then
-  err "Results directory argument is required"
-  exit 2
-fi
+scenario_init "D01" "fan-in-4" "${1:-}"
 
-if ! wait_for_url "$CONTROLLER_D_URL/login" 20; then
-  log "fan-in-4: jenkins-d is not available, skip"
-  exit 10
-fi
+RESOURCE_NAME="d01-shared-d-$(scenario_stamp)"
 
-SCENARIO="fan-in-4"
-SCENARIO_ID="D01"
-SCENARIO_DIR="$RESULTS_DIR/$SCENARIO"
-mkdir -p "$SCENARIO_DIR"
+scenario_step "Expose one resource on D and point A, B and C at it"
+setup_remote_pair "d01" "a" "d" "$RESOURCE_NAME"
+setup_remote_pair "d01" "b" "d" "$RESOURCE_NAME"
+setup_remote_pair "d01" "c" "d" "$RESOURCE_NAME"
 
-RESOURCE_NAME="d01-shared-d-$(date +%s)"
-CREDENTIALS_ID="d01-for-d"
-
-configure_remote_server "$CONTROLLER_D_URL" "$RESOURCE_NAME" "remote-enabled" "authenticated"
-TOKEN_D="$(issue_user_api_token "$CONTROLLER_D_URL" "admin" "e2e-d01-d-token")"
-
-upsert_username_password_credential "$CONTROLLER_A_URL" "$CREDENTIALS_ID" "admin" "$TOKEN_D"
-upsert_username_password_credential "$CONTROLLER_B_URL" "$CREDENTIALS_ID" "admin" "$TOKEN_D"
-upsert_username_password_credential "$CONTROLLER_C_URL" "$CREDENTIALS_ID" "admin" "$TOKEN_D"
-
-configure_remote_client_for_server "$CONTROLLER_A_URL" "jenkins-a" "d" "$CONTROLLER_D_INTERNAL_URL" "$CREDENTIALS_ID"
-configure_remote_client_for_server "$CONTROLLER_B_URL" "jenkins-b" "d" "$CONTROLLER_D_INTERNAL_URL" "$CREDENTIALS_ID"
-configure_remote_client_for_server "$CONTROLLER_C_URL" "jenkins-c" "d" "$CONTROLLER_D_INTERNAL_URL" "$CREDENTIALS_ID"
-
-A_SCRIPT="$(cat <<EOF
-pipeline { agent any; stages { stage('A') { steps { lock(resource: "${RESOURCE_NAME}", serverId: 'd') { echo 'A_ACQUIRED'; sleep time: 20, unit: 'SECONDS' } } } } }
+contender_script() {
+  local marker="$1" hold="$2"
+  cat <<EOF
+pipeline { agent any; stages { stage('Contend') { steps { lock(resource: "${RESOURCE_NAME}", serverId: 'd') { echo '${marker}'; sleep time: ${hold}, unit: 'SECONDS' } } } } }
 EOF
-)"
-B_SCRIPT="$(cat <<EOF
-pipeline { agent any; stages { stage('B') { steps { lock(resource: "${RESOURCE_NAME}", serverId: 'd') { echo 'B_ACQUIRED'; sleep time: 5, unit: 'SECONDS' } } } } }
-EOF
-)"
-C_SCRIPT="$(cat <<EOF
-pipeline { agent any; stages { stage('C') { steps { lock(resource: "${RESOURCE_NAME}", serverId: 'd') { echo 'C_ACQUIRED'; sleep time: 5, unit: 'SECONDS' } } } } }
-EOF
-)"
+}
 
-upsert_pipeline_job "$CONTROLLER_A_URL" "d01-a" "$A_SCRIPT"
-upsert_pipeline_job "$CONTROLLER_B_URL" "d01-b" "$B_SCRIPT"
-upsert_pipeline_job "$CONTROLLER_C_URL" "d01-c" "$C_SCRIPT"
+upsert_pipeline_job "$CONTROLLER_A_URL" "d01-a" "$(contender_script A_ACQUIRED 20)"
+upsert_pipeline_job "$CONTROLLER_B_URL" "d01-b" "$(contender_script B_ACQUIRED 5)"
+upsert_pipeline_job "$CONTROLLER_C_URL" "d01-c" "$(contender_script C_ACQUIRED 5)"
 
-a_url="$(trigger_and_resolve_build_url "$CONTROLLER_A_URL" "d01-a" 120)"
-b_url="$(trigger_and_resolve_build_url "$CONTROLLER_B_URL" "d01-b" 120)"
-c_url="$(trigger_and_resolve_build_url "$CONTROLLER_C_URL" "d01-c" 120)"
+scenario_step "Start all three contenders"
+start_epoch="$(date +%s)"
+relay_reset
+relay_trigger a d01-a A_ACQUIRED
+relay_trigger b d01-b B_ACQUIRED
+relay_trigger c d01-c C_ACQUIRED
+relay_await_all 900
+duration="$(($(date +%s) - start_epoch))"
 
-ar="$(wait_for_build_result "$a_url" 900)"
-br="$(wait_for_build_result "$b_url" 900)"
-cr="$(wait_for_build_result "$c_url" 900)"
+# Exclusion, from the outside: the three holds are 20 + 5 + 5 seconds and only one contender can be
+# in at a time, so a run that finished faster than their sum handed the resource out twice.
+scenario_check_ge "Contenders were serialised by the lock" "$duration" 30 "elapsed seconds (sum of holds)"
 
-save_console_log "$a_url" "$SCENARIO_DIR/a-console.txt"
-save_console_log "$b_url" "$SCENARIO_DIR/b-console.txt"
-save_console_log "$c_url" "$SCENARIO_DIR/c-console.txt"
+scenario_step "Check the resource was released"
+scenario_check_resource_free "Shared resource released on D" "d" "$RESOURCE_NAME"
 
-[[ "$ar" == "SUCCESS" && "$br" == "SUCCESS" && "$cr" == "SUCCESS" ]] || exit 1
+scenario_fact "duration_seconds" "$duration"
+scenario_fact "resource" "$RESOURCE_NAME"
 
-grep -Fq "A_ACQUIRED" "$SCENARIO_DIR/a-console.txt" || exit 1
-grep -Fq "B_ACQUIRED" "$SCENARIO_DIR/b-console.txt" || exit 1
-grep -Fq "C_ACQUIRED" "$SCENARIO_DIR/c-console.txt" || exit 1
-
-cat >"$SCENARIO_DIR/summary.txt" <<EOF
-a_result=$ar
-b_result=$br
-c_result=$cr
-a_build_url=$a_url
-b_build_url=$b_url
-c_build_url=$c_url
-EOF
-
-cat >"$SCENARIO_DIR/scenario-details.md" <<EOF
-### ${SCENARIO_ID}: ${SCENARIO}
-
-#### Summary
-
-- a result: $ar
-- b result: $br
-- c result: $cr
-
-#### Artifacts
-
-- a console: $SCENARIO_DIR/a-console.txt
-- b console: $SCENARIO_DIR/b-console.txt
-- c console: $SCENARIO_DIR/c-console.txt
-- summary: $SCENARIO_DIR/summary.txt
-EOF
-
-log "fan-in-4: completed"
+scenario_finish

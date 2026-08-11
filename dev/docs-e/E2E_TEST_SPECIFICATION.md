@@ -33,6 +33,10 @@ lockable-resources-plugin:
 | 14 | Atomic acquisition of label-based extra (main + label-extra under a single lease) | P1M1C |
 | 15 | Label with unspecified quantity locks ALL matching (equivalent to local "0 = all") | P1M1C |
 | 16 | Resource-property env var propagation over the bridge (`VAR0_<PROP>` reaches the body) | P1M1D |
+| 17 | **Data boundary**: the rejection contract of POST /acquire (status + errorCode) and the 1 MiB body cap | Boundary |
+| 18 | **Data boundary**: resource-name encoding round trip (space / multibyte / long / comma) | Boundary |
+| 19 | **Temporal boundary**: terminal-record TTL, catalogue TTL and abort, checked on both sides of each threshold | Boundary |
+| 20 | **Scale boundary**: what discovery costs as the catalogue grows, and what it costs lock acquisition | Boundary |
 
 ---
 
@@ -60,6 +64,13 @@ lockable-resources-plugin:
 | S16 | `remote-resource-properties` | resource-property env var propagation | `VAR0_<PROP>` reaches the remote body (M1D shared env-var generation) | a, b | P1M1D |
 | S17 | `remote-unknown-rejected` | acquire for an unknown/unexposed resource | uniform 404 fast rejection + no ephemeral created on the server (H-1 regression) | a, b | P1M1E |
 | S18 | `remote-acquire-timeout` | allocation timeout (>120s) under contention | timeout fails closed as `LOCK_WAIT_TIMEOUT` (not a 404 / communication failure); queued-expiry-poll-404 regression | a, b | P1M1I |
+| B01 | `acquire-payload-boundaries` | Value range of POST /acquire | 13 rejections by status+errorCode; both sides of the 1 MiB cap | a, b | Boundary |
+| B02 | `lease-lifecycle-edges` | Calls against a lease in the wrong state | heartbeat/release/poll on absent, released and queued leases; both sides of TERMINAL_TTL | a, b | Boundary |
+| B03 | `resource-name-boundaries` | Resource-name encoding | space / multibyte / 244-char / comma-bearing names round trip | a, b | Boundary |
+| B04 | `catalog-cache-ttl` | Freshness of the client-side catalogue | stale within TTL / catches up past it / still renders with the server down | a, b | Boundary |
+| B05 | `acquire-abort-races` | Build abort | aborted while QUEUED leaves no phantom lock; aborted while ACQUIRED releases before STALE | a, b | Boundary |
+| B06 | `catalog-scale` | Catalogue size | response time and completeness at 100/500/2000; acquire latency under discovery load | a, b | Boundary |
+| B07 | `queue-depth-scale` | Queue depth | promotion throughput and fairness with 1/10/50 waiters on one resource | b | Boundary |
 | D01 | `fan-in-4` | A, B, C contend for D's resource | 4-client → 1-server queue stability | a, b, c, d | P1M1 |
 | D02 | `chain-4` | A→B, B→C, C→D (independent chain) | n parallel one-way relays | a, b, c, d | P1M1 |
 | D03 | `diamond` | A→(B+C), B→D, C→D (diamond dependency) | No deadlock under indirect shared dependency | a, b, c, d | P1M1 |
@@ -1524,3 +1535,20 @@ The report records:
   queued-expiry-poll-404 regression found by load testing: an allocate timeout (130s > the 120s
   terminal TTL) fails closed with `LOCK_WAIT_TIMEOUT` (not a 404 / communication failure). Added the
   `m1i-series` group. The timeout must exceed 120s to cross the TTL boundary.
+- 2026-08-10: **Refactored the harness and added the boundary series B01-B06.**
+  (1) New `lib/scenario.sh`: checkpoints are recorded where they are decided, and
+  `scenario-details.md` is written from an EXIT trap so it always exists (previously 22 scenarios
+  hardcoded `PASS` in a trailing heredoc, and **a failing scenario produced no details at all**).
+  Checks accumulate by default; only preconditions stop the run.
+  (2) `lib/scenarios.tsv` is now the single place a scenario is declared; run-e2e.sh carries no
+  scenario list (it used to carry the same list four times). The `controllers` column moved the
+  jenkins-d probe out of the D-series scripts and into run-e2e.sh.
+  (3) `lib/timings.sh` names the plugin's timing constants and checks them against the plugin source
+  on every run; temporal scenarios derive their waits from those instead of bare sleeps.
+  (4) `setup_remote_pair`, `poll_until`, a REST client, `resource_state` and relay batches are shared.
+  Scenarios went from 3534 to 2090 lines while gaining assertions (release checks, timing evidence
+  for exclusion).
+  (5) Added B01-B07 (2 data, 3 temporal, 2 scale), runnable via `--only boundary`. Analysis and the
+  remaining gaps are in `docs-j/BOUNDARY_COVERAGE_ANALYSIS.md`.
+  Side effect: S08 used a fixed label `hw` and was **binding to a resource left by a previous run** -
+  invisible until the prefix-match assertion was tightened to an equality check.

@@ -1,30 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# S03: the server uses its own resource locally while a remote client wants it.
+#
+# Local and remote are two different code paths onto the same resource, and this is the scenario
+# that proves they share one exclusion. The remote waiter must not get in until the local build lets
+# go - which, again, only the elapsed time can show.
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
 
-RESULTS_DIR="${1:-}"
-if [[ -z "$RESULTS_DIR" ]]; then
-  err "Results directory argument is required"
-  exit 2
-fi
+scenario_init "S03" "server-self-use" "${1:-}"
 
-SCENARIO="server-self-use"
-SCENARIO_ID="S03"
-SCENARIO_DIR="$RESULTS_DIR/$SCENARIO"
-mkdir -p "$SCENARIO_DIR"
+RESOURCE_NAME="s03-shared-$(scenario_stamp)"
+LOCAL_HOLD_SECONDS=30
+MIN_WAIT_SECONDS=20
 
-RESOURCE_NAME="s03-shared-$(date +%s)"
-CREDENTIALS_ID="s03-a-for-b"
-DETAIL_FILE="$SCENARIO_DIR/scenario-details.md"
-
-configure_remote_server "$CONTROLLER_B_URL" "$RESOURCE_NAME" "remote-enabled" "authenticated"
-verify_remote_server_config "$CONTROLLER_B_URL" "$RESOURCE_NAME" "authenticated"
-TOKEN_B="$(issue_user_api_token "$CONTROLLER_B_URL" "admin" "e2e-s03-b-token")"
-upsert_username_password_credential "$CONTROLLER_A_URL" "$CREDENTIALS_ID" "admin" "$TOKEN_B"
-configure_remote_client_for_server "$CONTROLLER_A_URL" "jenkins-a" "b" "$CONTROLLER_B_INTERNAL_URL" "$CREDENTIALS_ID"
-verify_remote_client_for_server "$CONTROLLER_A_URL" "jenkins-a" "b" "$CONTROLLER_B_INTERNAL_URL" "$CREDENTIALS_ID"
+scenario_step "Expose the resource on B and link A to it"
+setup_remote_pair "s03" "a" "b" "$RESOURCE_NAME"
 
 LOCAL_SCRIPT="$(cat <<EOF
 pipeline {
@@ -34,7 +27,7 @@ pipeline {
       steps {
         lock(resource: "${RESOURCE_NAME}") {
           echo "LOCAL_HOLDER_ACQUIRED"
-          sleep time: 30, unit: "SECONDS"
+          sleep time: ${LOCAL_HOLD_SECONDS}, unit: "SECONDS"
         }
       }
     }
@@ -63,57 +56,31 @@ EOF
 upsert_pipeline_job "$CONTROLLER_B_URL" "s03-local-holder" "$LOCAL_SCRIPT"
 upsert_pipeline_job "$CONTROLLER_A_URL" "s03-remote-waiter" "$REMOTE_SCRIPT"
 
+scenario_step "Take the resource locally on B, then ask for it remotely from A"
 local_url="$(trigger_and_resolve_build_url "$CONTROLLER_B_URL" "s03-local-holder" 120)"
-if ! wait_for_console_contains "$local_url" "LOCAL_HOLDER_ACQUIRED" 120; then
-  err "server-self-use: local holder did not acquire lock in time"
-  exit 1
-fi
+wait_for_console_contains "$local_url" "LOCAL_HOLDER_ACQUIRED" 120 ||
+  scenario_require_ok "Local holder acquires first" "ConsoleText" "LOCAL_HOLDER_ACQUIRED never appeared"
 
 remote_start="$(date +%s)"
 remote_url="$(trigger_and_resolve_build_url "$CONTROLLER_A_URL" "s03-remote-waiter" 120)"
 local_result="$(wait_for_build_result "$local_url" 900)"
 remote_result="$(wait_for_build_result "$remote_url" 900)"
-remote_end="$(date +%s)"
-remote_duration="$((remote_end - remote_start))"
+remote_duration="$(($(date +%s) - remote_start))"
 
 save_console_log "$local_url" "$SCENARIO_DIR/local-holder-console.txt"
 save_console_log "$remote_url" "$SCENARIO_DIR/remote-waiter-console.txt"
+scenario_artifact "local-holder-console" "$SCENARIO_DIR/local-holder-console.txt"
+scenario_artifact "remote-waiter-console" "$SCENARIO_DIR/remote-waiter-console.txt"
 
-[[ "$local_result" == "SUCCESS" ]] || exit 1
-[[ "$remote_result" == "SUCCESS" ]] || exit 1
+scenario_check "Local holder result" "Build API" "SUCCESS" "$local_result"
+scenario_check "Remote waiter result" "Build API" "SUCCESS" "$remote_result"
+scenario_check_ge "Remote waiter excluded by the local hold" "$remote_duration" "$MIN_WAIT_SECONDS" "elapsed seconds"
+scenario_check_contains "Remote waiter entered the body" "$SCENARIO_DIR/remote-waiter-console.txt" "REMOTE_WAITER_ACQUIRED"
 
-if [[ "$remote_duration" -lt 20 ]]; then
-  err "server-self-use: remote waiter did not wait long enough (${remote_duration}s)"
-  exit 1
-fi
+scenario_fact "local_build_url" "$local_url"
+scenario_fact "local_result" "$local_result"
+scenario_fact "remote_build_url" "$remote_url"
+scenario_fact "remote_result" "$remote_result"
+scenario_fact "remote_wait_seconds" "$remote_duration"
 
-if ! grep -Fq "REMOTE_WAITER_ACQUIRED" "$SCENARIO_DIR/remote-waiter-console.txt"; then
-  err "server-self-use: remote marker missing"
-  exit 1
-fi
-
-cat >"$SCENARIO_DIR/summary.txt" <<EOF
-local_build_url=$local_url
-local_result=$local_result
-remote_build_url=$remote_url
-remote_result=$remote_result
-remote_wait_seconds=$remote_duration
-EOF
-
-cat >"$DETAIL_FILE" <<EOF
-### ${SCENARIO_ID}: ${SCENARIO}
-
-#### Summary
-
-- local holder result: $local_result
-- remote waiter result: $remote_result
-- remote wait seconds: $remote_duration
-
-#### Artifacts
-
-- local holder console: $SCENARIO_DIR/local-holder-console.txt
-- remote waiter console: $SCENARIO_DIR/remote-waiter-console.txt
-- summary: $SCENARIO_DIR/summary.txt
-EOF
-
-log "server-self-use: completed"
+scenario_finish

@@ -1,109 +1,78 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# S17 (P1M1E): an acquire for a resource this client cannot lock (unknown / unexposed) is rejected up
-# front with HTTP 404 (admission), and the server does NOT create an ephemeral resource for the unknown
-# name. This is the H-1 regression guard: M1D let unknown names create+orphan ephemeral resources and
-# queue forever; M1E rejects fast (404) and creates nothing. Also confirms M1E intentionally diverges
-# from M1D's "unknown -> QUEUED" (the client fails quickly instead of hanging to the timeout).
+# S17: asking for something the client may not have is refused at once, and leaves no trace.
+#
+# Two failure modes are being ruled out. The first is queueing: a request for a name the server does
+# not expose has no possible future, so waiting on it burns the allocate timeout for nothing. The
+# second is creation - the local lock() path can create a resource on demand, and if the remote path
+# inherited that, any client could populate a server's resource list by asking for names.
+#
+# Unknown and unexposed are answered identically, on purpose: distinguishing them would tell a
+# client which names exist on a server it has no other view into.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
 
-RESULTS_DIR="${1:-}"
-if [[ -z "$RESULTS_DIR" ]]; then
-  err "Results directory argument is required"
-  exit 2
-fi
+scenario_init "S17" "remote-unknown-rejected" "${1:-}"
 
-SCENARIO="remote-unknown-rejected"
-SCENARIO_ID="S17"
-SCENARIO_DIR="$RESULTS_DIR/$SCENARIO"
-mkdir -p "$SCENARIO_DIR"
+STAMP="$(scenario_stamp)"
+EXPOSED="s17-exposed-$STAMP"
+UNKNOWN="s17-unknown-$STAMP"
+HIDDEN="s17-hidden-$STAMP"
 
-TS="$(date +%s)"
-EXPOSED="s17-exposed-${TS}"
-UNKNOWN="s17-unknown-${TS}"
-CREDENTIALS_ID="s17-a-for-b"
-DETAIL_FILE="$SCENARIO_DIR/scenario-details.md"
+scenario_step "Expose one resource on B, add one that is deliberately not exposed, and link A"
+setup_remote_pair "s17" "a" "b" "$EXPOSED"
+configure_local_resource "$CONTROLLER_B_URL" "$HIDDEN"
 
-# --- Setup B: remote API + auth + one exposed resource (exposeLabel = remote-enabled) ---
-configure_remote_server "$CONTROLLER_B_URL" "$EXPOSED" "remote-enabled" "authenticated"
-verify_remote_server_config "$CONTROLLER_B_URL" "$EXPOSED" "authenticated"
+run_unknown_case() {
+  local case_name="$1"
+  local target="$2"
+  local job="s17-$case_name"
+  local console="$SCENARIO_DIR/$case_name-console.txt"
 
-# --- Setup A: credentials + remote client config ---
-TOKEN_B="$(issue_user_api_token "$CONTROLLER_B_URL" "admin" "e2e-s17-b-token")"
-upsert_username_password_credential "$CONTROLLER_A_URL" "$CREDENTIALS_ID" "admin" "$TOKEN_B"
-configure_remote_client_for_server "$CONTROLLER_A_URL" "jenkins-a" "b" "$CONTROLLER_B_INTERNAL_URL" "$CREDENTIALS_ID"
-
-# --- Pipeline (scripted): lock an UNKNOWN resource on b — must fail fast (404), not hang ---
-PIPELINE_SCRIPT="$(cat <<EOF
+  upsert_pipeline_job "$CONTROLLER_A_URL" "$job" "$(cat <<EOF
 node {
-  lock(resource: '$UNKNOWN', serverId: 'b') {
+  lock(resource: '$target', serverId: 'b') {
     echo "S17_BODY_SHOULD_NOT_RUN"
   }
 }
 EOF
 )"
 
-upsert_pipeline_job "$CONTROLLER_A_URL" "s17-unknown" "$PIPELINE_SCRIPT"
-build_url="$(trigger_and_resolve_build_url "$CONTROLLER_A_URL" "s17-unknown" 120)"
-result="$(wait_for_build_result "$build_url" 300)"
-save_console_log "$build_url" "$SCENARIO_DIR/console.txt"
+  local build_url result start elapsed
+  start="$(date +%s)"
+  build_url="$(trigger_and_resolve_build_url "$CONTROLLER_A_URL" "$job" 120)"
+  result="$(wait_for_build_result "$build_url" 300)"
+  elapsed="$(($(date +%s) - start))"
+  save_console_log "$build_url" "$console"
+  scenario_artifact "$case_name console" "$console"
 
-# CP01: the build FAILED (M1E: 404 -> fast failure; it did not hang to the queue timeout)
-[[ "$result" == "FAILURE" ]] \
-  || { err "S17 CP01 FAIL: expected FAILURE for unknown-resource acquire, got result=$result"; exit 1; }
+  scenario_check "$case_name: build failed" "Build API" "FAILURE" "$result"
+  scenario_check_matches "$case_name: refused as 404 / UNKNOWN_RESOURCE" "$console" "HTTP 404|UNKNOWN_RESOURCE"
+  scenario_check_absent "$case_name: body never ran" "$console" "S17_BODY_SHOULD_NOT_RUN"
+  # Refused, not queued: a request that waited would take the allocate timeout to fail.
+  scenario_check_lt "$case_name: refused immediately, not queued" "$elapsed" 60 "elapsed seconds"
 
-# CP02: the failure is the 404 admission rejection (ties the failure to M1E, not an unrelated error)
-grep -Eq "HTTP 404|UNKNOWN_RESOURCE" "$SCENARIO_DIR/console.txt" \
-  || { err "S17 CP02 FAIL: console does not show the 404/UNKNOWN_RESOURCE rejection"; exit 1; }
+  scenario_fact "${case_name}_result" "$result"
+  scenario_fact "${case_name}_seconds" "$elapsed"
+}
 
-# CP03: the body did not run (nothing was locked)
-if grep -Fq "S17_BODY_SHOULD_NOT_RUN" "$SCENARIO_DIR/console.txt"; then
-  err "S17 CP03 FAIL: lock body ran despite rejection"
-  exit 1
-fi
+scenario_step "Ask for a resource that does not exist on the server"
+run_unknown_case "unknown" "$UNKNOWN"
 
-# CP04: H-1 — the server did NOT create an ephemeral resource for the unknown name
-not_created="$(run_groovy_script "$CONTROLLER_B_URL" "
-import org.jenkins.plugins.lockableresources.LockableResourcesManager
-def r = LockableResourcesManager.get().fromName('${UNKNOWN}')
-println('NOT_CREATED=' + (r == null))
-" | tr -d '\r')"
-printf '%s' "$not_created" | grep -Fq "NOT_CREATED=true" \
-  || { err "S17 CP04 FAIL: server created an ephemeral resource for unknown name (state: $not_created)"; exit 1; }
+# Same answer for a name that does exist but is not exposed - otherwise the response is an oracle
+# for what the server has.
+scenario_step "Ask for a resource that exists but is not exposed"
+run_unknown_case "unexposed" "$HIDDEN"
 
-cat >"$SCENARIO_DIR/summary.txt" <<EOF
-build_url=$build_url
-result=$result
-unknown_resource=$UNKNOWN
-exposed_resource=$EXPOSED
-no_ephemeral=$(printf '%s' "$not_created" | tr '\n' ';')
-EOF
+scenario_step "Check the server created nothing for either name"
+unknown_state="$(resource_state "b" "$UNKNOWN")"
+scenario_check "No ephemeral resource created for the unknown name" \
+  "Groovy fromName on B" "false" "$(resource_field "$unknown_state" EXISTS)"
+scenario_check_resource_free "The unexposed resource was left alone" "b" "$HIDDEN"
 
-cat >"$DETAIL_FILE" <<EOF
-### ${SCENARIO_ID}: ${SCENARIO}
+scenario_fact "unknown_resource" "$UNKNOWN"
+scenario_fact "unexposed_resource" "$HIDDEN"
 
-#### Summary
-
-- build result: $result (expected FAILURE — fast 404 rejection, not a hang)
-- unknown resource: $UNKNOWN
-- ephemeral created on server: no
-
-#### Checkpoints
-
-| ID | Result |
-|---|---|
-| CP01 | PASS (build FAILURE — unknown acquire rejected fast, not queued) |
-| CP02 | PASS (console shows HTTP 404 / UNKNOWN_RESOURCE) |
-| CP03 | PASS (lock body did not run) |
-| CP04 | PASS (server created no ephemeral resource for the unknown name — H-1) |
-
-#### Artifacts
-
-- console: $SCENARIO_DIR/console.txt
-- summary: $SCENARIO_DIR/summary.txt
-EOF
-
-log "remote-unknown-rejected: completed"
+scenario_finish

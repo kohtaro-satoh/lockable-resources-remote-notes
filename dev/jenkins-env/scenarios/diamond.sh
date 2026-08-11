@@ -1,46 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# D03: A holds B and C nested, while B and C both want D.
+#
+# The diamond is the shape that deadlocks under a naive implementation: A waits on B and C, both of
+# which are themselves waiting on the same resource on D. It does not deadlock here because a remote
+# lock is not held transitively - A's lock on B says nothing about what B is waiting for - and this
+# scenario is the assertion that this stays true.
+#
+# Needs jenkins-d; declared as controllers=abcd in lib/scenarios.tsv.
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
 
-RESULTS_DIR="${1:-}"
-if [[ -z "$RESULTS_DIR" ]]; then
-  err "Results directory argument is required"
-  exit 2
-fi
+scenario_init "D03" "diamond" "${1:-}"
 
-if ! wait_for_url "$CONTROLLER_D_URL/login" 20; then
-  log "diamond: jenkins-d is not available, skip"
-  exit 10
-fi
+STAMP="$(scenario_stamp)"
+B_RES="d03-b-$STAMP"
+C_RES="d03-c-$STAMP"
+D_RES="d03-d-$STAMP"
 
-SCENARIO="diamond"
-SCENARIO_ID="D03"
-SCENARIO_DIR="$RESULTS_DIR/$SCENARIO"
-mkdir -p "$SCENARIO_DIR"
-
-B_RES="d03-b-$(date +%s)"
-C_RES="d03-c-$(date +%s)"
-D_RES="d03-d-$(date +%s)"
-
-configure_remote_server "$CONTROLLER_B_URL" "$B_RES" "remote-enabled" "authenticated"
-configure_remote_server "$CONTROLLER_C_URL" "$C_RES" "remote-enabled" "authenticated"
-configure_remote_server "$CONTROLLER_D_URL" "$D_RES" "remote-enabled" "authenticated"
-
-TOKEN_B="$(issue_user_api_token "$CONTROLLER_B_URL" "admin" "e2e-d03-b-token")"
-TOKEN_C="$(issue_user_api_token "$CONTROLLER_C_URL" "admin" "e2e-d03-c-token")"
-TOKEN_D="$(issue_user_api_token "$CONTROLLER_D_URL" "admin" "e2e-d03-d-token")"
-
-upsert_username_password_credential "$CONTROLLER_A_URL" "d03-a-for-b" "admin" "$TOKEN_B"
-upsert_username_password_credential "$CONTROLLER_A_URL" "d03-a-for-c" "admin" "$TOKEN_C"
-upsert_username_password_credential "$CONTROLLER_B_URL" "d03-b-for-d" "admin" "$TOKEN_D"
-upsert_username_password_credential "$CONTROLLER_C_URL" "d03-c-for-d" "admin" "$TOKEN_D"
-
-configure_remote_client_for_server "$CONTROLLER_A_URL" "jenkins-a" "b" "$CONTROLLER_B_INTERNAL_URL" "d03-a-for-b"
-configure_remote_client_for_server "$CONTROLLER_A_URL" "jenkins-a" "c" "$CONTROLLER_C_INTERNAL_URL" "d03-a-for-c"
-configure_remote_client_for_server "$CONTROLLER_B_URL" "jenkins-b" "d" "$CONTROLLER_D_INTERNAL_URL" "d03-b-for-d"
-configure_remote_client_for_server "$CONTROLLER_C_URL" "jenkins-c" "d" "$CONTROLLER_D_INTERNAL_URL" "d03-c-for-d"
+scenario_step "Wire the diamond: A->B, A->C, B->D, C->D"
+setup_remote_pair "d03" "a" "b" "$B_RES"
+setup_remote_pair "d03" "a" "c" "$C_RES"
+setup_remote_pair "d03" "b" "d" "$D_RES"
+setup_remote_pair "d03" "c" "d" "$D_RES"
 
 A_SCRIPT="$(cat <<EOF
 pipeline {
@@ -61,60 +45,28 @@ pipeline {
 EOF
 )"
 
-B_SCRIPT="$(cat <<EOF
-pipeline { agent any; stages { stage('BtoD') { steps { lock(resource: "${D_RES}", serverId: 'd') { echo 'B_TO_D'; sleep time: 10, unit: 'SECONDS' } } } } }
+leg_script() {
+  local marker="$1"
+  cat <<EOF
+pipeline { agent any; stages { stage('ToD') { steps { lock(resource: "${D_RES}", serverId: 'd') { echo '${marker}'; sleep time: 10, unit: 'SECONDS' } } } } }
 EOF
-)"
-
-C_SCRIPT="$(cat <<EOF
-pipeline { agent any; stages { stage('CtoD') { steps { lock(resource: "${D_RES}", serverId: 'd') { echo 'C_TO_D'; sleep time: 10, unit: 'SECONDS' } } } } }
-EOF
-)"
+}
 
 upsert_pipeline_job "$CONTROLLER_A_URL" "d03-a" "$A_SCRIPT"
-upsert_pipeline_job "$CONTROLLER_B_URL" "d03-b" "$B_SCRIPT"
-upsert_pipeline_job "$CONTROLLER_C_URL" "d03-c" "$C_SCRIPT"
+upsert_pipeline_job "$CONTROLLER_B_URL" "d03-b" "$(leg_script B_TO_D)"
+upsert_pipeline_job "$CONTROLLER_C_URL" "d03-c" "$(leg_script C_TO_D)"
 
-b_url="$(trigger_and_resolve_build_url "$CONTROLLER_B_URL" "d03-b" 120)"
-c_url="$(trigger_and_resolve_build_url "$CONTROLLER_C_URL" "d03-c" 120)"
-a_url="$(trigger_and_resolve_build_url "$CONTROLLER_A_URL" "d03-a" 120)"
+# B and C first, so they are already contending for D when A tries to take them both.
+scenario_step "Start B and C contending for D, then A taking B and C"
+relay_reset
+relay_trigger b d03-b B_TO_D
+relay_trigger c d03-c C_TO_D
+relay_trigger a d03-a DIAMOND_ACQUIRED
+relay_await_all 1200
 
-ar="$(wait_for_build_result "$a_url" 1200)"
-br="$(wait_for_build_result "$b_url" 1200)"
-cr="$(wait_for_build_result "$c_url" 1200)"
+scenario_step "Check nothing was left held"
+scenario_check_resource_free "B's resource released" "b" "$B_RES"
+scenario_check_resource_free "C's resource released" "c" "$C_RES"
+scenario_check_resource_free "D's resource released" "d" "$D_RES"
 
-save_console_log "$a_url" "$SCENARIO_DIR/a-console.txt"
-save_console_log "$b_url" "$SCENARIO_DIR/b-console.txt"
-save_console_log "$c_url" "$SCENARIO_DIR/c-console.txt"
-
-[[ "$ar" == "SUCCESS" && "$br" == "SUCCESS" && "$cr" == "SUCCESS" ]] || exit 1
-grep -Fq "DIAMOND_ACQUIRED" "$SCENARIO_DIR/a-console.txt" || exit 1
-
-cat >"$SCENARIO_DIR/summary.txt" <<EOF
-a_result=$ar
-b_result=$br
-c_result=$cr
-a_build_url=$a_url
-b_build_url=$b_url
-c_build_url=$c_url
-EOF
-
-cat >"$SCENARIO_DIR/scenario-details.md" <<EOF
-### ${SCENARIO_ID}: ${SCENARIO}
-
-#### Summary
-
-- a result: $ar
-- b result: $br
-- c result: $cr
-- diamond marker: DIAMOND_ACQUIRED observed
-
-#### Artifacts
-
-- a console: $SCENARIO_DIR/a-console.txt
-- b console: $SCENARIO_DIR/b-console.txt
-- c console: $SCENARIO_DIR/c-console.txt
-- summary: $SCENARIO_DIR/summary.txt
-EOF
-
-log "diamond: completed"
+scenario_finish
