@@ -18,9 +18,10 @@
 
 ---
 
-## Phase A: バグ fix（5 コミット）
+## Phase A: バグ fix（7 コミット）
 
 先に入れる。以降の機能追加が同じファイルに触るため、バグ fix が後ろに回ると差分が混ざる。
+A6・A7 は remote 経路にしか存在しない欠陥で、A1〜A5 と同じく #1055 由来。
 
 ### A1. `lockCause` がリモート保持を考慮していない
 
@@ -92,17 +93,12 @@
 
 ### A6. remote の allocate timeout が期限どおりに発火しない
 
-> **2026-08-11 に追加。** 計画時には無かった項目。**E2E 拡充の過程で発見**したもので、
-> A1〜A5 とは違い **#1055 でマージ済みの upstream コードに存在する**バグ。
-> Phase A は既にコミット済みのため、リベースせず **D1/D2 の前**に積む
-> （A を先に置いた理由「以降の機能追加が同じファイルに触る」は B/C 完了済みの今は当てはまらない）。
-
 - [x] `Enforce the allocate timeout of a queued remote request`
 - **対象:** `LockableResourcesManager#queueRemote()` / `#getNextQueuedContext()`
-- **内容:** remote のキューエントリは deadline を正しく計算するが、**それを評価しに来る起床を予約しない**。
-  結果 `timeoutForAllocateResource` は待ち時間の上限として機能せず、
+- **内容:** remote のキューエントリは `timeoutForAllocateResource` から deadline を正しく計算するが、
+  **それを評価しに来る起床を予約しない**。結果 `timeoutForAllocateResource` は待ち時間の上限として機能せず、
   **他の理由でキュー整備が走ったときにしか発火しない**（実測では保持者の解放時）。
-  ローカル経路は `queueContext()` と `getNextQueuedContext()` の 2 箇所で `scheduleTimeoutAt()` を呼んでいる。
+  ローカル経路は `queueContext()` と `getNextQueuedContext()` の 2 箇所で `scheduleTimeoutAt()` を呼んでいる:
   1. `queueRemote()` に同じ「期限が現行より早ければ起床予約」を追加
   2. `getNextQueuedContext()` の最早期限計算を**両キューにまたがる**ものにする（`earliestRemoteDeadline()` 新設）
 - **2 が必須な理由:** `scheduleTimeoutAt()` は**貼り直す前に既存タスクをキャンセル**する。
@@ -111,12 +107,38 @@
   STALE 保持（管理者対応待ち）や長時間ビルドが相手だと実質無効
 - **テスト:** `queuedRequestTimesOutOnItsOwnDeadlineWithoutOutsideHelp` —
   **`checkTimeouts()` を呼ばず release もしない**。既存の timeout テストはこれを手で呼んでおり、
-  本番コードが決してやらないことをテストが代行していたため緑のままだった。
-  修正前: `expected: <FAILED> but was: <QUEUED>`（500ms の期限に 10 秒待っても QUEUED）
-- **E2E:** S18 に CP08（期限どおりに発火したか）を**ハード判定**で追加。
+  本番コードが決してやらないことを代行していたため緑のままだった
+- **E2E:** S18 に CP08（期限どおりに発火したか）をハード判定で追加。
   旧 S18 は holder 保持 150s / 期限 130s と両者が近く、判定も `>= 120s` だったため
   「期限で失敗」と「解放で失敗」を構造的に区別できなかった。holder 保持を期限 +60 秒にして両者を離した
-- **発見の経緯:** `BOUNDARY_COVERAGE_ANALYSIS.md` §4 F1（証拠 4 点）
+- **設計書:** §3.3（terminal TTL）と対になる、キュー側の期限
+
+### A7. acquire エンドポイントが解釈できない値を既定値に落とす
+
+- [x] `Reject acquire fields the endpoint cannot interpret`
+- **対象:** `RemoteApiV1Action`（`AcquireRouter#doIndex` のパース区間）
+- **内容:** `lock()` の DSL は型を Java から得るが JSON にその保証は無い。`optInt` / `optLong` / `optString` で
+  読んでいるため、**解釈できない値が黙って既定値になり、要求の意味が変わる**。しかも「より多くやる」方向に倒れる:
+  - `quantity` が非数値 → 0 → label では**全件**（1 台のつもりがプール全体）
+  - `timeoutForAllocateResource` が非数値 → 0、`timeoutUnit` が不正 → deadline 無効 → **有限待ちが無限待ちに**
+
+  解釈できない値は **400 `INVALID_FIELD_VALUE`** で返す。対象は `quantity` / `priority` /
+  `timeoutForAllocateResource` / `timeoutUnit` / `extra[i].quantity`
+- **ローカル等価の維持:** `timeoutUnit` は空白なら既定・小文字は正規化（`LockStep.setTimeoutUnit` と同一）。
+  **`quantity <= 0` と `timeout <= 0` は従来どおり「無制限」**（ローカルでも同義なので新たに拒否しない）
+- **後方互換（実測で確認）:** json-lib は `"2"` のような**数値文字列を数値として読む**ためこれは通す。
+  **JSON の null は「未指定」扱い**（シリアライザが未設定を null で書くのは一般的で、拒否すると無意味に壊れる）
+- **併せて直す同型の穴:** `optString(key, null)` は **JSON null に対し文字列 `"null"` を返す**。
+  `"resource": null` が「null という名前のリソース」を探して 404、`"variable": null` が
+  `null` という名前の env var を作る。`stringField()` に統一（absent / null / 空白 = 未指定）。
+  数値だけ直して文字列を放置すると規則が半端になるため同一コミットに含める
+- **テスト:** `acquireRejectsFieldValuesItCannotInterpret`（拒否側 6 件）＋
+  `acquireStillAcceptsTheLooseFormsClientsActuallySend`（数値文字列 / null / 空白単位 / 小文字単位 / 負値 / null セレクタ）
+- **E2E:** B01 が拒否 5 件と互換形 4 件を検証（26 チェックポイント）
+- **B2 との関係:** ローカルの検証は 2 層ある — 意味検証（`LockStepResource.validate()`）と
+  型/バインディング検証（`LockStep.setTimeoutUnit()`、`int` 型そのもの）。B2 は前者を canonical に委譲する。
+  A7 は**後者に対応物が無い**という別の欠落を埋めるもので、A7 → B2 の順に入れる
+  （B2 が `MISSING_TARGET` を廃止するため、A7 のテスト期待値は B2 側で更新される）
 
 ---
 
@@ -353,7 +375,8 @@ plugin のコミットには含めない。
 
 ```
 A1..A5  独立（ただし A2 → A3 の順に入れると 404 の文言調整が 1 回で済む）
-A6      独立。B/C 完了後に発見したため、リベースせず D1/D2 の前に積む
+A6      独立
+A7      B1/B2 の前。B2 が MISSING_TARGET を廃止するので、A7 のテスト期待値は B2 が更新する
 B1      独立
 B2      A2 の後（release まわりのテストと干渉しない順序）
 B3      独立。ただし C4 が B3 に依存
@@ -370,7 +393,7 @@ D1/D2   すべての実装コミットの後（挙動が確定してから書く
 
 | 日付 | 内容 |
 |---|---|
-| 2026-08-11 | **A6 完了**（`761f993`）。E2E 拡充の過程で発見した「remote の allocate timeout が期限どおりに発火しない」を修正。`queueRemote()` に起床予約を追加し、`getNextQueuedContext()` の最早期限計算を両キューにまたがるものにした（`scheduleTimeoutAt()` が貼り直し前にキャンセルするため、後者が無いと remote の起床が消える）。回帰テスト `queuedRequestTimesOutOnItsOwnDeadlineWithoutOutsideHelp` は **`checkTimeouts()` を呼ばない** — 既存テストはこれを手で呼んでおり、本番コードが決してやらないことを代行して緑になっていた。検証: run-mvn-verify **BUILD SUCCESS 433/0/1skip・全ゲート ok**（`20260811104146-mvn-verify.md`）、run-e2e **32/32 PASS**（`20260811101418-e2e-test.md`）。実機での効果: 期限 124s に対し修正前 183s（59 秒遅れ）→ **134s（10 秒）**、保持者は 184 秒保持し続けたまま。**E2E ハーネスも全面リファクタし境界シリーズ B01〜B07 を追加**（notes `010afa8`）。S18 は holder 保持を期限 +60 秒にして「期限で失敗」と「解放で失敗」を区別できるようにし、CP08 をハード判定にした（旧設計では両者が近く構造的に区別できなかった） |
+| 2026-08-11 | **Phase A の A6・A7 完了**（`f82bbf9` A6 / `f624d15` A7）。いずれも #1055 由来で remote 経路にしか存在しない欠陥。A6 = キューに入った remote 要求の allocate timeout に起床が予約されず、期限ではなく保持者の解放時にしか発火しない。A7 = acquire エンドポイントが解釈できない値を既定値に落とし、`quantity` 非数値→全件・`timeoutUnit` 不正→無期限待ちに化ける。**発見は E2E 拡充の副産物**（境界シリーズ B01 と S18 の強化。経緯と証拠は `BOUNDARY_COVERAGE_ANALYSIS.md` §4）。ユニットテストは 2 件とも**本番コードが決してやらないことをテストが代行していた**ため既存テストでは露見しなかった（A6: `checkTimeouts()` の手動呼び出し、A7: そもそも型が JSON 由来という前提の欠落）。**A6・A7 を Phase A の位置へ並べ替え**（B/C 完了後に着手したため cherry-pick で積み直し。A7 は B2 以前のコードに対して書き直し、B2 が `MISSING_TARGET` を廃止する分のテスト期待値更新を B2 に含めた）。並べ替え後のツリーが並べ替え前と**バイト単位で同一**であることを `git diff` で確認済み |
 | 2026-08-08 (3) | issue #1025 本文の更新を取りやめ。並行作業と完了条件を「PR 本文に乖離セクションを書く／提出後に #1025 へ導線コメント」に差し替え |
 | 2026-08-10 (3) | **Phase C 検証完了。** run-mvn-verify **BUILD SUCCESS 432/0/1skip・全ゲート ok**（`20260810192956-mvn-verify.md`、plugin `aa0c391`）、run-e2e **21/21 PASS**（`20260810200900-e2e-test.md`）、run-load stress **183 SUCCESS / 17 クリーン LOCK_WAIT_TIMEOUT・overlap 0・HUNG 0**（`20260810202423-load-test.md`）。実装で 1 件修正: `RemoteCatalogCache.requestRefresh` の `@SuppressFBWarnings` が不要と SpotBugs に指摘され除去（C3 に畳んだ）。**ハーネス側のバグ 2 件も修正**（いずれも `COMMON_ROOT_DIR` が `dev/jenkins-env` である前提の取り違え）: 未コミット検査の除外パススペックが効かず E2E が自分のレポートで起動拒否／`.deployed-plugin` の参照が 1 階層ずれてレポートの plugin が `unknown` に。**E2E は既存 21 本のみで、S19〜S22 は未着手** |
 | 2026-08-10 (2) | **B5・C1〜C4 実装完了。** plugin コミット 5 本（`6bbe86c` B5 / `34c959f` C1 / `b759ab7` C2 / `e68b50d` C3 / `4ddc7d3` C4）。B5 は当初 C2 の後にコミットしたが、**計画順に合わせて B4 の直後へ並べ替え**（Remote タブへの「無効」表示だけは C2 に吸収。ツリー差分ゼロを確認）。B5・C1・C2 は各コミット単体でテストが緑であることを `target/` を消して確認済み |

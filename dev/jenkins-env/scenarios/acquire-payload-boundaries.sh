@@ -117,29 +117,44 @@ scenario_check_api "A body one character over is refused" 413 "$body_code" PAYLO
 release_last
 rm -f "$BODY_FILE"
 
-scenario_step "Values that are accepted rather than rejected (pinned, not asserted)"
-# quantity is read with a default of 0, and for a label 0 means "every match". So a quantity the
-# server cannot parse does not fail the request - it widens it from "one machine" to "the pool".
-send "{\"lockRequest\":{\"label\":\"remote-enabled\",\"quantity\":\"abc\"}}"
-scenario_observe "quantity that is not a number" "POST /acquire label + quantity:\"abc\"" "$LAST_CODE/$LAST_STATE (not rejected; reads as 0 = all matching)"
+scenario_step "Values the endpoint cannot interpret"
+# The lock() DSL gets these types from Java; JSON does not, and reading them leniently let an
+# uninterpretable value become a default that changes what the request means. quantity is the clearest
+# case: 0 on a label means "every match", so a typo asked for the whole pool instead of one machine.
+reject "quantity that is not a number" 400 INVALID_FIELD_VALUE \
+  "{\"lockRequest\":{\"label\":\"remote-enabled\",\"quantity\":\"abc\"}}"
+reject "priority that is not a number" 400 INVALID_FIELD_VALUE \
+  "{\"lockRequest\":{\"resource\":\"$RES\",\"priority\":\"high\"}}"
+reject "Allocate timeout that is not a number" 400 INVALID_FIELD_VALUE \
+  "{\"lockRequest\":{\"resource\":\"$RES\",\"timeoutForAllocateResource\":\"soon\"}}"
+# MINUTE for MINUTES. The local step rejects this in setTimeoutUnit; over the wire it used to be
+# accepted and then disable the deadline entirely, turning a bounded wait into an unbounded one.
+reject "timeoutUnit that is not a TimeUnit" 400 INVALID_FIELD_VALUE \
+  "{\"lockRequest\":{\"resource\":\"$RES\",\"timeoutForAllocateResource\":5,\"timeoutUnit\":\"MINUTE\"}}"
+reject "quantity inside an extra entry" 400 INVALID_FIELD_VALUE \
+  "{\"lockRequest\":{\"resource\":\"$RES\",\"extra\":[{\"label\":\"remote-enabled\",\"quantity\":\"all\"}]}}"
+
+scenario_step "Loose but legitimate forms still work"
+# Strict is not the same as brittle. These are the shapes real clients send, and refusing them would
+# break callers over nothing.
+send "{\"lockRequest\":{\"resource\":\"$RES\",\"quantity\":\"1\"}}"
+scenario_check "A numeric string is still a number" "POST /acquire quantity:\"1\"" "202" "$LAST_CODE"
 release_last
 
-send "{\"lockRequest\":{\"label\":\"remote-enabled\",\"quantity\":-1}}"
-scenario_observe "Negative quantity" "POST /acquire label + quantity:-1" "$LAST_CODE/$LAST_STATE (not rejected)"
+send "{\"lockRequest\":{\"resource\":\"$RES\",\"quantity\":null,\"priority\":null,\"timeoutUnit\":null}}"
+scenario_check "An explicit null means not supplied" "POST /acquire with null fields" "202" "$LAST_CODE"
 release_last
 
-# The one worth reading twice. An unknown resourceSelectStrategy is a 400 above; an unknown
-# timeoutUnit is accepted here, and RemoteQueueEntry turns the unparseable unit into deadline 0 -
-# which means "no timeout". A plausible typo (MINUTE for MINUTES) therefore converts a bounded wait
-# into an unbounded one, silently.
-send "{\"lockRequest\":{\"resource\":\"$RES\",\"timeoutForAllocateResource\":5,\"timeoutUnit\":\"MINUTE\"}}"
-scenario_observe "timeoutUnit that is not a TimeUnit" "POST /acquire timeoutUnit:\"MINUTE\"" \
-  "$LAST_CODE/$LAST_STATE (not rejected; unparseable unit disables the timeout)"
+send "{\"lockRequest\":{\"resource\":\"$RES\",\"timeoutForAllocateResource\":5,\"timeoutUnit\":\"seconds\"}}"
+scenario_check "A lower-case unit is normalised, as local lock() does" \
+  "POST /acquire timeoutUnit:\"seconds\"" "202" "$LAST_CODE"
 release_last
 
-send "{\"lockRequest\":{\"resource\":\"$RES\",\"timeoutForAllocateResource\":-5,\"timeoutUnit\":\"SECONDS\"}}"
-scenario_observe "Negative allocate timeout" "POST /acquire timeoutForAllocateResource:-5" \
-  "$LAST_CODE/$LAST_STATE (not rejected; <= 0 means wait forever, as local lock() does)"
+# Zero and negative are expressible through a local lock() and mean "no limit" there, so they keep
+# their meaning here rather than becoming newly refused.
+send "{\"lockRequest\":{\"resource\":\"$RES\",\"quantity\":-1,\"timeoutForAllocateResource\":-5}}"
+scenario_check "Negative values keep their local meaning" \
+  "POST /acquire quantity:-1, timeout:-5" "202" "$LAST_CODE"
 release_last
 
 scenario_step "Check no rejected request left anything behind"

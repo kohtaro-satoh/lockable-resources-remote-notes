@@ -230,7 +230,7 @@ STALE 保持（管理者対応待ち）や長時間ビルドが相手だと、`t
 **回帰テスト**: `queuedRequestTimesOutOnItsOwnDeadlineWithoutOutsideHelp` — `checkTimeouts()` を呼ばず
 release もしない。修正前は `expected: <FAILED> but was: <QUEUED>`（500ms の期限に 10 秒待っても QUEUED）。
 
-### F1a: 不正な `timeoutUnit` が「タイムアウト無効」に化ける（優先度: 中）
+### F1a: 不正な `timeoutUnit` が「タイムアウト無効」に化ける（優先度: 中・**修正済み**）
 
 `RemoteQueueEntry` は `TimeUnit.valueOf(timeoutUnit)` の
 `IllegalArgumentException` を捕まえて `deadlineMs = 0` にする。`isTimedOut()` は
@@ -243,13 +243,18 @@ release もしない。修正前は `expected: <FAILED> but was: <QUEUED>`（500
 非対称性が根拠になる: 同じ「列挙値のタイポ」でも `resourceSelectStrategy: "NOPE"` は
 400 `INVALID_REQUEST` で弾いている。片方だけ黙って通すのは一貫していない。
 
-→ 対処案: エンドポイントで `timeoutUnit` を検証し 400 にする（`resourceSelectStrategy` と同じ扱い）。
-B01 は現挙動を観測値として固定してあるので、直せば差分として現れる。
-
 > F1 とは別物。F1 は「期限が予約されない」（正しい単位でも起きる）、F1a は「期限がそもそも 0 になる」。
-> F1 を直しても F1a は残る。
+> F1 を直しても F1a は残った。
 
-### F2: `quantity` の非数値・負値が「全件ロック」に化ける（優先度: 中）
+**分類（2026-08-11 の判断）**: ローカルは `LockStep.setTimeoutUnit()` で**検証して例外を投げる**（#1010 由来）ため
+**ローカルでは顕在しない**。`QueuedContextStruct` の同等分岐は DSL から到達不能な防御。
+remote は JSON から読んで `LockStep` の setter を通らずに渡るため、到達不能だったはずの分岐に到達する。
+**「検証を欠いた新しい入力経路」を作ったのは #1055** という理由で ① 扱い（本 PR で修正）とした。
+
+**修正 = F2a と同じ 1 コミット（A7）**: `RemoteApiV1Action` の JSON パースを厳格化。
+解釈できない値は既定に落とさず **400 `INVALID_FIELD_VALUE`**。
+
+### F2a: `quantity` の非数値が「全件ロック」に化ける（優先度: 中・**修正済み**）
 
 `optInt("quantity", 0)` は解釈不能な値に対し既定の 0 を返す。label 指定では 0 は
 「マッチする全件」を意味する（S15 が検証している正しい仕様）。したがって
@@ -257,7 +262,15 @@ B01 は現挙動を観測値として固定してあるので、直せば差分�
 
 拒否ではなく**要求範囲の拡大**に倒れる点が問題で、失敗するより静かに悪い。
 
-### F3: リソース名に含まれるカンマで combined variable が曖昧になる（優先度: 低〜中）
+**分類**: ローカルの `quantity` は `int`。DSL では型変換で落ち、freestyle の String 経路も
+`Integer.parseInt` で例外になる。**「不正な値が黙って全件に化ける」経路は remote だけ**で、
+その JSON パースは #1055 が追加したコード → ① として本 PR で修正（A7）。
+
+**F2b（負値）は対象外**: `LockableResourcesStruct` の `if (quantity > 0)` は
+`e8425b5`（Label/Quantity 拡張、#1055 以前）由来で、`quantity <= 0` = 全件は共有パスの仕様。
+ローカル `lock(label:'x', quantity:-1)` でも同じ挙動 → ② として無視。
+
+### F3: リソース名に含まれるカンマで combined variable が曖昧になる（優先度: 低〜中・**対象外**）
 
 `lock(variable: 'V')` は取得したリソース名をカンマ連結して `V` に入れる（S10/S14/S15 が検証済み）。
 名前自体がカンマを含むと連結結果は曖昧になる。B03 の実測:
@@ -265,6 +278,10 @@ B01 は現挙動を観測値として固定してあるので、直せば差分�
 - ロックしたリソース: 1 件（`b03-comma,inside-<stamp>`）
 - `V.split(',')` の結果: **2 要素**（どちらも存在しない名前）
 - `V0`: 正確
+
+**分類**: `String.join(",", ...)` は `018e913^`（#1055 マージ前）から存在し、
+現在は local と remote が同じ `buildLockEnvVars()` を共有しているだけ。
+ローカル `lock(resource:'a,b', variable:'V')` でも同一に発生する → ② として**実装変更は見送り**。
 
 インデックス付き変数（`V0`, `V1`, ...）は影響を受けないため、**実害はドキュメントで回避可能**。
 「複数リソースを扱うときは `V` を split せず `V0..Vn` を使う」ことを README に明記するのが最小の対処。
@@ -339,10 +356,9 @@ pipeline 経由のシナリオに比べて桁違いに安いので、データ�
 | 1 | `MAX_CONSECUTIVE_POLL_FAILURES` の両側（19 回復帰 / 20 回で fail-closed） | time | クライアント唯一の「諦める」閾値。テスト 0 件 |
 | 2 | サーバー再起動中のクライアント保持 | time | 運用で最も起きやすい。in-memory レコードとリソース XML の非対称 |
 | 3 | release と queue promotion の競合 | time | 実装コメントが「復旧不能」と名指ししている既知の危険箇所 |
-| 4 | `timeoutUnit` 検証の追加（F1a） + 回帰テスト | data | 静かに deadline 0 になる。修正は数行 |
-| 5 | L03 `sustained-soak` の実装 | scale | 仕様済み・未実装。レコードマップと registry のリーク検出 |
-| 6 | `exposeLabel` 空文字の露出範囲 | data | 設定 1 つで影響半径が最大 |
-| 7 | `clientId` の UI 描画エスケープ | data | C2 で新設された経路 |
+| 4 | L03 `sustained-soak` の実装 | scale | 仕様済み・未実装。レコードマップと registry のリーク検出 |
+| 5 | `exposeLabel` 空文字の露出範囲 | data | 設定 1 つで影響半径が最大 |
+| 6 | `clientId` の UI 描画エスケープ | data | C2 で新設された経路 |
 
 ---
 
