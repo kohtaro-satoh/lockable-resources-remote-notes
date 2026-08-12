@@ -75,7 +75,7 @@ P1M1 / P1M1A / P1M1B / Boundary) + the latest run report:
 - [BOUNDARY_COVERAGE_ANALYSIS](dev/docs-j/BOUNDARY_COVERAGE_ANALYSIS.md) — what the suite covers on the
   data / time / scale axes, what it does not, and the findings that came out of closing the gaps.
   This is how the A6 defect (a queued remote request never timing out on its own deadline) was found
-- latest run (plugin `126f33c`): [20260811190046-e2e-test.md](dev/reports/20260811190046-e2e-test.md) —
+- latest run (plugin `29c05d3`): [20260812143519-e2e-test.md](dev/reports/20260812143519-e2e-test.md) —
   32/32 PASS (20 function / 4 data / 6 time / 2 scale)
 
 High-load / stress test specification (a separate suite; this is how the M1I regression was found) + the latest run report:
