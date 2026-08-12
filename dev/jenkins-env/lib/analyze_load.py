@@ -15,6 +15,68 @@ _UNITS = {"B": 1, "kB": 1e3, "KB": 1e3, "MB": 1e6, "GB": 1e9, "TB": 1e12,
           "KiB": 1024, "MiB": 1024**2, "GiB": 1024**3, "TiB": 1024**4}
 
 
+def load_audit(paths):
+    """Server-side resource state changes: LRA|epochMs|kind|event|resource|holder, per controller.
+
+    Exclusion has to be judged from here rather than from the clients' consoles. A client can only
+    timestamp its own call to release, and that call returns after the server has already freed the
+    resource and possibly handed it to the next waiter - so two clients' logs can show an overlap on
+    a resource that was never held twice, and nothing in them tells that apart from a real
+    double-grant. These lines are written where the state changes, under the lock that guards it, so
+    for one server they are a single totally ordered history and no clocks are compared at all.
+    """
+    holds = defaultdict(list)   # (controller, resource) -> [(start, end, holder, kind)]
+    open_by = {}                # (controller, resource, holder) -> start
+    counts = {}
+    for controller, path in paths:
+        n = 0
+        if not os.path.exists(path):
+            continue
+        with open(path, errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line.startswith("LRA|"):
+                    continue
+                parts = line.split("|")
+                if len(parts) != 6:
+                    continue
+                _, ts, kind, event, resource, holder = parts
+                try:
+                    ts = int(ts)
+                except ValueError:
+                    continue
+                n += 1
+                key = (controller, resource, holder)
+                if event == "ACQUIRED":
+                    open_by[key] = ts
+                elif event == "RELEASED":
+                    start = open_by.pop(key, None)
+                    if start is not None:
+                        holds[(controller, resource)].append((start, ts, holder, kind))
+        counts[controller] = n
+    # A hold still open when the run ended is left out: it never contended with anything that came
+    # after it, because nothing came after it.
+    return holds, counts
+
+
+def audit_overlaps(holds):
+    """Resources held by two holders at once, according to the servers themselves."""
+    found = []
+    for (controller, resource), ivs in holds.items():
+        ivs.sort()
+        for i in range(len(ivs) - 1):
+            s1, e1, h1, k1 = ivs[i]
+            s2, e2, h2, k2 = ivs[i + 1]
+            if e1 > s2:
+                found.append({
+                    "controller": controller, "resource": resource,
+                    "a": {"holder": h1, "kind": k1, "start": s1, "end": e1},
+                    "b": {"holder": h2, "kind": k2, "start": s2, "end": e2},
+                    "overlap_ms": e1 - s2,
+                })
+    return found
+
+
 def parse_size(s):
     m = re.match(r"\s*([0-9.]+)\s*([A-Za-z]+)", s or "")
     if not m:
@@ -142,6 +204,7 @@ def main():
     ap.add_argument("--events", required=True)
     ap.add_argument("--results", required=True)
     ap.add_argument("--netstats", default="")
+    ap.add_argument("--audit", default="", help="controller=path pairs, comma separated")
     ap.add_argument("--capacity-exposed", type=int, default=40)
     ap.add_argument("--out-metrics", required=True)
     ap.add_argument("--out-overlaps", required=True)
@@ -190,8 +253,21 @@ def main():
             for nm in names:
                 hold_intervals.append((acq["target"], nm, acq["epochMs"], rel["epochMs"], uid, phase))
 
-    # overlap detection: per (target,resource), capacity 1
-    overlaps = []
+    # Exclusion is judged from the servers' own audit trail when it is available. The client-derived
+    # intervals below stay, but only as a cross-check: their disagreement with the audit trail is the
+    # measurement lag between a resource being freed and the releasing client managing to say so, and
+    # it is worth reporting as a number rather than mistaking for a fault.
+    audit_paths = []
+    for pair in (args.audit or "").split(","):
+        if "=" in pair:
+            c, _, path = pair.partition("=")
+            audit_paths.append((c.strip(), path.strip()))
+    audit_holds, audit_counts = load_audit(audit_paths)
+    audit_available = sum(audit_counts.values()) > 0
+    overlaps_audit = audit_overlaps(audit_holds) if audit_available else []
+
+    # client-derived intervals: per (target,resource), capacity 1
+    overlaps_client = []
     by_res = defaultdict(list)
     for tgt, nm, s, e, uid, phase in hold_intervals:
         by_res[(tgt, nm)].append((s, e, uid, phase))
@@ -201,12 +277,16 @@ def main():
             s1, e1, u1, p1 = ivs[i]
             s2, e2, u2, p2 = ivs[i + 1]
             if e1 > s2:  # overlap
-                overlaps.append({
+                overlaps_client.append({
                     "target": tgt, "resource": nm,
                     "a": {"uid": u1, "phase": p1, "start": s1, "end": e1},
                     "b": {"uid": u2, "phase": p2, "start": s2, "end": e2},
                     "overlap_ms": e1 - s2,
                 })
+
+    # The verdict comes from the audit trail when there is one, and only falls back to the clients
+    # when there is not - in which case the report says so, because the answer is then weaker.
+    overlaps = overlaps_audit if audit_available else overlaps_client
 
     # job classification
     # map uid -> result via results (buildUrl basename not directly uid); fall back to events
@@ -469,8 +549,19 @@ def main():
             if fail_breakdown["other"]:
                 f.write(f"- other: {fail_breakdown['other']}\n")
         f.write("\n**Invariants**\n\n")
-        f.write(f"- mutual-exclusion overlap violations (a resource held beyond capacity at any instant): "
+        source = "the servers' own audit trail" if audit_available else "the clients' consoles (no audit trail found)"
+        f.write(f"- mutual-exclusion overlap violations (a resource held beyond capacity at any instant), "
+                f"judged from {source}: "
                 f"**{len(overlaps)}** {'(PASS)' if not overlaps else '(FAIL)'}\n")
+        if audit_available:
+            f.write(f"- resource state changes recorded by the servers: "
+                    f"{sum(audit_counts.values())} ({', '.join(f'{c}={n}' for c, n in sorted(audit_counts.items()))})\n")
+            # The clients cannot see a handover as instantaneous: a release call returns after the
+            # server has already freed the resource and possibly passed it on. Reporting how far apart
+            # the two views are keeps that lag visible instead of letting it masquerade as a fault.
+            f.write(f"- the same check run against the clients' consoles instead reports "
+                    f"**{len(overlaps_client)}**; the difference is the lag between a resource being "
+                    f"freed and the releasing client saying so, not a disagreement about exclusion\n")
         f.write(f"- termination — HUNG / UNKNOWN result (possible deadlock or lost wakeup): "
                 f"**{hung}** {'(PASS)' if hung == 0 else '(FAIL — investigate)'}\n\n")
 

@@ -322,6 +322,22 @@ log "docker stats sampler stopped ($(($(wc -l <"$NETSTATS_FILE") - 1)) samples)"
 # ---------------------------------------------------------------------------
 # 6. Collect consoles + extract LLT events
 # ---------------------------------------------------------------------------
+log "Collecting the servers' resource audit trails"
+AUDIT_DIR="$RESULTS_DIR/audit"
+mkdir -p "$AUDIT_DIR"
+AUDIT_ARG=""
+for c in "${CONTROLLERS[@]}"; do
+  # JENKINS_HOME is bind-mounted, so the file is already on this side.
+  src="$RUN_SCRIPT_DIR/jh$c/lr-audit.log"
+  if [[ -r "$src" ]]; then
+    cp "$src" "$AUDIT_DIR/$c.log"
+    AUDIT_ARG="${AUDIT_ARG:+$AUDIT_ARG,}$c=$AUDIT_DIR/$c.log"
+    log "  $c: $(wc -l <"$AUDIT_DIR/$c.log" | tr -d ' ') state changes"
+  else
+    log "  $c: no audit trail (is 01-audit-log.groovy in the image?)"
+  fi
+done
+
 log "Collecting consoles and LLT events"
 : >"$EVENTS_FILE"
 echo "epochMs,jobUid,self,iter,phase,event,target,resources" >>"$EVENTS_FILE"
@@ -359,6 +375,7 @@ HARNESS_COMMIT="$(harness_desc)"
   --events "$EVENTS_FILE" \
   --results "$SUMMARY_FILE" \
   --netstats "$NETSTATS_FILE" \
+  --audit "$AUDIT_ARG" \
   --capacity-exposed "$N_EXPOSED" \
   --out-metrics "$RESULTS_DIR/metrics.json" \
   --out-overlaps "$RESULTS_DIR/overlaps.txt" \
