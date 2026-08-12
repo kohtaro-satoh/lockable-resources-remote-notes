@@ -9,7 +9,8 @@ source "$RUN_SCRIPT_DIR/lib/common.sh"
 # ---------------------------------------------------------------------------
 # Defaults / presets
 # ---------------------------------------------------------------------------
-PRESET="full"
+DEFAULT_PRESET="full"
+PRESET="$DEFAULT_PRESET"
 JOBS_PER_CONTROLLER=""
 ITER=""
 SLEEP_SEC=""
@@ -27,14 +28,23 @@ apply_preset() {
     converge) JOBS_PER_CONTROLLER=20; ITER=3; SLEEP_SEC=30; RLOCK_TO=3; LLOCK_TO=3; JOB_TO=15 ;;
     full)     JOBS_PER_CONTROLLER=50; ITER=3; SLEEP_SEC=30; RLOCK_TO=3; LLOCK_TO=3; JOB_TO=15 ;;
     stress)   JOBS_PER_CONTROLLER=50; ITER=3; SLEEP_SEC=60; RLOCK_TO=3; LLOCK_TO=3; JOB_TO=15 ;;
+    # Same contention as stress, but with deadlines that land inside the window rather than beyond
+    # it. Under stress only 17 of 1142 waits ever reached their allocate timeout, so the code that
+    # runs when one expires - now including a timer that fires on its own schedule - was barely
+    # exercised. A one-minute deadline turns that handful into hundreds, which is the point: the
+    # interesting failure is a timeout landing on top of the promotion that was about to serve it.
+    #
+    # Read its results against its own intent. Timeouts here are expected in bulk and are not a
+    # regression; what has to hold is the invariants, and that every timeout was a legitimate wait.
+    timeout-race) JOBS_PER_CONTROLLER=50; ITER=3; SLEEP_SEC=60; RLOCK_TO=1; LLOCK_TO=2; JOB_TO=20 ;;
     *) err "Unknown preset: $1"; exit 2 ;;
   esac
 }
 
 usage() {
-  cat <<'USAGE'
+  cat <<USAGE
 Usage: ./run-load.sh [options]
-  --preset smoke|converge|full|stress   (default: smoke)
+  --preset smoke|converge|full|stress|timeout-race   (default: ${DEFAULT_PRESET})
   --jobs-per-controller N
   --iterations N
   --sleep SEC
@@ -79,7 +89,7 @@ if [[ "$DEBUG_MODE" == true ]]; then
   REPORTS_ROOT="$REPORTS_ROOT/debug"
   log "--debug: uncommitted changes allowed; report goes to reports/debug/ and is NOT reproducible"
 fi
-REPORT_NAME="$RUN_ID-load-test"
+REPORT_NAME="$RUN_ID-load-test-$PRESET"
 RESULTS_DIR="$REPORTS_ROOT/$REPORT_NAME/grid-storm"
 CONSOLES_DIR="$RESULTS_DIR/consoles"
 REPORT_FILE="$REPORTS_ROOT/$REPORT_NAME.md"
@@ -116,7 +126,7 @@ if [[ "$DEBUG_MODE" == true ]]; then
 else
   PLUGIN_DIR="$PLUGIN_DIR" "$RUN_SCRIPT_DIR/start.sh" --clean
 fi
-if ! wait_for_controllers_with_d 240; then
+if ! wait_for_controllers 240 a b c d; then
   err "Controllers a/b/c/d not all ready"; exit 10
 fi
 
