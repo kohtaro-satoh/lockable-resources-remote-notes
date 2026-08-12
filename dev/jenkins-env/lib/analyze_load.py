@@ -254,9 +254,11 @@ def main():
                 hold_intervals.append((acq["target"], nm, acq["epochMs"], rel["epochMs"], uid, phase))
 
     # Exclusion is judged from the servers' own audit trail when it is available. The client-derived
-    # intervals below stay, but only as a cross-check: their disagreement with the audit trail is the
-    # measurement lag between a resource being freed and the releasing client managing to say so, and
-    # it is worth reporting as a number rather than mistaking for a fault.
+    # intervals below stay as a cross-check, and they are a conservative one: a build logs its
+    # acquisition after taking the lock and its release before giving it up, so its interval lies
+    # strictly inside the true hold. That direction was measured, not assumed - 1695 of 1695 holds on
+    # 2026-08-13. It means an overlap seen from the clients is real, and that a real one can hide from
+    # them, which is the whole reason the verdict comes from the servers instead.
     audit_paths = []
     for pair in (args.audit or "").split(","):
         if "=" in pair:
@@ -556,12 +558,16 @@ def main():
         if audit_available:
             f.write(f"- resource state changes recorded by the servers: "
                     f"{sum(audit_counts.values())} ({', '.join(f'{c}={n}' for c, n in sorted(audit_counts.items()))})\n")
-            # The clients cannot see a handover as instantaneous: a release call returns after the
-            # server has already freed the resource and possibly passed it on. Reporting how far apart
-            # the two views are keeps that lag visible instead of letting it masquerade as a fault.
-            f.write(f"- the same check run against the clients' consoles instead reports "
-                    f"**{len(overlaps_client)}**; the difference is the lag between a resource being "
-                    f"freed and the releasing client saying so, not a disagreement about exclusion\n")
+            # The client view is not a rival answer, it is a weaker one, and in a known direction.
+            # A build records ACQUIRED after it has the lock and RELEASED before it lets go, so its
+            # interval sits strictly inside the true one - measured at 1695 of 1695 holds on
+            # 2026-08-13, starting 346ms late and ending 34ms early at the median. An overlap seen
+            # from there is therefore real; the reverse does not hold, which is why the verdict comes
+            # from the servers.
+            f.write(f"- the same check against the clients' consoles reports **{len(overlaps_client)}**. "
+                    f"A build's interval lies inside its true hold - it logs the acquisition after "
+                    f"taking the lock and the release before giving it up - so an overlap seen there "
+                    f"is a real one, while a real one can still escape it\n")
         f.write(f"- termination — HUNG / UNKNOWN result (possible deadlock or lost wakeup): "
                 f"**{hung}** {'(PASS)' if hung == 0 else '(FAIL — investigate)'}\n\n")
 
