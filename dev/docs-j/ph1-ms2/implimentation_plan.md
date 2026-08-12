@@ -142,6 +142,100 @@ A6・A7 は remote 経路にしか存在しない欠陥で、A1〜A5 と同じ�
 
 ---
 
+## Phase A': テスト補強（6 コミット）
+
+バグ fix の直後、機能追加の前に置く。**verify だけが PR に載る層**であり（E2E / load は notes リポジトリで
+レビュアには見えない）、remote LR の規模に対してクライアント側の分岐カバレッジが 32% だったため。
+
+着手前の実測（jacoco、`-P enable-jacoco`）: **remote 関連で行 78.7% / 分岐 63.3%**、未到達 275 行。
+最も低いのが `RemoteLockSession`（行 54.8% / 分岐 32.4%）と `RemoteApiClient`（69.5% / 53.5%）。
+
+**方針: 数字を目標にしない。** 「誰にも触られておらず、壊れたら実害がある」順に埋める。
+行を通すだけのテストは書かない（実際、死んだコードは 1 件テストではなく削除した）。
+
+### T1. テスト用リモートサーバをスクリプト可能にする
+
+- [x] `Let the test remote server be scripted`
+- **対象:** `RemoteServerFixture`（`LockStepRemoteTest` の入れ子クラスから独立ファイルへ抽出）
+- **なぜ最初か:** 既存 fixture は **ACQUIRED 固定 ＋ 503 のみ**しか返せず、これがクライアント側の
+  低カバレッジの直接原因。ここに一度投資すると T2〜T5 がまとめて書けるようになる
+- **追加した表現力:** n 回 QUEUED の後 ACQUIRED / 終端状態（FAILED・SKIPPED＋errorCode）/
+  status の n 回連続失敗 / heartbeat の任意ステータス / `/resources` / **同一ポートでの再起動**
+- **検証:** 既存 15 テストが**無改変で通る**ことを確認（抽出が挙動を変えていない保証）
+
+### T2. クライアントが受け取った答えにどう反応するか
+
+- [x] `Cover what the client does with the answers it gets`
+- **対象:** `RemoteLockSession`（8 テスト新規）
+- **内容:** QUEUED→昇格 / 終端 FAILED（`LOCK_WAIT_TIMEOUT`）/ 終端 SKIPPED /
+  404・410（**A3 の「タイムアウトと誤ラベルしない」を守る**）/ 一時的なポーリング失敗の乗り切り /
+  **連続失敗の閾値超過で fail-closed**（クライアント唯一の「諦める」条件。約 60 秒かかる）/
+  heartbeat 410 でも body を中断しない
+- **60 秒テストについて:** `MAX_CONSECUTIVE_POLL_FAILURES` は `private static final` で
+  ポーリング間隔 3 秒と組み合わさる。**テスト都合でプロダクションの可視性を変えない**判断
+  （既存 `ResourceManagementTest` は 159 秒なのでスイート内では軽い方）
+
+### T3. 再起動がリモートロックに何をするか
+
+- [x] `Cover what a restart does to a remote lock`
+- **対象:** `RemoteLockSession#onResume`（3 テスト新規）
+- **着手前は 3 層すべてで未到達**（行 0% / 分岐 0/12）。E2E・load が停止するのは常に**サーバ側**
+  （jenkins-b）で、**クライアント側を再起動するテストが存在しなかった**
+- **内容:** 待機中の再起動→ポーリング再開して昇格を受け取る / **保持中の再起動→リモートロックを
+  best-effort 解放**（サーバに孤児リソースを残さない）/ 一時停止サーバ待ちの再起動→fail-closed
+- **fixture は同一ポートで再起動する。** 別ポートでは「移動したサーバに繋がらない」ことしか証明できない
+- **結果: バグは出ず。** 3 分岐とも実装は正しく動作していた
+
+### T4. 他コントローラのカタログを読む
+
+- [x] `Cover reading another controller's catalogue`
+- **対象:** `RemoteApiClient#listResources`（5 テスト新規。着手前は**分岐 0/8**）
+- **内容:** 全項目のパース / **フィールド欠落への耐性**（古いサーバ。`acceptNewAcquires` 欠落は「停止中」でなく
+  「稼働中」）/ 空カタログは正常 / **403 と到達不能は例外として上げる**
+- **403 を空カタログとして返さないことが要点:** キャッシュの stale フォールバックはこの区別に依存する。
+  空リストとして読むと「このサーバは何も公開していない」という別の（誤った）主張になる
+
+### T5. ルーティング判断と陳腐化したカタログ表示
+
+- [x] `Cover the routing decisions and the stale catalogue view`
+- **対象:** `RemoteLockRouting`（分岐 64.7%→85.3%）/ `RemoteAcquireState.fromString` /
+  `RemoteCatalogCache.fetch`
+- **ルーティング:** remote か否か・どのサーバか・表示名。**間違えてもエラーにならず、別コントローラの
+  リソースを黙って掴む**ため実害が大きい。delegated mode の上書きを両方向から、空白がサーバ名として
+  扱われないことも検証
+- **状態パース:** 新しいサーバが未知の状態を返したら UNKNOWN（＝失敗扱いでビルド停止）。
+  例外を投げると前方互換のサーバが「壊れたサーバ」になる
+- **カタログキャッシュ:** 既存テストは「キャッシュ空のまま失敗」のみ。重要なのは**一度応答した後に落ちた**
+  場合で、「最後に知っていた内容を保つ」か「何も公開していない」と言い始めるかの分かれ目
+
+### T6. 呼ばれていないアクセサの削除
+
+- [x] `Drop a remote lock record accessor nothing calls`
+- **対象:** `RemoteLockRecord#getResourceName`
+- **内容:** #1055 で追加されて以来、プラグイン・jelly ビュー・テストのいずれからも呼ばれていない（4 行・4 分岐）。
+  カバレッジレポートを読んでいて見つけた
+- **なぜテストでなく削除か:** テストを書けば数字は上がるが**コードは未使用のまま**で、
+  読む人に「見つけられなかった呼び出し元があるはず」と思わせる。`getAcquiredResourceNames` は無傷
+
+### Phase A' の結果
+
+| | 着手前 | 完了後 |
+|---|---|---|
+| 行 | 78.7% | **88.4%** |
+| 分岐 | 63.3% | **72.5%** |
+| 未到達行 | 275 | **150** |
+| `RemoteLockSession` | 54.8% / 32.4% | **79.0% / 63.2%** |
+| `RemoteApiClient` | 69.5% / 53.5% | **84.5% / 59.6%** |
+
+テスト数 435 → **457**（+22）。verify **BUILD SUCCESS・全ゲート ok**（plugin `29c05d3`）。
+
+**残した低カバレッジと理由**: `LeaseRouter`(2 行) / `RemoteRouterAction`(4 行) は `getDynamic` の委譲のみ。
+`RemoteApiV1Action.LeaseResource` の heartbeat 410 分岐は **E2E B02 が実物で両方通す**。
+`RemoteLockRequest.from` の extra 変換は E2E S10/S14 が実経路で通す。
+いずれも「ユニットで足すより E2E が実物で通す方が意味がある」と判断した。
+
+---
+
 ## Phase B: 機能追加（LR 画面以外、5 コミット）
 
 ### B1. `inversePrecedence` の透過等価
@@ -377,6 +471,7 @@ plugin のコミットには含めない。
 A1..A5  独立（ただし A2 → A3 の順に入れると 404 の文言調整が 1 回で済む）
 A6      独立
 A7      B1/B2 の前。B2 が MISSING_TARGET を廃止するので、A7 のテスト期待値は B2 が更新する
+T1..T6  Phase A の後・B の前。T1 は T2〜T5 の前提（fixture の表現力）
 B1      独立
 B2      A2 の後（release まわりのテストと干渉しない順序）
 B3      独立。ただし C4 が B3 に依存
@@ -393,6 +488,7 @@ D1/D2   すべての実装コミットの後（挙動が確定してから書く
 
 | 日付 | 内容 |
 |---|---|
+| 2026-08-12 | **Phase A' 完了**（`b2dd553` T1 / `eaf17c9` T2 / `2b92ec9` T3 / `b5d14bb` T4 / `41fc23c` T5 / `29c05d3` T6）。**verify だけが PR に載る層**という理由で、E2E/load より先にユニットを厚くした。jacoco 実測で remote 関連 **行 78.7%→88.4% / 分岐 63.3%→72.5%**、テスト 435→457。最大の穴だった `RemoteLockSession` は分岐 32.4%→63.2%。**`onResume` は 3 層すべてで未到達**だった（E2E/load が停止するのは常にサーバ側で、クライアント再起動のテストが存在しなかった）が、**新規テストが暴いたプラグインのバグはゼロ**で Phase A への押し込みは不要だった。`getResourceName` は #1055 以来呼び出し元が無い死んだコードと判明し、テストではなく削除（T6）。作業中のミス 2 件: `-Dtest='A+B+C'` は surefire の区切りでなくテスト 0 本で BUILD SUCCESS になる偽の緑を検出（カンマに修正）、死んだメソッド削除で `@CheckForNull` が重複しコンパイル不能なコミットを一度作成（amend 済み） |
 | 2026-08-11 | **Phase A の A6・A7 完了**（`f82bbf9` A6 / `f624d15` A7）。いずれも #1055 由来で remote 経路にしか存在しない欠陥。A6 = キューに入った remote 要求の allocate timeout に起床が予約されず、期限ではなく保持者の解放時にしか発火しない。A7 = acquire エンドポイントが解釈できない値を既定値に落とし、`quantity` 非数値→全件・`timeoutUnit` 不正→無期限待ちに化ける。**発見は E2E 拡充の副産物**（境界シリーズ B01 と S18 の強化。経緯と証拠は `BOUNDARY_COVERAGE_ANALYSIS.md` §4）。ユニットテストは 2 件とも**本番コードが決してやらないことをテストが代行していた**ため既存テストでは露見しなかった（A6: `checkTimeouts()` の手動呼び出し、A7: そもそも型が JSON 由来という前提の欠落）。**A6・A7 を Phase A の位置へ並べ替え**（B/C 完了後に着手したため cherry-pick で積み直し。A7 は B2 以前のコードに対して書き直し、B2 が `MISSING_TARGET` を廃止する分のテスト期待値更新を B2 に含めた）。並べ替え後のツリーが並べ替え前と**バイト単位で同一**であることを `git diff` で確認済み |
 | 2026-08-08 (3) | issue #1025 本文の更新を取りやめ。並行作業と完了条件を「PR 本文に乖離セクションを書く／提出後に #1025 へ導線コメント」に差し替え |
 | 2026-08-10 (3) | **Phase C 検証完了。** run-mvn-verify **BUILD SUCCESS 432/0/1skip・全ゲート ok**（`20260810192956-mvn-verify.md`、plugin `aa0c391`）、run-e2e **21/21 PASS**（`20260810200900-e2e-test.md`）、run-load stress **183 SUCCESS / 17 クリーン LOCK_WAIT_TIMEOUT・overlap 0・HUNG 0**（`20260810202423-load-test.md`）。実装で 1 件修正: `RemoteCatalogCache.requestRefresh` の `@SuppressFBWarnings` が不要と SpotBugs に指摘され除去（C3 に畳んだ）。**ハーネス側のバグ 2 件も修正**（いずれも `COMMON_ROOT_DIR` が `dev/jenkins-env` である前提の取り違え）: 未コミット検査の除外パススペックが効かず E2E が自分のレポートで起動拒否／`.deployed-plugin` の参照が 1 階層ずれてレポートの plugin が `unknown` に。**E2E は既存 21 本のみで、S19〜S22 は未着手** |
