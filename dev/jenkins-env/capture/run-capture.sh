@@ -117,7 +117,7 @@ run_shots() {
 
 # The Remote tab is only worth photographing with something in it: one lock held on b and one
 # build queued behind it, so the table shows both states it can show.
-if shots_include remote-own-locks || shots_include tabbar; then
+if shots_include remote-own-locks || shots_include tabbar || shots_include lr-page; then
   log "State: a holding and queueing a remote lock on b"
   upsert_pipeline_job "$A_URL" "nightly-hardware-test" "
     lock(resource: 'hw-rig-01', serverId: '$SERVER_ID', variable: 'RIG') {
@@ -132,7 +132,7 @@ if shots_include remote-own-locks || shots_include tabbar; then
   wait_for_console_contains "$HOLDER_BUILD_URL" "holding hw-rig-01" 120
   trigger_job "$A_URL" "smoke-on-rig" >/dev/null
   sleep 12   # let the second request reach the server queue and the client registry
-  run_shots "$LABEL" "tabbar,remote-own-locks"
+  run_shots "$LABEL" "lr-page,tabbar,remote-own-locks"
 fi
 
 if shots_include delegated-badge || shots_include remote-catalog; then

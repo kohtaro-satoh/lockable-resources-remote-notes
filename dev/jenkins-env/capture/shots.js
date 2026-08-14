@@ -73,8 +73,12 @@ const wants = (name) => SHOTS.length === 0 || SHOTS.includes(name);
   // --- client side (controller a) ------------------------------------------
   await login(page, 'a');
 
-  if (wants('tabbar') || wants('remote-own-locks')) {
+  if (wants('tabbar') || wants('remote-own-locks') || wants('lr-page')) {
     await page.goto(url('a', '/lockable-resources/'), { waitUntil: 'networkidle2' });
+    // The whole page while a remote lock is held. This is the one shot that works on both
+    // versions, and the comparison it makes is the point of the feature: before, a controller
+    // could be holding another controller's hardware and this page said nothing at all.
+    if (wants('lr-page')) await shoot(page, 'lr-page', null, { fullPage: true });
     if (wants('tabbar')) await shoot(page, 'tabbar', '.lr-tab-bar');
     if (wants('remote-own-locks') && (await openTab(page, 'remote'))) {
       await shoot(page, 'remote-own-locks', '#lr-tab-remote');
