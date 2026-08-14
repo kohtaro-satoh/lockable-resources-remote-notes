@@ -255,6 +255,40 @@ Each `jobUid` is classified from its last console event and the build result:
 > `python3` to detect over-capacity overlaps. **Resource names** come from the `ACQUIRED` line's `resources` field
 > (via `lock(variable:'X')` / lockEnvVars) — which is why every lock carries a `variable`.
 
+#### CP01/CP02 are judged from the servers' audit log
+
+Since 2026-08-13 the verdict comes from the servers' own audit log (plugin-side `[B6]`), with the
+client consoles as the secondary view. Both counts go in the report, and the report says which one
+the verdict came from.
+
+A build's interval is a **subset** of its true hold: ACQUIRED is logged after the lock is taken and
+RELEASED before it is given up, both from inside the block. So **an overlap seen from the clients is
+a real one**, while **a real one can still escape them**. The audit log records the moment a resource
+changes hands, on the server, and has no such asymmetry.
+
+The verdict source was changed while chasing the unexplained observation below. Note the order of
+events: **it was changed after an unwelcome number was seen**, which is on its own a way for
+judgement to bend. The reason for the change is the asymmetry above and not the number — but had it
+been the other way round, this would be a change to distrust.
+
+#### Unexplained: 10 overlaps in the 2026-08-12 stress run
+
+A stress run on plugin `29c05d3` reported 10 overlaps from the client view. Six runs since — two of
+them the `timeout-race` preset, aimed squarely at the race — have not reproduced it. It **stays
+unexplained**. The raw data was discarded under the "latest report of each kind" convention, so a
+recurrence gets investigated on its own evidence, at the time.
+
+Ruled out:
+
+| Hypothesis | Verdict | Basis |
+|---|---|---|
+| The analysis was wrong (mis-paired events) | Ruled out | All 10 pairs / 20 sides sound: no duplicate `(uid,iter,phase,event)` keys, start/end matching the raw events, the shared resource present in both `resources` lists, matching targets |
+| The reporting was wrong (the client believed the wrong names) | Ruled out | Across 565 REMOTE_MAIN holds in another run, the client's resource set matched the server's granted set exactly (0 mismatches). By design one `resources` list feeds both the audit and lockEnvVars |
+| The harness premise (where the emits sit) | Ruled out | In `Jenkinsfile.grid` the emits are inside the lock block, as a matter of code |
+| Grants racing each other | Ruled out | All five grant paths (local immediate / local promotion / remote immediate / remote promotion / freestyle) run inside the single `syncResources` monitor. The timer A6 introduced also takes that monitor before promoting |
+
+The observation and the design do not fit together. One of the premises still has a hole in it.
+
 ---
 
 ## Report & visualization
