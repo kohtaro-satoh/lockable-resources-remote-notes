@@ -89,14 +89,14 @@ High-load / stress test specification (a separate suite; this is how the M1I reg
 - [LOAD_TEST_SPECIFICATION](dev/docs-e/LOAD_TEST_SPECIFICATION.md) ([j](dev/docs-j/LOAD_TEST_SPECIFICATION.md))
 - two presets are kept, because they ask different questions. Both judge mutual exclusion from the
   servers' own audit trail (`[B6]`), not from what the clients believed they held; the reports carry
-  both counts and say which one the verdict came from. Latest runs, plugin `0a96c53`, 4×50=200 jobs:
+  both counts and say which one the verdict came from. Latest runs, plugin `111a767`, 4×50=200 jobs:
   - `stress` — contention, throughput, and the shape of the queue:
-    [20260813210938-load-test-stress.md](dev/reports/20260813210938-load-test-stress.md) —
-    192 SUCCESS / 8 FAILURE, every failure a clean `LOCK_WAIT_TIMEOUT`, overlaps 0, HUNG 0
+    [20260814122345-load-test-stress.md](dev/reports/20260814122345-load-test-stress.md) —
+    190 SUCCESS / 10 FAILURE, every failure a clean `LOCK_WAIT_TIMEOUT`, overlaps 0, HUNG 0
   - `timeout-race` — deadlines land *inside* the window instead of beyond it, so the code that runs
     when an allocate timeout expires is exercised in bulk rather than a handful of times:
-    [20260813212257-load-test-timeout-race.md](dev/reports/20260813212257-load-test-timeout-race.md) —
-    95 SUCCESS / 105 FAILURE, all 105 a clean `LOCK_WAIT_TIMEOUT`, overlaps 0, HUNG 0. Read the
+    [20260814123643-load-test-timeout-race.md](dev/reports/20260814123643-load-test-timeout-race.md) —
+    92 SUCCESS / 108 FAILURE, all 108 a clean `LOCK_WAIT_TIMEOUT`, overlaps 0, HUNG 0. Read the
     failure count against the preset's intent: timeouts here are the point, not a regression
 - the reports embed the Jenkinsfile and the plots
 
