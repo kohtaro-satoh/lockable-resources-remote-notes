@@ -1,0 +1,172 @@
+# Load Test Report — grid-storm
+
+- runId: 20260813212257
+- preset: timeout-race
+- plugin under test: `0a96c53`
+- harness (notes): `facfeba`
+- builds: 200 (jobs with events: 200)
+
+## Scenario — what was tested
+
+**G01 grid-storm**: all 4 controllers (a/b/c/d) act as both lock **server and client**. Each controller starts **50 concurrent pipeline jobs** (**200 jobs total** across the grid). Each controller defines 50 lockable resources (label `pool`); 40 are exposed for remote acquisition.
+
+Every job repeats the following **3 time(s)** (whole-job timeout 20 min):
+
+1. **remote lock** `lock(label:'pool', quantity:2, serverId:<random>)` — 2 exposed resources on a randomly chosen OTHER controller (allocate timeout 1 min)
+2. **local lock** `lock(label:'pool', quantity:1)` — 1 local resource, nested inside the remote hold (allocate timeout 2 min)
+3. **remote skipIfLocked** `lock(label:'pool', quantity:1, serverId:<random>, skipIfLocked:true)` — best-effort; success or failure is swallowed (must not fail the job)
+4. **hold** for 60s
+5. **release** the local lock, then the remote lock
+
+| parameter | value |
+|---|---|
+| jobs / controller | 50 |
+| total concurrent jobs | 200 |
+| iterations / job | 3 |
+| hold (sleep) | 60s |
+| remote-lock allocate timeout | 1 min |
+| local-lock allocate timeout | 2 min |
+| whole-job timeout | 20 min |
+| loopback (self as remote target) | off (cross-controller only) |
+
+### Job pipeline (`Jenkinsfile.grid`)
+
+The exact pipeline injected into every job. The harness replaces the `// @@CONFIG@@` line with a header that sets `SELF` / `SERVERS` / `ITER` / `SLEEP` / `RLOCK_TO` / `LLOCK_TO` / `JOB_TO` / `ALLOW_SELF` to the values above, then injects it as a `CpsFlowDefinition` (sandbox off).
+
+```groovy
+// Grid storm load job (G01) — see dev/docs-j/LOAD_TEST_SPECIFICATION.md
+//
+// Injected by run-load.sh as CpsFlowDefinition(script, /*sandbox*/ false).
+// The harness REPLACES the "// @@CONFIG@@" line below with a Groovy header that
+// defines these bindings (bare assignments, so top-level methods can read them):
+//
+//   SELF       = '<this controller id>'       // e.g. 'a'
+//   SERVERS    = ['a','b','c','d']            // all controller ids
+//   ALLOW_SELF = false                        // loopback mode: true=self may be picked as
+//                                             //   remote target (25%); false=cross-controller only
+//   ITER       = 1                            // iterations
+//   SLEEP     = 10                            // hold seconds
+//   RLOCK_TO  = 2                             // remote-main lock timeout (min)
+//   LLOCK_TO  = 2                             // local lock timeout (min)
+//   JOB_TO    = 5                             // whole-job timeout (min)
+//
+// Structured event line (parsed from consoleText by analyze_load.py):
+//   LLT|<epochMs>|<jobUid>|<self>|<iter>|<phase>|<event>|<target>|<resources>
+
+// @@CONFIG@@
+
+def emit(self, iter, phase, event, target, resources) {
+  echo "LLT|${System.currentTimeMillis()}|${env.JOB_NAME}#${env.BUILD_NUMBER}@${self}|" +
+       "${self}|${iter}|${phase}|${event}|${target}|${resources}"
+}
+
+def pick(list) { list[new Random().nextInt(list.size())] }
+
+// remote target selection. ALLOW_SELF=false excludes SELF (no loopback): every remote
+// request is a genuine cross-controller call. ALLOW_SELF=true keeps the 25% self chance
+// (server-self-use coverage / loopback performance).
+def pickTarget(self, servers, allowSelf) {
+  return pick(allowSelf ? servers : servers.findAll { it != self })
+}
+
+node {
+  timeout(time: JOB_TO, unit: 'MINUTES') {
+    for (int i = 1; i <= ITER; i++) {
+      def t1 = pickTarget(SELF, SERVERS, ALLOW_SELF)
+      emit(SELF, i, 'REMOTE_MAIN', 'REQUEST', t1, '')
+      lock(label: 'pool', quantity: 2, serverId: t1, variable: 'RMAIN',
+           timeoutForAllocateResource: RLOCK_TO, timeoutUnit: 'MINUTES') {
+        emit(SELF, i, 'REMOTE_MAIN', 'ACQUIRED', t1, env.RMAIN ?: '')
+        emit(SELF, i, 'LOCAL', 'REQUEST', SELF, '')
+        lock(label: 'pool', quantity: 1, variable: 'LRES',
+             timeoutForAllocateResource: LLOCK_TO, timeoutUnit: 'MINUTES') {
+          emit(SELF, i, 'LOCAL', 'ACQUIRED', SELF, env.LRES ?: '')
+          def t2 = pickTarget(SELF, SERVERS, ALLOW_SELF)
+          try {
+            lock(label: 'pool', quantity: 1, serverId: t2, skipIfLocked: true) {
+              emit(SELF, i, 'REMOTE_SKIP', 'ACQUIRED', t2, '')
+            }
+          } catch (err) {
+            emit(SELF, i, 'REMOTE_SKIP', 'FAILED', t2, '')
+          }
+          emit(SELF, i, 'LOCAL', 'BODY', SELF, '')
+          sleep(time: SLEEP, unit: 'SECONDS')
+          emit(SELF, i, 'LOCAL', 'RELEASED', SELF, '')
+        }
+        emit(SELF, i, 'REMOTE_MAIN', 'RELEASED', t1, '')
+      }
+    }
+  }
+}
+```
+
+## Result
+
+- build FAILURE: 105
+- build SUCCESS: 95
+
+**Failure breakdown** (by console signature)
+
+- `LOCK_WAIT_TIMEOUT` (clean allocate timeout, fail-closed): 105
+
+**Invariants**
+
+- mutual-exclusion overlap violations (a resource held beyond capacity at any instant), judged from the servers' own audit trail: **0** (PASS)
+- resource state changes recorded by the servers: 2076 (a=512, b=564, c=530, d=470)
+- the same check against the clients' consoles reports **0**. A build's interval lies inside its true hold - it logs the acquisition after taking the lock and the release before giving it up - so an overlap seen there is a real one, while a real one can still escape it
+- termination — HUNG / UNKNOWN result (possible deadlock or lost wakeup): **0** (PASS)
+
+## Queue wait (ms)
+
+- count: 634  p50: 2271.0  p95: 60203.55  p99: 60295.03  max: 60452
+
+## Resource utilization (docker stats)
+
+| container | peak CPU% | peak mem (MiB) | net rx (MB) | net tx (MB) | samples |
+|---|---|---|---|---|---|
+| lrr-jenkins-a | 659.5 | 929.6 | 3.05 | 3.46 | 77 |
+| lrr-jenkins-b | 361.9 | 993.7 | 3.04 | 3.25 | 77 |
+| lrr-jenkins-c | 309.2 | 836.8 | 2.78 | 2.89 | 77 |
+| lrr-jenkins-d | 621.0 | 944.2 | 2.54 | 2.64 | 77 |
+
+> net rx/tx = cumulative delta over the run.
+
+## Plots
+
+### Queue wait per acquisition
+
+![queue-wait-scatter](20260813212257-load-test-timeout-race/grid-storm/plots/queue-wait-scatter.png)
+
+One point per lock acquisition: how long it waited (y) vs when it was acquired (x).
+
+### Queued waiters over time
+
+![queue-waiters-over-time](20260813212257-load-test-timeout-race/grid-storm/plots/queue-waiters-over-time.png)
+
+Lock requests waiting (REQUESTed but not yet ACQUIRED) at each instant. Peaks = contention.
+
+### Per-resource mean hold time
+
+![resource-mean-hold-scatter](20260813212257-load-test-timeout-race/grid-storm/plots/resource-mean-hold-scatter.png)
+
+One point per resource: mean hold time (y) vs median acquire time (x); point size = number of acquisitions. Shows load skew across the pool.
+
+### Container network throughput (REST API load)
+
+![network-throughput](20260813212257-load-test-timeout-race/grid-storm/plots/network-throughput.png)
+
+Per-container rx+tx throughput over time = load on the remote-lock REST API.
+
+### Container CPU utilization
+
+![cpu-utilization](20260813212257-load-test-timeout-race/grid-storm/plots/cpu-utilization.png)
+
+Per-container CPU% over time; busier remote targets spike higher.
+
+## Artifacts
+
+- events: `20260813212257-load-test-timeout-race/grid-storm/events.csv`
+- classification: `20260813212257-load-test-timeout-race/grid-storm/job-classification.csv`
+- overlaps: `20260813212257-load-test-timeout-race/grid-storm/overlaps.txt`
+- metrics: `20260813212257-load-test-timeout-race/grid-storm/metrics.json`
+- consoles: `20260813212257-load-test-timeout-race/grid-storm/consoles/`

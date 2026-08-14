@@ -75,13 +75,24 @@ P1M1 / P1M1A / P1M1B / Boundary) + the latest run report:
 - [BOUNDARY_COVERAGE_ANALYSIS](dev/docs-j/BOUNDARY_COVERAGE_ANALYSIS.md) — what the suite covers on the
   data / time / scale axes, what it does not, and the findings that came out of closing the gaps.
   This is how the A6 defect (a queued remote request never timing out on its own deadline) was found
-- latest run (plugin `29c05d3`): [20260812143519-e2e-test.md](dev/reports/20260812143519-e2e-test.md) —
+- latest run (plugin `0a96c53`): [20260813204301-e2e-test.md](dev/reports/20260813204301-e2e-test.md) —
   32/32 PASS (20 function / 4 data / 6 time / 2 scale)
 
 High-load / stress test specification (a separate suite; this is how the M1I regression was found) + the latest run report:
 
 - [LOAD_TEST_SPECIFICATION](dev/docs-e/LOAD_TEST_SPECIFICATION.md) ([j](dev/docs-j/LOAD_TEST_SPECIFICATION.md))
-- latest run (plugin `aa0c391` = Phase 1 M2+M3 through C4, `stress`, 4×50=200 jobs): [20260810202423-load-test.md](dev/reports/20260810202423-load-test.md) — 183 SUCCESS / 17 FAILURE, all failures a clean `LOCK_WAIT_TIMEOUT`, overlaps 0, HUNG 0 (the report embeds the Jenkinsfile and the plots)
+- two presets are kept, because they ask different questions. Both judge mutual exclusion from the
+  servers' own audit trail (`[B6]`), not from what the clients believed they held; the reports carry
+  both counts and say which one the verdict came from. Latest runs, plugin `0a96c53`, 4×50=200 jobs:
+  - `stress` — contention, throughput, and the shape of the queue:
+    [20260813210938-load-test-stress.md](dev/reports/20260813210938-load-test-stress.md) —
+    192 SUCCESS / 8 FAILURE, every failure a clean `LOCK_WAIT_TIMEOUT`, overlaps 0, HUNG 0
+  - `timeout-race` — deadlines land *inside* the window instead of beyond it, so the code that runs
+    when an allocate timeout expires is exercised in bulk rather than a handful of times:
+    [20260813212257-load-test-timeout-race.md](dev/reports/20260813212257-load-test-timeout-race.md) —
+    95 SUCCESS / 105 FAILURE, all 105 a clean `LOCK_WAIT_TIMEOUT`, overlaps 0, HUNG 0. Read the
+    failure count against the preset's intent: timeouts here are the point, not a regression
+- the reports embed the Jenkinsfile and the plots
 
 Reviews / レビュー:
 
