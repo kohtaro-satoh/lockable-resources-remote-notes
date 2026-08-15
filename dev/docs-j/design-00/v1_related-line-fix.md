@@ -1,1 +1,0 @@
-Related: https://github.com/jenkinsci/lockable-resources-plugin/issues/321

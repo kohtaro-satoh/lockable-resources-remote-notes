@@ -1,1 +1,0 @@
-`(base)` refers to `/lockable-resources/remote/v1` throughout this section.
