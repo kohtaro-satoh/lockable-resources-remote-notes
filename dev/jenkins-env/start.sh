@@ -51,7 +51,8 @@ done
 # append=true because a controller may restart mid-run (E2E does this on purpose); output=file means
 # the agent writes at JVM exit, so coverage/collect.sh has to stop the containers before reading.
 if $COVERAGE; then
-  export LRR_JAVA_OPTS="-Djenkins.install.runSetupWizard=false -javaagent:/opt/jacoco/jacocoagent.jar=destfile=/var/jenkins_home/jacoco.exec,output=file,append=true,includes=org.jenkins.plugins.lockableresources.*"
+  export LRR_COVERAGE=true
+  source "$SCRIPT_DIR/lib/coverage-env.sh"
   echo "[INFO] Coverage: JaCoCo agent attached (destfile=/var/jenkins_home/jacoco.exec)"
 fi
 
