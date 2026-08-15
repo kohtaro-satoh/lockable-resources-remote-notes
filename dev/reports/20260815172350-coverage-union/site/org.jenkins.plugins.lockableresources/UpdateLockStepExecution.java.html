@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>UpdateLockStepExecution.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources</a> &gt; <span class="el_source">UpdateLockStepExecution.java</span></div><h1>UpdateLockStepExecution.java</h1><pre class="source lang-java linenums">/*
+ * The MIT License
+ *
+ * See the &quot;LICENSE.txt&quot; file for full copyright and license information.
+ */
+package org.jenkins.plugins.lockableresources;
+
+import hudson.model.TaskListener;
+import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
+
+/**
+ * Execution logic for the {@link UpdateLockStep}.
+ */
+public class UpdateLockStepExecution extends AbstractStepExecutionImpl {
+
+    private static final long serialVersionUID = 1583205294263267002L;
+<span class="fc" id="L26">    private static final Logger LOGGER = Logger.getLogger(UpdateLockStepExecution.class.getName());</span>
+
+    private final UpdateLockStep step;
+
+    public UpdateLockStepExecution(UpdateLockStep step, StepContext context) {
+<span class="fc" id="L31">        super(context);</span>
+<span class="fc" id="L32">        this.step = step;</span>
+<span class="fc" id="L33">    }</span>
+
+    @Override
+    public boolean start() throws Exception {
+<span class="fc" id="L37">        step.validate();</span>
+
+<span class="fc" id="L39">        PrintStream logger = getContext().get(TaskListener.class).getLogger();</span>
+<span class="fc" id="L40">        LockableResourcesManager lrm = LockableResourcesManager.get();</span>
+
+<span class="fc" id="L42">        synchronized (LockableResourcesManager.syncResources) {</span>
+<span class="fc bfc" id="L43" title="All 2 branches covered.">            if (step.isDeleteResource()) {</span>
+<span class="fc" id="L44">                handleDeleteResource(lrm, logger);</span>
+            } else {
+<span class="fc" id="L46">                handleUpdateResource(lrm, logger);</span>
+            }
+<span class="fc" id="L48">        }</span>
+
+<span class="fc" id="L50">        getContext().onSuccess(null);</span>
+<span class="fc" id="L51">        return true;</span>
+    }
+
+    /**
+     * Handles the deletion of a resource.
+     */
+    private void handleDeleteResource(LockableResourcesManager lrm, PrintStream logger) {
+<span class="fc" id="L58">        String resourceName = step.getResource();</span>
+<span class="fc" id="L59">        LockableResource resource = lrm.fromName(resourceName);</span>
+
+<span class="fc bfc" id="L61" title="All 2 branches covered.">        if (resource == null) {</span>
+<span class="fc" id="L62">            LockableResourcesManager.printLogs(</span>
+                    &quot;Resource [&quot; + resourceName + &quot;] does not exist, nothing to delete.&quot;,
+                    Level.WARNING,
+                    LOGGER,
+                    logger);
+<span class="fc" id="L67">            return;</span>
+        }
+
+<span class="pc bpc" id="L70" title="2 of 4 branches missed.">        if (resource.isLocked() || resource.isQueued()) {</span>
+<span class="nc" id="L71">            LockableResourcesManager.printLogs(</span>
+                    &quot;Resource [&quot; + resourceName + &quot;] is currently locked or queued, cannot delete.&quot;,
+                    Level.WARNING,
+                    LOGGER,
+                    logger);
+<span class="nc" id="L76">            throw new IllegalStateException(Messages.UpdateLockStep_error_resourceInUse(resourceName));</span>
+        }
+
+<span class="pc bpc" id="L79" title="1 of 2 branches missed.">        if (resource.isReserved()) {</span>
+<span class="nc" id="L80">            LockableResourcesManager.printLogs(</span>
+                    &quot;Resource [&quot; + resourceName + &quot;] is currently reserved, cannot delete.&quot;,
+                    Level.WARNING,
+                    LOGGER,
+                    logger);
+<span class="nc" id="L85">            throw new IllegalStateException(Messages.UpdateLockStep_error_resourceReserved(resourceName));</span>
+        }
+
+<span class="fc" id="L88">        lrm.removeResources(Collections.singletonList(resource));</span>
+<span class="fc" id="L89">        lrm.save();</span>
+
+<span class="fc" id="L91">        LockableResourcesManager.printLogs(&quot;Resource [&quot; + resourceName + &quot;] deleted.&quot;, Level.FINE, LOGGER, logger);</span>
+<span class="fc" id="L92">    }</span>
+
+    /**
+     * Handles updating an existing resource or creating a new one.
+     */
+    private void handleUpdateResource(LockableResourcesManager lrm, PrintStream logger) {
+<span class="fc" id="L98">        String resourceName = step.getResource();</span>
+<span class="fc" id="L99">        LockableResource resource = lrm.fromName(resourceName);</span>
+
+        // Create resource if it doesn't exist and createResource is true
+<span class="fc bfc" id="L102" title="All 2 branches covered.">        if (resource == null) {</span>
+<span class="fc bfc" id="L103" title="All 2 branches covered.">            if (step.isCreateResource()) {</span>
+<span class="fc" id="L104">                lrm.createResource(resourceName);</span>
+<span class="fc" id="L105">                resource = lrm.fromName(resourceName);</span>
+<span class="pc bpc" id="L106" title="1 of 2 branches missed.">                if (resource != null) {</span>
+                    // Make it persistent (not ephemeral) since it was explicitly created
+<span class="fc" id="L108">                    resource.setEphemeral(false);</span>
+<span class="fc" id="L109">                    LockableResourcesManager.printLogs(</span>
+                            &quot;Resource [&quot; + resourceName + &quot;] created.&quot;, Level.FINE, LOGGER, logger);
+                }
+            } else {
+<span class="fc" id="L113">                LockableResourcesManager.printLogs(</span>
+                        &quot;Resource [&quot; + resourceName + &quot;] does not exist. Use createResource: true to create it.&quot;,
+                        Level.WARNING,
+                        LOGGER,
+                        logger);
+<span class="fc" id="L118">                throw new IllegalStateException(Messages.UpdateLockStep_error_resourceNotFound(resourceName));</span>
+            }
+        }
+
+<span class="pc bpc" id="L122" title="1 of 2 branches missed.">        if (resource == null) {</span>
+<span class="nc" id="L123">            throw new IllegalStateException(Messages.UpdateLockStep_error_resourceNotFound(resourceName));</span>
+        }
+
+        // Handle labels
+<span class="fc" id="L127">        updateLabels(resource, logger);</span>
+
+        // Handle note
+<span class="fc bfc" id="L130" title="All 2 branches covered.">        if (step.getSetNote() != null) {</span>
+<span class="fc" id="L131">            resource.setNote(step.getSetNote());</span>
+<span class="fc" id="L132">            LockableResourcesManager.printLogs(</span>
+                    &quot;Resource [&quot; + resourceName + &quot;] note updated.&quot;, Level.FINE, LOGGER, logger);
+        }
+
+<span class="fc" id="L136">        lrm.save();</span>
+<span class="fc" id="L137">        LockableResourcesManager.printLogs(&quot;Resource [&quot; + resourceName + &quot;] updated.&quot;, Level.FINE, LOGGER, logger);</span>
+<span class="fc" id="L138">    }</span>
+
+    /**
+     * Updates labels on the resource based on step configuration.
+     */
+    private void updateLabels(LockableResource resource, PrintStream logger) {
+<span class="fc" id="L144">        String resourceName = resource.getName();</span>
+
+<span class="fc bfc" id="L146" title="All 2 branches covered.">        if (step.getSetLabels() != null) {</span>
+            // setLabels replaces all existing labels
+<span class="fc" id="L148">            List&lt;String&gt; newLabels = parseLabels(step.getSetLabels());</span>
+<span class="fc" id="L149">            resource.setLabelsFromString(String.join(&quot; &quot;, newLabels));</span>
+<span class="fc" id="L150">            LockableResourcesManager.printLogs(</span>
+                    &quot;Resource [&quot; + resourceName + &quot;] labels set to: &quot; + newLabels, Level.FINE, LOGGER, logger);
+<span class="fc bfc" id="L152" title="All 4 branches covered.">        } else if (step.getAddLabels() != null || step.getRemoveLabels() != null) {</span>
+            // addLabels/removeLabels modify existing labels
+<span class="fc" id="L154">            List&lt;String&gt; currentLabels = new ArrayList&lt;&gt;(resource.getLabelsAsList());</span>
+
+<span class="fc bfc" id="L156" title="All 2 branches covered.">            if (step.getAddLabels() != null) {</span>
+<span class="fc" id="L157">                List&lt;String&gt; labelsToAdd = parseLabels(step.getAddLabels());</span>
+<span class="fc bfc" id="L158" title="All 2 branches covered.">                for (String label : labelsToAdd) {</span>
+<span class="fc bfc" id="L159" title="All 2 branches covered.">                    if (!currentLabels.contains(label)) {</span>
+<span class="fc" id="L160">                        currentLabels.add(label);</span>
+                    }
+<span class="fc" id="L162">                }</span>
+<span class="fc" id="L163">                LockableResourcesManager.printLogs(</span>
+                        &quot;Resource [&quot; + resourceName + &quot;] added labels: &quot; + labelsToAdd, Level.FINE, LOGGER, logger);
+            }
+
+<span class="fc bfc" id="L167" title="All 2 branches covered.">            if (step.getRemoveLabels() != null) {</span>
+<span class="fc" id="L168">                List&lt;String&gt; labelsToRemove = parseLabels(step.getRemoveLabels());</span>
+<span class="fc" id="L169">                currentLabels.removeAll(labelsToRemove);</span>
+<span class="fc" id="L170">                LockableResourcesManager.printLogs(</span>
+                        &quot;Resource [&quot; + resourceName + &quot;] removed labels: &quot; + labelsToRemove,
+                        Level.FINE,
+                        LOGGER,
+                        logger);
+            }
+
+<span class="fc" id="L177">            resource.setLabelsFromString(currentLabels.stream().collect(Collectors.joining(&quot; &quot;)));</span>
+        }
+<span class="fc" id="L179">    }</span>
+
+    /**
+     * Parses a whitespace-separated label string into a list of labels.
+     */
+    private List&lt;String&gt; parseLabels(String labels) {
+<span class="pc bpc" id="L185" title="2 of 4 branches missed.">        if (labels == null || labels.trim().isEmpty()) {</span>
+<span class="nc" id="L186">            return new ArrayList&lt;&gt;();</span>
+        }
+<span class="fc" id="L188">        return Arrays.stream(labels.trim().split(&quot;\\s+&quot;))</span>
+<span class="pc bpc" id="L189" title="1 of 2 branches missed.">                .filter(l -&gt; !l.isEmpty())</span>
+<span class="fc" id="L190">                .collect(Collectors.toList());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

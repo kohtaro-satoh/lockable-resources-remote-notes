@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RemoteCatalog.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources.remote</a> &gt; <span class="el_source">RemoteCatalog.java</span></div><h1>RemoteCatalog.java</h1><pre class="source lang-java linenums">/*
+ * The MIT License
+ *
+ * See the &quot;LICENSE.txt&quot; file for full copyright and license information.
+ */
+package org.jenkins.plugins.lockableresources.remote;
+
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
+import java.util.Collections;
+import java.util.List;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
+
+/**
+ * What a remote server publishes, as this controller last saw it.
+ *
+ * &lt;p&gt;A snapshot, not a live view: the remote is the source of truth for its own resources and this is
+ * a copy that was accurate when it was fetched. {@link #getFetchedAt()} says when that was, and
+ * {@link #getError()} says why a refresh did not happen, so the page can show an honest age rather
+ * than implying the numbers are current.
+ */
+@Restricted(NoExternalUse.class)
+public final class RemoteCatalog {
+
+    private final String serverId;
+    private final List&lt;Resource&gt; resources;
+    private final boolean acceptNewAcquires;
+    private final long fetchedAt;
+
+    @CheckForNull
+    private final String error;
+
+    RemoteCatalog(
+            String serverId,
+            List&lt;Resource&gt; resources,
+            boolean acceptNewAcquires,
+            long fetchedAt,
+<span class="fc" id="L39">            @CheckForNull String error) {</span>
+<span class="fc" id="L40">        this.serverId = serverId;</span>
+<span class="pc bpc" id="L41" title="1 of 2 branches missed.">        this.resources = resources == null ? Collections.emptyList() : List.copyOf(resources);</span>
+<span class="fc" id="L42">        this.acceptNewAcquires = acceptNewAcquires;</span>
+<span class="fc" id="L43">        this.fetchedAt = fetchedAt;</span>
+<span class="fc" id="L44">        this.error = error;</span>
+<span class="fc" id="L45">    }</span>
+
+    public String getServerId() {
+<span class="fc" id="L48">        return serverId;</span>
+    }
+
+    @NonNull
+    public List&lt;Resource&gt; getResources() {
+<span class="fc" id="L53">        return resources;</span>
+    }
+
+    /** Whether the remote is currently handing out new locks at all. */
+    public boolean isAcceptNewAcquires() {
+<span class="fc" id="L58">        return acceptNewAcquires;</span>
+    }
+
+    /** When this snapshot was taken, or 0 if nothing has ever been fetched. */
+    public long getFetchedAt() {
+<span class="fc" id="L63">        return fetchedAt;</span>
+    }
+
+    /** Why the last refresh failed, or {@code null} if it succeeded. */
+    @CheckForNull
+    public String getError() {
+<span class="fc" id="L69">        return error;</span>
+    }
+
+    public boolean isStale(long ttlMillis) {
+<span class="fc bfc" id="L73" title="All 2 branches covered.">        return System.currentTimeMillis() - fetchedAt &gt; ttlMillis;</span>
+    }
+
+    /** One resource as published by the remote. State is the remote's, at fetch time. */
+    @Restricted(NoExternalUse.class)
+    public static final class Resource {
+
+        private final String name;
+        private final List&lt;String&gt; labels;
+        private final String description;
+        private final String state;
+        private final String heldByKind;
+        private final String heldByClientId;
+        private final long since;
+
+        Resource(
+                String name,
+                List&lt;String&gt; labels,
+                String description,
+                String state,
+                String heldByKind,
+                String heldByClientId,
+<span class="fc" id="L95">                long since) {</span>
+<span class="fc" id="L96">            this.name = name;</span>
+<span class="pc bpc" id="L97" title="1 of 2 branches missed.">            this.labels = labels == null ? Collections.emptyList() : List.copyOf(labels);</span>
+<span class="pc bpc" id="L98" title="1 of 2 branches missed.">            this.description = description == null ? &quot;&quot; : description;</span>
+<span class="pc bpc" id="L99" title="1 of 2 branches missed.">            this.state = state == null ? &quot;&quot; : state;</span>
+<span class="pc bpc" id="L100" title="1 of 2 branches missed.">            this.heldByKind = heldByKind == null ? &quot;&quot; : heldByKind;</span>
+<span class="pc bpc" id="L101" title="1 of 2 branches missed.">            this.heldByClientId = heldByClientId == null ? &quot;&quot; : heldByClientId;</span>
+<span class="fc" id="L102">            this.since = since;</span>
+<span class="fc" id="L103">        }</span>
+
+        public String getName() {
+<span class="fc" id="L106">            return name;</span>
+        }
+
+        @NonNull
+        public List&lt;String&gt; getLabels() {
+<span class="fc" id="L111">            return labels;</span>
+        }
+
+        public String getDescription() {
+<span class="fc" id="L115">            return description;</span>
+        }
+
+        public String getState() {
+<span class="fc" id="L119">            return state;</span>
+        }
+
+        public String getHeldByKind() {
+<span class="fc" id="L123">            return heldByKind;</span>
+        }
+
+        public String getHeldByClientId() {
+<span class="fc" id="L127">            return heldByClientId;</span>
+        }
+
+        public long getSince() {
+<span class="fc" id="L131">            return since;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

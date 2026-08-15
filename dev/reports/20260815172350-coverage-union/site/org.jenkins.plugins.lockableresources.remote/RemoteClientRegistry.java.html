@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RemoteClientRegistry.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources.remote</a> &gt; <span class="el_source">RemoteClientRegistry.java</span></div><h1>RemoteClientRegistry.java</h1><pre class="source lang-java linenums">/*
+ * The MIT License
+ *
+ * See the &quot;LICENSE.txt&quot; file for full copyright and license information.
+ */
+package org.jenkins.plugins.lockableresources.remote;
+
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
+import hudson.Extension;
+import hudson.model.Run;
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import jenkins.model.Jenkins;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
+
+/**
+ * What this controller currently holds or waits for on other controllers.
+ *
+ * &lt;p&gt;The client side of a remote lock lives in a {@link RemoteLockSession} per {@code lock()} step,
+ * which is enough to run the step but leaves nobody able to answer &quot;what is this controller doing
+ * remotely right now?&quot; - the question the lockable resources page exists to answer for local
+ * resources. This registry is that answer: the client-side counterpart of the server-side
+ * {@link RemoteLockManager}.
+ *
+ * &lt;p&gt;It is deliberately not persisted. A remote lock does not survive a restart of this controller
+ * (the session either resumes polling or fails closed), so a stale entry read from disk could only
+ * ever be wrong; {@code RemoteLockSession.onResume} re-registers what genuinely survived.
+ */
+@Restricted(NoExternalUse.class)
+@Extension
+<span class="fc" id="L38">public class RemoteClientRegistry {</span>
+
+<span class="fc" id="L40">    private final ConcurrentHashMap&lt;String, Entry&gt; entries = new ConcurrentHashMap&lt;&gt;();</span>
+
+    public static RemoteClientRegistry get() {
+<span class="fc" id="L43">        return Jenkins.get().getExtensionList(RemoteClientRegistry.class).get(0);</span>
+    }
+
+    /** Records a request that has been accepted by the remote and is waiting for its resources. */
+    public void queued(
+            @NonNull String lockId, @NonNull String serverId, @NonNull String request, @CheckForNull Run&lt;?, ?&gt; build) {
+<span class="fc" id="L49">        entries.put(lockId, new Entry(lockId, serverId, request, build));</span>
+<span class="fc" id="L50">    }</span>
+
+    /** Promotes a waiting entry to held, naming the resources the remote handed over. */
+    public void acquired(@NonNull String lockId, @CheckForNull List&lt;String&gt; resourceNames) {
+<span class="fc" id="L54">        Entry entry = entries.get(lockId);</span>
+<span class="fc bfc" id="L55" title="All 2 branches covered.">        if (entry != null) {</span>
+<span class="fc" id="L56">            entry.markAcquired(resourceNames);</span>
+        }
+<span class="fc" id="L58">    }</span>
+
+    /** Forgets an entry once the lock is released, skipped or failed. */
+    public void forget(@CheckForNull String lockId) {
+<span class="fc bfc" id="L62" title="All 2 branches covered.">        if (lockId != null) {</span>
+<span class="fc" id="L63">            entries.remove(lockId);</span>
+        }
+<span class="fc" id="L65">    }</span>
+
+    /** Everything this controller holds or waits for, held entries first, then oldest first. */
+    @NonNull
+    public List&lt;Entry&gt; getAll() {
+<span class="fc" id="L70">        List&lt;Entry&gt; all = new ArrayList&lt;&gt;(entries.values());</span>
+<span class="fc bfc" id="L71" title="All 2 branches covered.">        all.sort(Comparator.comparing((Entry e) -&gt; e.isAcquired() ? 0 : 1).thenComparingLong(Entry::getEnqueuedAt));</span>
+<span class="fc" id="L72">        return Collections.unmodifiableList(all);</span>
+    }
+
+    @NonNull
+    public Collection&lt;Entry&gt; forServer(@NonNull String serverId) {
+<span class="fc" id="L77">        List&lt;Entry&gt; matching = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L78" title="All 2 branches covered.">        for (Entry e : getAll()) {</span>
+<span class="fc bfc" id="L79" title="All 2 branches covered.">            if (serverId.equals(e.getServerId())) {</span>
+<span class="fc" id="L80">                matching.add(e);</span>
+            }
+<span class="fc" id="L82">        }</span>
+<span class="fc" id="L83">        return matching;</span>
+    }
+
+    public boolean isEmpty() {
+<span class="fc" id="L87">        return entries.isEmpty();</span>
+    }
+
+    /** One remote lock this controller holds or waits for. */
+    @Restricted(NoExternalUse.class)
+    public static final class Entry {
+
+        private final String lockId;
+        private final String serverId;
+        private final String request;
+        private final long enqueuedAt;
+        private volatile long acquiredAt;
+        private volatile List&lt;String&gt; resourceNames;
+
+        /**
+         * The build is held weakly and its name copied: the page must keep rendering a lock whose build
+         * has since been deleted, and must not be the reason a finished build stays in memory.
+         */
+        private final WeakReference&lt;Run&lt;?, ?&gt;&gt; build;
+
+        private final String buildName;
+        private final String buildUrl;
+
+<span class="fc" id="L110">        private Entry(String lockId, String serverId, String request, @CheckForNull Run&lt;?, ?&gt; build) {</span>
+<span class="fc" id="L111">            this.lockId = lockId;</span>
+<span class="fc" id="L112">            this.serverId = serverId;</span>
+<span class="fc" id="L113">            this.request = request;</span>
+<span class="fc" id="L114">            this.enqueuedAt = System.currentTimeMillis();</span>
+<span class="fc" id="L115">            this.build = new WeakReference&lt;&gt;(build);</span>
+<span class="fc bfc" id="L116" title="All 2 branches covered.">            this.buildName = build != null ? build.getFullDisplayName() : &quot;&quot;;</span>
+<span class="fc bfc" id="L117" title="All 2 branches covered.">            this.buildUrl = build != null ? build.getUrl() : &quot;&quot;;</span>
+<span class="fc" id="L118">        }</span>
+
+        private void markAcquired(@CheckForNull List&lt;String&gt; names) {
+<span class="fc bfc" id="L121" title="All 2 branches covered.">            this.resourceNames = names == null ? Collections.emptyList() : List.copyOf(names);</span>
+<span class="fc" id="L122">            this.acquiredAt = System.currentTimeMillis();</span>
+<span class="fc" id="L123">        }</span>
+
+        public String getLockId() {
+<span class="fc" id="L126">            return lockId;</span>
+        }
+
+        public String getServerId() {
+<span class="fc" id="L130">            return serverId;</span>
+        }
+
+        /** Human-readable description of what was asked for, e.g. {@code plc-01} or {@code label:plc}. */
+        public String getRequest() {
+<span class="fc" id="L135">            return request;</span>
+        }
+
+        public boolean isAcquired() {
+<span class="fc bfc" id="L139" title="All 2 branches covered.">            return acquiredAt &gt; 0;</span>
+        }
+
+        public String getState() {
+<span class="fc bfc" id="L143" title="All 2 branches covered.">            return isAcquired() ? &quot;ACQUIRED&quot; : &quot;QUEUED&quot;;</span>
+        }
+
+        public long getEnqueuedAt() {
+<span class="fc" id="L147">            return enqueuedAt;</span>
+        }
+
+        public long getAcquiredAt() {
+<span class="fc" id="L151">            return acquiredAt;</span>
+        }
+
+        /** Since when this entry has been in its current state. */
+        public long getSince() {
+<span class="fc bfc" id="L156" title="All 2 branches covered.">            return isAcquired() ? acquiredAt : enqueuedAt;</span>
+        }
+
+        @NonNull
+        public List&lt;String&gt; getResourceNames() {
+<span class="fc" id="L161">            List&lt;String&gt; names = resourceNames;</span>
+<span class="fc bfc" id="L162" title="All 2 branches covered.">            return names == null ? Collections.emptyList() : names;</span>
+        }
+
+        @CheckForNull
+        public Run&lt;?, ?&gt; getBuild() {
+<span class="fc" id="L167">            return build.get();</span>
+        }
+
+        public String getBuildName() {
+<span class="fc" id="L171">            return buildName;</span>
+        }
+
+        public String getBuildUrl() {
+<span class="fc" id="L175">            return buildUrl;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

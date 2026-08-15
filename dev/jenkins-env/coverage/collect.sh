@@ -76,6 +76,11 @@ log "Merging $found controller(s) and reporting against $PLUGIN_DIR"
   -Dlrr.exec.dir="$EXEC_DIR" \
   -Dlrr.report.dir="$OUT_DIR/site"
 
+# Keep the raw exec next to the report: union.sh needs the layers side by side, and target/exec is
+# wiped by the next collect.
+mkdir -p "$OUT_DIR/exec"
+cp "$EXEC_DIR"/*.exec "$OUT_DIR/exec/"
+
 CSV="$OUT_DIR/site/jacoco.csv"
 [[ -f "$CSV" ]] || { err "No jacoco.csv produced at $CSV"; exit 1; }
 

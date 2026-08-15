@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LockedResourcesBuildAction.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources.actions</a> &gt; <span class="el_source">LockedResourcesBuildAction.java</span></div><h1>LockedResourcesBuildAction.java</h1><pre class="source lang-java linenums">package org.jenkins.plugins.lockableresources.actions;
+
+import hudson.model.Action;
+import hudson.model.Run;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+import net.jcip.annotations.GuardedBy;
+import org.jenkins.plugins.lockableresources.Messages;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
+
+// -----------------------------------------------------------------------------
+/** BuildAction for lockable resources.
+ * Shows usage of resources in the build page.
+ * url: jobUrl/buildNr/locked-resources/
+ */
+@Restricted(NoExternalUse.class)
+public class LockedResourcesBuildAction implements Action {
+
+    @GuardedBy(&quot;logs&quot;)
+    private List&lt;LogEntry&gt; logs;
+
+    @GuardedBy(&quot;resourcesInUse&quot;)
+    private List&lt;String&gt; resourcesInUse;
+
+<span class="fc" id="L28">    public LockedResourcesBuildAction() {</span>
+<span class="fc" id="L29">        this.logs = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L30">        this.resourcesInUse = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L31">    }</span>
+
+    // -------------------------------------------------------------------------
+    @Override
+    public String getIconFileName() {
+<span class="nc" id="L36">        return LockableResourcesRootAction.ICON;</span>
+    }
+
+    // -------------------------------------------------------------------------
+    @Override
+    public String getDisplayName() {
+<span class="nc" id="L42">        return Messages.LockedResourcesBuildAction_displayName();</span>
+    }
+
+    // -------------------------------------------------------------------------
+    @Override
+    public String getUrlName() {
+<span class="nc" id="L48">        return &quot;locked-resources&quot;;</span>
+    }
+
+    public List&lt;String&gt; getCurrentUsedResourceNames() {
+<span class="fc" id="L52">        synchronized (this) {</span>
+<span class="pc bpc" id="L53" title="1 of 2 branches missed.">            if (resourcesInUse == null) {</span>
+<span class="nc" id="L54">                resourcesInUse = new ArrayList&lt;&gt;();</span>
+            }
+<span class="fc" id="L56">            return resourcesInUse;</span>
+        }
+    }
+
+    public void addUsedResources(List&lt;String&gt; resourceNames) {
+<span class="fc" id="L61">        ensureListsInitialized();</span>
+<span class="fc" id="L62">        synchronized (this.resourcesInUse) {</span>
+<span class="fc" id="L63">            resourcesInUse.addAll(resourceNames);</span>
+<span class="fc" id="L64">        }</span>
+<span class="fc" id="L65">    }</span>
+
+    public void removeUsedResources(List&lt;String&gt; resourceNames) {
+<span class="fc" id="L68">        ensureListsInitialized();</span>
+<span class="fc" id="L69">        synchronized (this.resourcesInUse) {</span>
+<span class="fc" id="L70">            resourcesInUse.removeAll(resourceNames);</span>
+<span class="fc" id="L71">        }</span>
+<span class="fc" id="L72">    }</span>
+
+    public static LockedResourcesBuildAction findAndInitAction(final Run&lt;?, ?&gt; build) {
+<span class="pc bpc" id="L75" title="1 of 2 branches missed.">        if (build == null) {</span>
+<span class="nc" id="L76">            return null;</span>
+        }
+        LockedResourcesBuildAction action;
+<span class="fc" id="L79">        final Object lock = build.getId();</span>
+        // It is very difficult to guarantee correct operation when synchronizing on a parameter.
+        // There is no control over the identity, visibility, or lifecycle of that object.
+<span class="fc" id="L82">        synchronized (lock) {</span>
+<span class="fc" id="L83">            List&lt;LockedResourcesBuildAction&gt; actions = build.getActions(LockedResourcesBuildAction.class);</span>
+
+<span class="fc bfc" id="L85" title="All 2 branches covered.">            if (actions.isEmpty()) {</span>
+<span class="fc" id="L86">                action = new LockedResourcesBuildAction();</span>
+<span class="fc" id="L87">                build.addAction(action);</span>
+            } else {
+<span class="fc" id="L89">                action = actions.get(0);</span>
+            }
+<span class="fc" id="L91">        }</span>
+<span class="fc" id="L92">        return action;</span>
+    }
+
+    public static void addLog(
+            final Run&lt;?, ?&gt; build, final List&lt;String&gt; resourceNames, final String step, final String action) {
+
+<span class="fc bfc" id="L98" title="All 2 branches covered.">        for (String resourceName : resourceNames) addLog(build, resourceName, step, action);</span>
+<span class="fc" id="L99">    }</span>
+
+    public static void addLog(
+            final Run&lt;?, ?&gt; build, final String resourceName, final String step, final String action) {
+
+<span class="fc" id="L104">        LockedResourcesBuildAction buildAction = findAndInitAction(build);</span>
+
+<span class="fc" id="L106">        buildAction.addLog(resourceName, step, action);</span>
+<span class="fc" id="L107">    }</span>
+
+    public void addLog(final String resourceName, final String step, final String action) {
+<span class="fc" id="L110">        ensureListsInitialized();</span>
+<span class="fc" id="L111">        synchronized (this.logs) {</span>
+<span class="fc" id="L112">            this.logs.add(new LogEntry(step, action, resourceName));</span>
+<span class="fc" id="L113">        }</span>
+<span class="fc" id="L114">    }</span>
+
+    @Restricted(NoExternalUse.class)
+    public List&lt;LogEntry&gt; getReadOnlyLogs() {
+<span class="fc" id="L118">        ensureListsInitialized();</span>
+<span class="fc" id="L119">        synchronized (this.logs) {</span>
+<span class="fc" id="L120">            return new ArrayList&lt;&gt;(Collections.unmodifiableCollection(this.logs));</span>
+        }
+    }
+
+    @Restricted(NoExternalUse.class)
+    public List&lt;String&gt; getReadOnlyResourcesInUse() {
+<span class="fc" id="L126">        ensureListsInitialized();</span>
+<span class="fc" id="L127">        synchronized (this.resourcesInUse) {</span>
+<span class="fc" id="L128">            return new ArrayList&lt;&gt;(Collections.unmodifiableCollection(this.resourcesInUse));</span>
+        }
+    }
+
+    /** Copy constructor, primarily for {@link #writeReplace} */
+    private LockedResourcesBuildAction(LockedResourcesBuildAction other) {
+<span class="fc" id="L134">        this();</span>
+<span class="pc bpc" id="L135" title="1 of 2 branches missed.">        if (other == null) {</span>
+<span class="nc" id="L136">            return;</span>
+        }
+
+        // Defensive for old/corrupted deserialized state where fields may be null.
+<span class="fc" id="L140">        synchronized (other) {</span>
+<span class="fc bfc" id="L141" title="All 2 branches covered.">            if (other.logs != null) {</span>
+<span class="fc" id="L142">                synchronized (other.logs) {</span>
+<span class="fc" id="L143">                    this.logs.addAll(other.logs);</span>
+<span class="fc" id="L144">                }</span>
+            }
+<span class="fc bfc" id="L146" title="All 2 branches covered.">            if (other.resourcesInUse != null) {</span>
+<span class="fc" id="L147">                synchronized (other.resourcesInUse) {</span>
+<span class="fc" id="L148">                    this.resourcesInUse.addAll(other.resourcesInUse);</span>
+<span class="fc" id="L149">                }</span>
+            }
+<span class="fc" id="L151">        }</span>
+<span class="fc" id="L152">    }</span>
+
+    private synchronized void ensureListsInitialized() {
+<span class="fc bfc" id="L155" title="All 2 branches covered.">        if (logs == null) {</span>
+<span class="fc" id="L156">            logs = new ArrayList&lt;&gt;();</span>
+        }
+<span class="fc bfc" id="L158" title="All 2 branches covered.">        if (resourcesInUse == null) {</span>
+<span class="fc" id="L159">            resourcesInUse = new ArrayList&lt;&gt;();</span>
+        }
+<span class="fc" id="L161">    }</span>
+    /**
+     * Ensure iteration during XStream marshalling is also synchronized,
+     * otherwise we tend to get {@link java.util.ConcurrentModificationException}.&lt;br/&gt;
+     *
+     * The recommended approach is to copy-on-write the properties so a
+     * snapshot can always be scraped consistently. But this can be costly
+     * at run-time, so we use the next-best option: produce a consistent
+     * replica of the current object for actual saving only on demand.&lt;br/&gt;
+     *
+     * This method is found by XStream via reflection.&lt;br/&gt;
+     */
+    protected synchronized Object writeReplace() {
+<span class="fc" id="L174">        return new LockedResourcesBuildAction(this);</span>
+    }
+
+    public static class LogEntry {
+
+        private final String step;
+        private final String action;
+        private final String resourceName;
+        private final long timeStamp;
+
+        @Restricted(NoExternalUse.class)
+<span class="fc" id="L185">        public LogEntry(final String step, final String action, final String resourceName) {</span>
+<span class="fc" id="L186">            this.step = step;</span>
+<span class="fc" id="L187">            this.action = action;</span>
+<span class="fc" id="L188">            this.resourceName = resourceName;</span>
+<span class="fc" id="L189">            this.timeStamp = new Date().getTime();</span>
+<span class="fc" id="L190">        }</span>
+
+        // ---------------------------------------------------------------------
+        @Restricted(NoExternalUse.class)
+        public String getName() {
+<span class="nc" id="L195">            return this.resourceName;</span>
+        }
+
+        // ---------------------------------------------------------------------
+        @Restricted(NoExternalUse.class)
+        public String getStep() {
+<span class="nc" id="L201">            return this.step;</span>
+        }
+
+        // ---------------------------------------------------------------------
+        @Restricted(NoExternalUse.class)
+        public String getAction() {
+<span class="nc" id="L207">            return this.action;</span>
+        }
+
+        // ---------------------------------------------------------------------
+        @Restricted(NoExternalUse.class)
+        public Date getTimeStamp() {
+<span class="nc" id="L213">            return new Date(this.timeStamp);</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
