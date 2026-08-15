@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>NodesMirror.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources.nodes</a> &gt; <span class="el_source">NodesMirror.java</span></div><h1>NodesMirror.java</h1><pre class="source lang-java linenums">package org.jenkins.plugins.lockableresources.nodes;
+
+import hudson.Extension;
+import hudson.init.InitMilestone;
+import hudson.init.Initializer;
+import hudson.model.Node;
+import hudson.slaves.ComputerListener;
+import java.util.Iterator;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import jenkins.model.Jenkins;
+import jenkins.util.SystemProperties;
+import org.jenkins.plugins.lockableresources.LockableResource;
+import org.jenkins.plugins.lockableresources.LockableResourcesManager;
+import org.jenkins.plugins.lockableresources.util.Constants;
+
+// -----------------------------------------------------------------------------
+/** Mirror Jenkins nodes to lockable-resources */
+@Extension
+<span class="fc" id="L20">public class NodesMirror extends ComputerListener {</span>
+
+<span class="fc" id="L22">    private static final Logger LOGGER = Logger.getLogger(NodesMirror.class.getName());</span>
+    private static LockableResourcesManager lrm;
+
+    // ---------------------------------------------------------------------------
+    private static boolean isNodeMirrorEnabled() {
+<span class="fc" id="L27">        return SystemProperties.getBoolean(Constants.SYSTEM_PROPERTY_ENABLE_NODE_MIRROR);</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    @Initializer(after = InitMilestone.JOB_LOADED)
+    public static void createNodeResources() {
+<span class="fc" id="L33">        LOGGER.info(&quot;lockable-resources-plugin: configure node resources&quot;);</span>
+<span class="fc" id="L34">        mirrorNodes();</span>
+<span class="fc" id="L35">    }</span>
+
+    // ---------------------------------------------------------------------------
+    @Override
+    public final void onConfigurationChange() {
+<span class="fc" id="L40">        mirrorNodes();</span>
+<span class="fc" id="L41">    }</span>
+
+    // ---------------------------------------------------------------------------
+    private static void mirrorNodes() {
+<span class="pc bpc" id="L45" title="1 of 2 branches missed.">        if (!isNodeMirrorEnabled()) {</span>
+<span class="fc" id="L46">            return;</span>
+        }
+
+<span class="nc" id="L49">        LOGGER.info(&quot;lockable-resources-plugin: start nodes mirroring&quot;);</span>
+<span class="nc" id="L50">        lrm = LockableResourcesManager.get();</span>
+<span class="nc" id="L51">        synchronized (LockableResourcesManager.syncResources) {</span>
+<span class="nc bnc" id="L52" title="All 2 branches missed.">            for (Node n : Jenkins.get().getNodes()) {</span>
+<span class="nc" id="L53">                mirrorNode(n);</span>
+<span class="nc" id="L54">            }</span>
+            // please do not remove it, From time to time is necessary for developer debugs
+            // thx
+            // lrm.printResources();
+<span class="nc" id="L58">            deleteNotExistingNodes();</span>
+            // lrm.printResources();
+<span class="nc" id="L60">        }</span>
+<span class="nc" id="L61">        LOGGER.info(&quot;lockable-resources-plugin: nodes mirroring finished&quot;);</span>
+<span class="nc" id="L62">    }</span>
+
+    // ---------------------------------------------------------------------------
+    private static void deleteNotExistingNodes() {
+<span class="nc" id="L66">        Iterator&lt;LockableResource&gt; resourceIterator = lrm.getResources().iterator();</span>
+<span class="nc bnc" id="L67" title="All 2 branches missed.">        while (resourceIterator.hasNext()) {</span>
+<span class="nc" id="L68">            LockableResource resource = resourceIterator.next();</span>
+<span class="nc bnc" id="L69" title="All 4 branches missed.">            if (!resource.isNodeResource() || (Jenkins.get().getNode(resource.getName()) != null)) {</span>
+<span class="nc" id="L70">                continue;</span>
+            }
+<span class="nc bnc" id="L72" title="All 2 branches missed.">            if (resource.isFree()) {</span>
+                // we can remove this resource. Is newer used currently
+<span class="nc" id="L74">                LOGGER.config(&quot;lockable-resources-plugin: remove node resource '&quot; + resource.getName() + &quot;'.&quot;);</span>
+<span class="nc" id="L75">                resourceIterator.remove();</span>
+            } else {
+<span class="nc" id="L77">                LOGGER.warning(&quot;lockable-resources-plugin: can not remove node-resource '&quot;</span>
+<span class="nc" id="L78">                        + resource.getName()</span>
+                        + &quot;'. The resource is currently used (not free).&quot;);
+            }
+<span class="nc" id="L81">        }</span>
+<span class="nc" id="L82">    }</span>
+
+    // ---------------------------------------------------------------------------
+    private static void mirrorNode(Node node) {
+<span class="nc bnc" id="L86" title="All 2 branches missed.">        if (node == null) {</span>
+<span class="nc" id="L87">            return;</span>
+        }
+
+<span class="nc" id="L90">        LockableResource nodeResource = lrm.fromName(node.getNodeName());</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">        boolean exist = nodeResource != null;</span>
+<span class="nc bnc" id="L92" title="All 2 branches missed.">        if (!exist) {</span>
+<span class="nc" id="L93">            nodeResource = new LockableResource(node.getNodeName());</span>
+<span class="nc" id="L94">            LOGGER.config(&quot;lockable-resources-plugin: Node-resource '&quot; + nodeResource.getName() + &quot;' will be added.&quot;);</span>
+        } else {
+<span class="nc" id="L96">            LOGGER.fine(&quot;lockable-resources-plugin: Node-resource '&quot; + nodeResource.getName() + &quot;' will be updated.&quot;);</span>
+        }
+<span class="nc" id="L98">        nodeResource.setLabelsFromString(</span>
+<span class="nc" id="L99">                node.getAssignedLabels().stream().map(Object::toString).collect(Collectors.joining(&quot; &quot;)));</span>
+<span class="nc" id="L100">        nodeResource.setNodeResource(true);</span>
+<span class="nc" id="L101">        nodeResource.setEphemeral(false);</span>
+<span class="nc" id="L102">        nodeResource.setDescription(node.getNodeDescription());</span>
+
+<span class="nc bnc" id="L104" title="All 2 branches missed.">        if (!exist) {</span>
+<span class="nc" id="L105">            lrm.addResource(nodeResource);</span>
+        }
+<span class="nc" id="L107">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

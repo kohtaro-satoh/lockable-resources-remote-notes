@@ -1,0 +1,2293 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LockableResourcesManager.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources</a> &gt; <span class="el_source">LockableResourcesManager.java</span></div><h1>LockableResourcesManager.java</h1><pre class="source lang-java linenums">/*
+ * The MIT License
+ *
+ * See the &quot;LICENSE.txt&quot; file for full copyright and license information.
+ */
+package org.jenkins.plugins.lockableresources;
+
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
+import edu.umd.cs.findbugs.annotations.Nullable;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import hudson.BulkChange;
+import hudson.Extension;
+import hudson.Util;
+import hudson.console.ModelHyperlinkNote;
+import hudson.init.Terminator;
+import hudson.model.Descriptor;
+import hudson.model.Run;
+import hudson.util.FormValidation;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Predicate;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import jenkins.model.GlobalConfiguration;
+import jenkins.model.Jenkins;
+import jenkins.util.SystemProperties;
+import net.sf.json.JSONObject;
+import org.jenkins.plugins.lockableresources.actions.LockedResourcesBuildAction;
+import org.jenkins.plugins.lockableresources.queue.LockableResourcesStruct;
+import org.jenkins.plugins.lockableresources.queue.QueuedContextStruct;
+import org.jenkins.plugins.lockableresources.remote.RemoteCatalogCache;
+import org.jenkins.plugins.lockableresources.remote.RemoteQueueEntry;
+import org.jenkins.plugins.lockableresources.remote.RemoteResolver;
+import org.jenkins.plugins.lockableresources.util.Constants;
+import org.jenkinsci.Symbol;
+import org.jenkinsci.plugins.scriptsecurity.sandbox.groovy.SecureGroovyScript;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
+import org.kohsuke.stapler.DataBoundSetter;
+import org.kohsuke.stapler.QueryParameter;
+import org.kohsuke.stapler.StaplerRequest2;
+import org.kohsuke.stapler.verb.POST;
+
+@Extension
+@Symbol(&quot;lockableResourcesManager&quot;)
+public class LockableResourcesManager extends GlobalConfiguration {
+
+    /** Object to synchronized operations over LRM */
+<span class="fc" id="L69">    public static final Object syncResources = new Object();</span>
+
+    private List&lt;LockableResource&gt; resources;
+
+    /**
+     * Remote connections are persisted as a list for GlobalConfiguration/XStream compatibility.
+     */
+    private List&lt;RemoteConnection&gt; remotes;
+
+<span class="fc" id="L78">    private final transient Cache&lt;Long, List&lt;LockableResource&gt;&gt; cachedCandidates =</span>
+<span class="fc" id="L79">            CacheBuilder.newBuilder().expireAfterWrite(5, TimeUnit.MINUTES).build();</span>
+<span class="fc" id="L80">    private static final Logger LOGGER = Logger.getLogger(LockableResourcesManager.class.getName());</span>
+
+    /**
+     * One line per resource state change, for working out who held what and when.
+     *
+     * &lt;p&gt;Separate from {@link #LOGGER} so it can be turned on by itself: switching the main logger to
+     * FINE to see holdings would bury them in unrelated debug output.
+     *
+     * &lt;p&gt;The line is written where the state actually changes, under the same lock that guards it, so
+     * the order of these lines is the order the resources really changed hands. That is the whole
+     * point of it: a client can only timestamp its own call to release, which returns after the server
+     * has already freed the resource and possibly handed it to someone else - so two clients' logs can
+     * appear to overlap on a resource that was never held twice. Reconstructing exclusion from the
+     * clients therefore cannot distinguish a real double-grant from a slow round trip, and this can.
+     *
+     * &lt;p&gt;Format: {@code LRA|&lt;epochMs&gt;|&lt;LOCAL|REMOTE&gt;|&lt;ACQUIRED|RELEASED&gt;|&lt;resource&gt;|&lt;holder&gt;}, where
+     * holder is the lock id for a remote hold and the build id for a local one.
+     */
+<span class="fc" id="L98">    private static final Logger AUDIT = Logger.getLogger(&quot;org.jenkins.plugins.lockableresources.audit&quot;);</span>
+
+    /**
+     * Records a resource changing hands. Costs one level check when the logger is off, which is the
+     * normal case - a load test can afford the lines, ordinary use should not pay for them.
+     */
+    private static void audit(String kind, String event, String resourceName, String holder) {
+<span class="pc bpc" id="L105" title="1 of 2 branches missed.">        if (AUDIT.isLoggable(Level.FINE)) {</span>
+<span class="fc" id="L106">            AUDIT.fine(</span>
+<span class="fc" id="L107">                    &quot;LRA|&quot; + System.currentTimeMillis() + &quot;|&quot; + kind + &quot;|&quot; + event + &quot;|&quot; + resourceName + &quot;|&quot; + holder);</span>
+        }
+<span class="fc" id="L109">    }</span>
+
+    private boolean allowEmptyOrNullValues;
+
+    /**
+     * Controls whether ephemeral resources can be created automatically.
+     * When enabled (default), locking a non-existent resource creates it dynamically.
+     * When disabled, locking a non-existent resource will block until it is manually created.
+     */
+<span class="fc" id="L118">    private boolean allowEphemeralResources = true;</span>
+
+    /**
+     * Only used when this lockable resource is tried to be locked by {@link LockStep}, otherwise
+     * (freestyle builds) regular Jenkins queue is used.
+     */
+<span class="fc" id="L124">    private final List&lt;QueuedContextStruct&gt; queuedContexts = new ArrayList&lt;&gt;();</span>
+
+    /**
+     * Remote acquire requests waiting for resources. Transient: does not survive Jenkins restart
+     * (remote locks are expected to be released before restart per operator runbook).
+     * All access must be under {@link #syncResources}.
+     */
+    private transient List&lt;RemoteQueueEntry&gt; remoteQueueEntries;
+
+    // cache to enable / disable saving lockable-resources state
+<span class="fc" id="L134">    private int enableSave = -1;</span>
+
+    /** When true the remote lock REST API (/remote/v1/*) is active on this server. */
+<span class="fc" id="L137">    private boolean remoteApiEnabled = false;</span>
+
+    /**
+     * Maintenance switch. While false the remote API keeps serving every endpoint except
+     * {@code POST /acquire}, so leases already held can heartbeat and release undisturbed while no new
+     * ones are handed out. Requests already queued keep their place and are still promoted.
+     */
+<span class="fc" id="L144">    private boolean acceptNewAcquires = true;</span>
+
+    /**
+     * Only resources that carry this label are exposed via the remote API.
+     * When empty or null, no resources are exposed (opt-in: must explicitly set a label).
+     */
+<span class="fc" id="L150">    private String exposeLabel = &quot;&quot;;</span>
+
+    /**
+     * Client identifier sent to remote servers in POST /acquire.
+     * When empty the Jenkins root URL is used as a fallback.
+     */
+<span class="fc" id="L156">    private String clientId = &quot;&quot;;</span>
+
+    /**
+     * When non-empty, every {@code lock()} step on this controller is transparently delegated
+     * to the remote server identified by this serverId (delegated mode).  Explicit
+     * {@code serverId} in the DSL is overridden by this setting (an INFO log is emitted).
+     */
+<span class="fc" id="L163">    private String forcedServerId = &quot;&quot;;</span>
+
+<span class="fc" id="L165">    private static final int enabledBlockedCount =</span>
+<span class="fc" id="L166">            SystemProperties.getInteger(Constants.SYSTEM_PROPERTY_PRINT_BLOCKED_RESOURCE, 2);</span>
+<span class="fc" id="L167">    private static final int enabledCausesCount =</span>
+<span class="fc" id="L168">            SystemProperties.getInteger(Constants.SYSTEM_PROPERTY_PRINT_QUEUE_INFO, 2);</span>
+
+<span class="fc" id="L170">    private static final boolean asyncSaveEnabled =</span>
+<span class="fc" id="L171">            SystemProperties.getBoolean(Constants.SYSTEM_PROPERTY_ASYNC_SAVE, true);</span>
+<span class="fc" id="L172">    private static final long saveCoalesceMs =</span>
+<span class="fc" id="L173">            SystemProperties.getLong(Constants.SYSTEM_PROPERTY_SAVE_COALESCE_MS, 1000L);</span>
+
+    private transient volatile AtomicBoolean savePending;
+    private transient volatile ScheduledExecutorService saveExecutor;
+
+    /** Single scheduled timeout task. Guarded by {@link #syncResources}. */
+    private transient java.util.concurrent.ScheduledFuture&lt;?&gt; nextTimeoutTask;
+
+    /** Deadline (epoch ms) the current {@link #nextTimeoutTask} targets. 0 = none. */
+    private transient long nextTimeoutDeadline;
+
+    @DataBoundSetter
+    public void setAllowEmptyOrNullValues(boolean allowEmptyOrNullValues) {
+<span class="nc" id="L186">        this.allowEmptyOrNullValues = allowEmptyOrNullValues;</span>
+<span class="nc" id="L187">    }</span>
+
+    public boolean isAllowEmptyOrNullValues() {
+<span class="fc" id="L190">        return allowEmptyOrNullValues;</span>
+    }
+
+    /**
+     * Sets whether ephemeral resources can be created automatically.
+     *
+     * @param allowEphemeralResources true to allow automatic creation of ephemeral resources
+     */
+    @DataBoundSetter
+    public void setAllowEphemeralResources(boolean allowEphemeralResources) {
+<span class="nc" id="L200">        this.allowEphemeralResources = allowEphemeralResources;</span>
+<span class="nc" id="L201">    }</span>
+
+    /**
+     * Returns whether ephemeral resources are allowed.
+     *
+     * @return true if ephemeral resources can be created automatically
+     */
+    public boolean isAllowEphemeralResources() {
+<span class="nc" id="L209">        return allowEphemeralResources;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** C-tor */
+    @SuppressFBWarnings(
+            value = &quot;MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR&quot;,
+            justification = &quot;Common Jenkins pattern to call method that can be overridden&quot;)
+<span class="fc" id="L217">    public LockableResourcesManager() {</span>
+<span class="fc" id="L218">        resources = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L219">        remotes = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L220">        load();</span>
+<span class="fc" id="L221">    }</span>
+
+    /**
+     * Called by XStream after deserialization to restore defaults for newly added fields.
+     */
+    private Object readResolve() {
+<span class="pc bpc" id="L227" title="1 of 2 branches missed.">        if (remotes == null) {</span>
+<span class="nc" id="L228">            remotes = new ArrayList&lt;&gt;();</span>
+        }
+<span class="pc bpc" id="L230" title="1 of 2 branches missed.">        if (exposeLabel == null) {</span>
+<span class="nc" id="L231">            exposeLabel = &quot;&quot;;</span>
+        }
+<span class="pc bpc" id="L233" title="1 of 2 branches missed.">        if (clientId == null) {</span>
+<span class="nc" id="L234">            clientId = &quot;&quot;;</span>
+        }
+<span class="pc bpc" id="L236" title="1 of 2 branches missed.">        if (forcedServerId == null) {</span>
+<span class="nc" id="L237">            forcedServerId = &quot;&quot;;</span>
+        }
+<span class="fc" id="L239">        return this;</span>
+    }
+
+    @DataBoundSetter
+    public void setRemoteApiEnabled(boolean remoteApiEnabled) {
+<span class="fc" id="L244">        this.remoteApiEnabled = remoteApiEnabled;</span>
+<span class="fc" id="L245">    }</span>
+
+    public boolean isRemoteApiEnabled() {
+<span class="fc" id="L248">        return remoteApiEnabled;</span>
+    }
+
+    @DataBoundSetter
+    public void setAcceptNewAcquires(boolean acceptNewAcquires) {
+<span class="fc" id="L253">        this.acceptNewAcquires = acceptNewAcquires;</span>
+<span class="fc" id="L254">    }</span>
+
+    public boolean isAcceptNewAcquires() {
+<span class="fc" id="L257">        return acceptNewAcquires;</span>
+    }
+
+    @DataBoundSetter
+    public void setExposeLabel(String exposeLabel) {
+<span class="pc bpc" id="L262" title="1 of 2 branches missed.">        this.exposeLabel = exposeLabel != null ? exposeLabel : &quot;&quot;;</span>
+<span class="fc" id="L263">    }</span>
+
+    public String getExposeLabel() {
+<span class="fc" id="L266">        return exposeLabel;</span>
+    }
+
+    /**
+     * The configured {@code exposeLabel}(s) as a set. {@code exposeLabel} is a whitespace-separated list of
+     * labels (same convention as {@link LockableResource#getLabelsAsList()}); a resource is exposed to remote
+     * clients if it carries &lt;em&gt;any&lt;/em&gt; of them (OR). An empty/blank value exposes nothing (opt-in). A single
+     * label is simply a one-element set, so existing single-label configurations behave unchanged.
+     */
+    @NonNull
+    @Restricted(NoExternalUse.class)
+    public Set&lt;String&gt; getExposeLabels() {
+<span class="pc bpc" id="L278" title="2 of 4 branches missed.">        if (exposeLabel == null || exposeLabel.isBlank()) {</span>
+<span class="nc" id="L279">            return Collections.emptySet();</span>
+        }
+<span class="fc" id="L281">        Set&lt;String&gt; labels = new HashSet&lt;&gt;();</span>
+<span class="fc bfc" id="L282" title="All 2 branches covered.">        for (String l : exposeLabel.split(&quot;\\s+&quot;)) {</span>
+<span class="pc bpc" id="L283" title="1 of 2 branches missed.">            if (!l.isEmpty()) {</span>
+<span class="fc" id="L284">                labels.add(l);</span>
+            }
+        }
+<span class="fc" id="L287">        return labels;</span>
+    }
+
+    @DataBoundSetter
+    public void setClientId(String clientId) {
+<span class="pc bpc" id="L292" title="1 of 2 branches missed.">        this.clientId = clientId != null ? clientId.trim() : &quot;&quot;;</span>
+<span class="fc" id="L293">    }</span>
+
+    public String getClientId() {
+<span class="fc" id="L296">        return clientId;</span>
+    }
+
+    @DataBoundSetter
+    public void setForcedServerId(String forcedServerId) {
+<span class="pc bpc" id="L301" title="1 of 2 branches missed.">        this.forcedServerId = forcedServerId != null ? forcedServerId.trim() : &quot;&quot;;</span>
+<span class="fc" id="L302">    }</span>
+
+    public String getForcedServerId() {
+<span class="fc" id="L305">        return forcedServerId;</span>
+    }
+
+    /**
+     * Form validation for {@code forcedServerId}: warns when the value does not match
+     * any configured remote connection (delegated mode would fail at lock() time).
+     */
+    @POST
+    public FormValidation doCheckForcedServerId(@QueryParameter String value) {
+<span class="nc" id="L314">        Jenkins.get().checkPermission(Jenkins.ADMINISTER);</span>
+<span class="nc" id="L315">        String trimmed = Util.fixEmptyAndTrim(value);</span>
+<span class="nc bnc" id="L316" title="All 2 branches missed.">        if (trimmed == null) {</span>
+<span class="nc" id="L317">            return FormValidation.ok();</span>
+        }
+<span class="nc" id="L319">        RemoteConnection target = getRemotesAsMap().get(trimmed);</span>
+<span class="nc bnc" id="L320" title="All 2 branches missed.">        if (target == null) {</span>
+<span class="nc" id="L321">            return FormValidation.warning(Messages.warning_forcedServerIdNotConfigured(trimmed));</span>
+        }
+<span class="nc bnc" id="L323" title="All 2 branches missed.">        if (!target.isEnabled()) {</span>
+            // Delegated mode routes every lock() here, so a disabled target fails all of them.
+<span class="nc" id="L325">            return FormValidation.warning(Messages.warning_forcedServerIdDisabled(trimmed));</span>
+        }
+<span class="nc" id="L327">        return FormValidation.ok();</span>
+    }
+
+    /**
+     * Returns the effective client identifier to send to remote servers.
+     * Uses the configured clientId if non-empty; otherwise falls back
+     * to Jenkins.getRootUrl() (which may be null if not configured).
+     */
+    @edu.umd.cs.findbugs.annotations.CheckForNull
+    public String getEffectiveClientId() {
+<span class="pc bpc" id="L337" title="2 of 4 branches missed.">        if (clientId != null &amp;&amp; !clientId.isEmpty()) {</span>
+<span class="fc" id="L338">            return clientId;</span>
+        }
+<span class="nc" id="L340">        return Jenkins.get().getRootUrl();</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Get all resources Includes declared, ephemeral and node resources */
+    public List&lt;LockableResource&gt; getResources() {
+<span class="fc" id="L346">        return this.resources;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Returns a defensive copy of configured remote connections. */
+    public List&lt;RemoteConnection&gt; getRemotes() {
+<span class="pc bpc" id="L352" title="1 of 2 branches missed.">        return remotes != null ? new ArrayList&lt;&gt;(remotes) : new ArrayList&lt;&gt;();</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Returns remote connections as a map keyed by serverId.
+     *
+     * &lt;p&gt;Duplicate serverIds are resolved as last-entry-wins to match form submission order.
+     */
+    public Map&lt;String, RemoteConnection&gt; getRemotesAsMap() {
+<span class="fc" id="L362">        LinkedHashMap&lt;String, RemoteConnection&gt; remotesByServerId = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L363" title="All 2 branches covered.">        for (RemoteConnection remote : getRemotes()) {</span>
+<span class="pc bpc" id="L364" title="1 of 2 branches missed.">            if (remote == null) {</span>
+<span class="nc" id="L365">                continue;</span>
+            }
+<span class="fc" id="L367">            String serverId = remote.getServerId();</span>
+<span class="pc bpc" id="L368" title="2 of 4 branches missed.">            if (serverId == null || serverId.isEmpty()) {</span>
+<span class="nc" id="L369">                continue;</span>
+            }
+<span class="fc" id="L371">            remotesByServerId.put(serverId, remote);</span>
+<span class="fc" id="L372">        }</span>
+<span class="fc" id="L373">        return Collections.unmodifiableMap(remotesByServerId);</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Set all remote connections. */
+    @DataBoundSetter
+    public void setRemotes(List&lt;RemoteConnection&gt; remotes) {
+<span class="fc" id="L380">        ArrayList&lt;RemoteConnection&gt; validatedRemotes = new ArrayList&lt;&gt;();</span>
+<span class="pc bpc" id="L381" title="1 of 2 branches missed.">        if (remotes != null) {</span>
+<span class="fc" id="L382">            HashSet&lt;String&gt; seenServerIds = new HashSet&lt;&gt;();</span>
+<span class="fc bfc" id="L383" title="All 2 branches covered.">            for (RemoteConnection remote : remotes) {</span>
+<span class="pc bpc" id="L384" title="1 of 2 branches missed.">                if (remote == null) {</span>
+<span class="nc" id="L385">                    throw new IllegalArgumentException(&quot;remote connection entry must not be null&quot;);</span>
+                }
+<span class="fc" id="L387">                remote.validate();</span>
+
+<span class="fc" id="L389">                String serverId = remote.getServerId();</span>
+<span class="pc bpc" id="L390" title="1 of 2 branches missed.">                if (!seenServerIds.add(serverId)) {</span>
+<span class="nc" id="L391">                    LOGGER.warning(&quot;Duplicate remote serverId detected: &quot; + serverId + &quot;. Last entry wins.&quot;);</span>
+                }
+<span class="fc" id="L393">                validatedRemotes.add(remote);</span>
+<span class="fc" id="L394">            }</span>
+        }
+<span class="fc" id="L396">        this.remotes = validatedRemotes;</span>
+<span class="fc" id="L397">        save();</span>
+        // The catalog snapshots belong to the previous configuration; a changed URL, credential or
+        // enabled flag makes them meaningless.
+<span class="fc" id="L400">        RemoteCatalogCache.get().invalidateAll();</span>
+<span class="fc" id="L401">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Get all resources - read only The same as getResources() but unmodifiable list. The
+     * getResources() is unsafe to use because of possible concurrent modification exception.
+     */
+    @Restricted(NoExternalUse.class)
+    public List&lt;LockableResource&gt; getReadOnlyResources() {
+<span class="fc" id="L410">        synchronized (syncResources) {</span>
+<span class="fc" id="L411">            return new ArrayList&lt;&gt;(Collections.unmodifiableCollection(this.resources));</span>
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Get declared resources, means only defined in config file (xml or JCaC yaml). */
+    @Restricted(NoExternalUse.class)
+    public List&lt;LockableResource&gt; getDeclaredResources() {
+<span class="nc" id="L419">        synchronized (syncResources) {</span>
+<span class="nc" id="L420">            ArrayList&lt;LockableResource&gt; declaredResources = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L421" title="All 2 branches missed.">            for (LockableResource r : this.resources) {</span>
+<span class="nc bnc" id="L422" title="All 4 branches missed.">                if (!r.isEphemeral() &amp;&amp; !r.isNodeResource()) {</span>
+<span class="nc" id="L423">                    declaredResources.add(r);</span>
+                }
+<span class="nc" id="L425">            }</span>
+<span class="nc" id="L426">            return declaredResources;</span>
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Set all declared resources (do not include ephemeral and node resources). */
+    @DataBoundSetter
+    public void setDeclaredResources(List&lt;LockableResource&gt; declaredResources) {
+<span class="nc" id="L434">        synchronized (syncResources) {</span>
+<span class="nc" id="L435">            Map&lt;String, LockableResource&gt; lockedResources = new HashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L436" title="All 2 branches missed.">            for (LockableResource r : this.resources) {</span>
+<span class="nc bnc" id="L437" title="All 2 branches missed.">                if (!r.isLocked()) continue;</span>
+<span class="nc" id="L438">                lockedResources.put(r.getName(), r);</span>
+<span class="nc" id="L439">            }</span>
+
+            // Removed from configuration locks became ephemeral.
+<span class="nc" id="L442">            ArrayList&lt;LockableResource&gt; mergedResources = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L443">            Set&lt;String&gt; addedLocks = new HashSet&lt;&gt;();</span>
+<span class="nc bnc" id="L444" title="All 2 branches missed.">            for (LockableResource r : declaredResources) {</span>
+<span class="nc bnc" id="L445" title="All 2 branches missed.">                if (!addedLocks.add(r.getName())) {</span>
+<span class="nc" id="L446">                    continue;</span>
+                }
+<span class="nc" id="L448">                LockableResource locked = lockedResources.remove(r.getName());</span>
+<span class="nc bnc" id="L449" title="All 2 branches missed.">                if (locked != null) {</span>
+                    // Merge already locked lock.
+<span class="nc" id="L451">                    locked.setDescription(r.getDescription());</span>
+<span class="nc" id="L452">                    locked.setLabelsFromString(r.getLabelsAsString());</span>
+<span class="nc" id="L453">                    locked.setEphemeral(false);</span>
+<span class="nc" id="L454">                    locked.setNote(r.getNote());</span>
+<span class="nc" id="L455">                    mergedResources.add(locked);</span>
+<span class="nc" id="L456">                    continue;</span>
+                }
+<span class="nc" id="L458">                mergedResources.add(r);</span>
+<span class="nc" id="L459">            }</span>
+
+<span class="nc bnc" id="L461" title="All 2 branches missed.">            for (LockableResource r : lockedResources.values()) {</span>
+                // Removed locks became ephemeral.
+<span class="nc" id="L463">                r.setDescription(&quot;&quot;);</span>
+<span class="nc" id="L464">                r.setLabelsFromString(&quot;&quot;);</span>
+<span class="nc" id="L465">                r.setNote(&quot;&quot;);</span>
+<span class="nc" id="L466">                r.setEphemeral(true);</span>
+<span class="nc" id="L467">                mergedResources.add(r);</span>
+<span class="nc" id="L468">            }</span>
+
+            // Copy reservations and unconfigurable properties from old instances. Clear unconfigurable
+            // properties for new resources: they should be empty anyway for new resources from UI
+            // configuration. For CasC configuration, we ignore those fields, so set them to empty.
+<span class="nc bnc" id="L473" title="All 2 branches missed.">            for (LockableResource newResource : mergedResources) {</span>
+<span class="nc" id="L474">                final LockableResource oldDeclaredResource = fromName(newResource.getName());</span>
+<span class="nc bnc" id="L475" title="All 2 branches missed.">                if (oldDeclaredResource != null) {</span>
+<span class="nc" id="L476">                    newResource.copyUnconfigurableProperties(oldDeclaredResource);</span>
+                } else {
+<span class="nc" id="L478">                    newResource.resetUnconfigurableProperties();</span>
+                }
+<span class="nc" id="L480">            }</span>
+
+<span class="nc" id="L482">            this.resources = mergedResources;</span>
+<span class="nc" id="L483">            save();</span>
+<span class="nc" id="L484">        }</span>
+<span class="nc" id="L485">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /** Get all resources used by project. */
+    @Restricted(NoExternalUse.class)
+    public List&lt;LockableResource&gt; getResourcesFromProject(String fullName) {
+<span class="nc" id="L491">        synchronized (syncResources) {</span>
+<span class="nc" id="L492">            List&lt;LockableResource&gt; matching = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L493" title="All 2 branches missed.">            for (LockableResource r : this.resources) {</span>
+<span class="nc" id="L494">                String rName = r.getQueueItemProject();</span>
+<span class="nc bnc" id="L495" title="All 4 branches missed.">                if (rName != null &amp;&amp; rName.equals(fullName)) {</span>
+<span class="nc" id="L496">                    matching.add(r);</span>
+                }
+<span class="nc" id="L498">            }</span>
+<span class="nc" id="L499">            return matching;</span>
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Check if the label is valid. Valid in this context means, if is configured on someone resource.
+     */
+    @Restricted(NoExternalUse.class)
+    public Boolean isValidLabel(@Nullable String label) {
+<span class="pc bpc" id="L509" title="2 of 4 branches missed.">        if (label == null || label.isEmpty()) {</span>
+<span class="nc" id="L510">            return false;</span>
+        }
+
+<span class="fc" id="L513">        synchronized (syncResources) {</span>
+<span class="pc bpc" id="L514" title="1 of 2 branches missed.">            for (LockableResource r : this.getResources()) {</span>
+<span class="pc bpc" id="L515" title="1 of 4 branches missed.">                if (r != null &amp;&amp; r.isValidLabel(label)) {</span>
+<span class="fc" id="L516">                    return true;</span>
+                }
+<span class="fc" id="L518">            }</span>
+<span class="nc" id="L519">        }</span>
+
+<span class="nc" id="L521">        return false;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Returns all configured labels. */
+    @NonNull
+    @Restricted(NoExternalUse.class)
+    public Set&lt;String&gt; getAllLabels() {
+<span class="nc" id="L529">        Set&lt;String&gt; labels = new HashSet&lt;&gt;();</span>
+<span class="nc bnc" id="L530" title="All 2 branches missed.">        for (LockableResource r : this.getReadOnlyResources()) {</span>
+<span class="nc bnc" id="L531" title="All 2 branches missed.">            if (r == null) {</span>
+<span class="nc" id="L532">                continue;</span>
+            }
+<span class="nc" id="L534">            List&lt;String&gt; toAdd = r.getLabelsAsList();</span>
+<span class="nc bnc" id="L535" title="All 2 branches missed.">            if (toAdd.isEmpty()) {</span>
+<span class="nc" id="L536">                continue;</span>
+            }
+<span class="nc" id="L538">            labels.addAll(toAdd);</span>
+<span class="nc" id="L539">        }</span>
+<span class="nc" id="L540">        return labels;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Get amount of free resources contained given *label*
+     *   This method is deprecated (no where used) and is not tested.
+     */
+    @Restricted(NoExternalUse.class)
+    @Deprecated
+    @ExcludeFromJacocoGeneratedReport
+    public int getFreeResourceAmount(String label) {
+        int free = 0;
+        label = Util.fixEmpty(label);
+
+        if (label == null) {
+            return free;
+        }
+
+        for (LockableResource r : this.getResourcesWithLabel(label)) {
+            if (r == null) {
+                continue;
+            }
+            if (r.isFree()) {
+                free++;
+            }
+        }
+        return free;
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * @deprecated Use getResourcesWithLabel(String label)
+     * Note: The param *params* is not used (has no effect)
+     */
+    @Deprecated
+    @Restricted(NoExternalUse.class)
+    @ExcludeFromJacocoGeneratedReport
+    public List&lt;LockableResource&gt; getResourcesWithLabel(String label, Map&lt;String, Object&gt; params) {
+        return getResourcesWithLabel(label);
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Returns resources matching by given *label*.
+     */
+    @NonNull
+    @Restricted(NoExternalUse.class)
+    public List&lt;LockableResource&gt; getResourcesWithLabel(final String label) {
+<span class="fc" id="L588">        synchronized (syncResources) {</span>
+<span class="fc" id="L589">            return _getResourcesWithLabel(label, this.getResources());</span>
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    @NonNull
+    private static List&lt;LockableResource&gt; _getResourcesWithLabel(String label, final List&lt;LockableResource&gt; resources) {
+<span class="fc" id="L596">        List&lt;LockableResource&gt; found = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L597">        label = Util.fixEmpty(label);</span>
+
+<span class="pc bpc" id="L599" title="1 of 2 branches missed.">        if (label == null) {</span>
+<span class="nc" id="L600">            return found;</span>
+        }
+
+<span class="fc bfc" id="L603" title="All 2 branches covered.">        for (LockableResource r : resources) {</span>
+<span class="pc bpc" id="L604" title="1 of 4 branches missed.">            if (r != null &amp;&amp; r.isValidLabel(label)) found.add(r);</span>
+<span class="fc" id="L605">        }</span>
+<span class="fc" id="L606">        return found;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Returns a list of resources matching by given *script*.
+     *
+     * @param script Script
+     * @param params Additional parameters
+     * @return List of the matching resources
+     * @throws ExecutionException Script execution failed for one of the resources. It is considered
+     *     as a fatal failure since the requirement list may be incomplete
+     * @since 2.0
+     */
+    @NonNull
+    @Restricted(NoExternalUse.class)
+    public List&lt;LockableResource&gt; getResourcesMatchingScript(
+            @NonNull SecureGroovyScript script, @CheckForNull Map&lt;String, Object&gt; params) throws ExecutionException {
+<span class="nc" id="L624">        List&lt;LockableResource&gt; found = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L625">        synchronized (syncResources) {</span>
+<span class="nc bnc" id="L626" title="All 2 branches missed.">            for (LockableResource r : this.resources) {</span>
+<span class="nc bnc" id="L627" title="All 2 branches missed.">                if (r.scriptMatches(script, params)) found.add(r);</span>
+<span class="nc" id="L628">            }</span>
+<span class="nc" id="L629">        }</span>
+<span class="nc" id="L630">        return found;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Returns resource matched by name. Returns null in case, the resource does not exist. */
+    @CheckForNull
+    @Restricted(NoExternalUse.class)
+    public LockableResource fromName(@CheckForNull String resourceName) {
+<span class="fc" id="L638">        resourceName = Util.fixEmpty(resourceName);</span>
+
+<span class="pc bpc" id="L640" title="1 of 2 branches missed.">        if (resourceName != null) {</span>
+
+<span class="fc" id="L642">            synchronized (syncResources) {</span>
+<span class="fc bfc" id="L643" title="All 2 branches covered.">                for (LockableResource r : this.getResources()) {</span>
+<span class="fc bfc" id="L644" title="All 2 branches covered.">                    if (resourceName.equals(r.getName())) return r;</span>
+<span class="fc" id="L645">                }</span>
+<span class="fc" id="L646">            }</span>
+        } else {
+<span class="nc" id="L648">            LOGGER.warning(&quot;Internal failure, fromName is empty or null:&quot; + getStack());</span>
+        }
+<span class="fc" id="L650">        return null;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    @Restricted(NoExternalUse.class)
+    public List&lt;LockableResource&gt; fromNames(@Nullable final List&lt;String&gt; names) {
+<span class="pc bpc" id="L656" title="1 of 2 branches missed.">        if (names == null) {</span>
+<span class="nc" id="L657">            return null;</span>
+        }
+<span class="fc" id="L659">        return fromNames(names, false);</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    @Restricted(NoExternalUse.class)
+    public List&lt;LockableResource&gt; fromNames(final List&lt;String&gt; names, final boolean createResource) {
+<span class="fc" id="L665">        List&lt;LockableResource&gt; list = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L666" title="All 2 branches covered.">        for (String name : names) {</span>
+            // be sure it exists
+<span class="fc bfc" id="L668" title="All 2 branches covered.">            if (createResource) this.createResource(name);</span>
+<span class="fc" id="L669">            LockableResource r = this.fromName(name);</span>
+<span class="pc bpc" id="L670" title="1 of 2 branches missed.">            if (r != null) // this is probably bug, but nobody know</span>
+<span class="fc" id="L671">            list.add(r);</span>
+<span class="fc" id="L672">        }</span>
+<span class="fc" id="L673">        return list;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    private String getStack() {
+<span class="fc" id="L678">        StringBuilder buf = new StringBuilder();</span>
+<span class="fc bfc" id="L679" title="All 2 branches covered.">        for (StackTraceElement st : Thread.currentThread().getStackTrace()) {</span>
+<span class="fc" id="L680">            buf.append(&quot;\n&quot;).append(st);</span>
+        }
+<span class="fc" id="L682">        return buf.toString();</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Checks if given resource exist. */
+    @NonNull
+    @Restricted(NoExternalUse.class)
+    public Boolean resourceExist(@CheckForNull String resourceName) {
+<span class="fc bfc" id="L690" title="All 2 branches covered.">        return this.fromName(resourceName) != null;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    public boolean queue(List&lt;LockableResource&gt; resources, long queueItemId, String queueProjectName) {
+<span class="nc bnc" id="L695" title="All 2 branches missed.">        for (LockableResource r : resources) {</span>
+<span class="nc bnc" id="L696" title="All 6 branches missed.">            if (r.isReserved() || r.isQueued(queueItemId) || r.isLocked()) {</span>
+<span class="nc" id="L697">                return false;</span>
+            }
+<span class="nc" id="L699">        }</span>
+<span class="nc bnc" id="L700" title="All 2 branches missed.">        for (LockableResource r : resources) {</span>
+<span class="nc" id="L701">            r.setQueued(queueItemId, queueProjectName);</span>
+<span class="nc" id="L702">        }</span>
+<span class="nc" id="L703">        return true;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * @deprecated Use {@link
+     *     #tryQueue(org.jenkins.plugins.lockableresources.queue.LockableResourcesStruct, long,
+     *     java.lang.String, int, java.util.Map, java.util.logging.Logger)}
+     */
+    @Deprecated
+    @CheckForNull
+    @ExcludeFromJacocoGeneratedReport
+    @Restricted(NoExternalUse.class)
+    public List&lt;LockableResource&gt; queue(
+            LockableResourcesStruct requiredResources,
+            long queueItemId,
+            String queueItemProject,
+            int number, // 0 means all
+            Map&lt;String, Object&gt; params,
+            Logger log) {
+        try {
+            return tryQueue(requiredResources, queueItemId, queueItemProject, number, params, log);
+        } catch (ExecutionException ex) {
+            if (LOGGER.isLoggable(Level.WARNING)) {
+                String itemName = queueItemProject + &quot; (id=&quot; + queueItemId + &quot;)&quot;;
+                LOGGER.log(
+                        Level.WARNING, &quot;Failed to queue item &quot; + itemName, ex.getCause() != null ? ex.getCause() : ex);
+            }
+            return null;
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * If the lockable resource availability was evaluated before and cached to avoid frequent
+     * re-evaluations under queued pressure when there are no resources to give, we should state that
+     * a resource is again instantly available for re-evaluation when we know it was busy and right
+     * now is being freed. Note that a resource may be (both or separately) locked by a build and/or
+     * reserved by a user (or stolen from build to user) so we only un-cache it here if it becomes
+     * completely available. Called as a helper from methods that unlock/unreserve/reset (or
+     * indirectly - recycle) stuff.
+     *
+     * &lt;p&gt;NOTE for people using LR or LRM methods directly to add some abilities in their pipelines
+     * that are not provided by plugin: the `cachedCandidates` is an LRM concept, so if you tell a
+     * resource (LR instance) directly to unlock/unreserve, it has no idea to clean itself from this
+     * cache, and may be considered busy in queuing for some time afterward.
+     */
+    public boolean uncacheIfFreeing(LockableResource candidate, boolean unlocking, boolean unreserving) {
+<span class="pc bpc" id="L751" title="1 of 2 branches missed.">        if (candidate == null) return false;</span>
+<span class="pc bpc" id="L752" title="3 of 4 branches missed.">        if (candidate.isLocked() &amp;&amp; !unlocking) return false;</span>
+
+        // &quot;stolen&quot; state helps track that a resource is currently not
+        // reserved for the same entity as it was originally given to;
+        // this flag is cleared during un-reservation.
+<span class="pc bpc" id="L757" title="4 of 6 branches missed.">        if ((candidate.isReserved() || candidate.isStolen()) &amp;&amp; !unreserving) return false;</span>
+
+<span class="pc bpc" id="L759" title="1 of 2 branches missed.">        if (cachedCandidates.size() == 0) return true;</span>
+
+        // Take a snapshot of keys to avoid ConcurrentModificationException.
+        // Only invalidate entries that actually contain the freed resource,
+        // preserving cache for other queue items (important at scale with 1000+ items).
+<span class="nc" id="L764">        Set&lt;Long&gt; keys = new HashSet&lt;&gt;(cachedCandidates.asMap().keySet());</span>
+<span class="nc bnc" id="L765" title="All 2 branches missed.">        for (Long queueItemId : keys) {</span>
+<span class="nc" id="L766">            List&lt;LockableResource&gt; candidates = cachedCandidates.getIfPresent(queueItemId);</span>
+<span class="nc bnc" id="L767" title="All 6 branches missed.">            if (candidates != null &amp;&amp; (candidates.isEmpty() || candidates.contains(candidate))) {</span>
+<span class="nc" id="L768">                cachedCandidates.invalidate(queueItemId);</span>
+            }
+<span class="nc" id="L770">        }</span>
+
+<span class="nc" id="L772">        return true;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Try to acquire the resources required by the task.
+     *
+     * @param number Number of resources to acquire. {@code 0} means all
+     * @return List of the locked resources if the task has been accepted. {@code null} if the item is
+     *     still waiting for the resources
+     * @throws ExecutionException Cannot queue the resource due to the execution failure. Carries info
+     *     in the cause
+     * @since 2.0
+     */
+    @CheckForNull
+    @Restricted(NoExternalUse.class)
+    public List&lt;LockableResource&gt; tryQueue(
+            LockableResourcesStruct requiredResources,
+            long queueItemId,
+            String queueItemProject,
+            int number,
+            Map&lt;String, Object&gt; params,
+            Logger log)
+            throws ExecutionException {
+
+        final SecureGroovyScript systemGroovyScript;
+        try {
+<span class="nc" id="L799">            systemGroovyScript = requiredResources.getResourceMatchScript();</span>
+<span class="nc" id="L800">        } catch (Descriptor.FormException x) {</span>
+<span class="nc" id="L801">            throw new ExecutionException(x);</span>
+<span class="nc" id="L802">        }</span>
+<span class="nc bnc" id="L803" title="All 2 branches missed.">        boolean candidatesByScript = (systemGroovyScript != null);</span>
+
+        // Resolve candidates outside syncResources when possible — label matching
+        // and Groovy script evaluation are heavyweight and should not extend the
+        // critical section.
+        // NOTE: We store unmodifiable lists in the cache for thread-safety. Multiple
+        // threads may read from the cache concurrently, so cached lists must not be
+        // modified. Create a mutable copy below when modifications are needed.
+<span class="nc" id="L811">        List&lt;LockableResource&gt; candidates = null;</span>
+<span class="nc bnc" id="L812" title="All 6 branches missed.">        if (candidatesByScript || (requiredResources.label != null &amp;&amp; !requiredResources.label.isEmpty())) {</span>
+<span class="nc" id="L813">            candidates = cachedCandidates.getIfPresent(queueItemId);</span>
+<span class="nc bnc" id="L814" title="All 2 branches missed.">            if (candidates == null) {</span>
+<span class="nc bnc" id="L815" title="All 2 branches missed.">                candidates = (systemGroovyScript == null)</span>
+<span class="nc" id="L816">                        ? getResourcesWithLabel(requiredResources.label)</span>
+<span class="nc" id="L817">                        : getResourcesMatchingScript(systemGroovyScript, params);</span>
+                // Store as unmodifiable to prevent accidental modification of cached data
+<span class="nc" id="L819">                cachedCandidates.put(queueItemId, Collections.unmodifiableList(candidates));</span>
+            }
+        }
+
+<span class="nc" id="L823">        List&lt;LockableResource&gt; selected = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L824">        synchronized (syncResources) {</span>
+<span class="nc bnc" id="L825" title="All 2 branches missed.">            if (!checkCurrentResourcesStatus(selected, queueItemProject, queueItemId, log)) {</span>
+                // The project has another buildable item waiting -&gt; bail out
+<span class="nc" id="L827">                log.log(</span>
+                        Level.FINEST,
+                        &quot;{0} has another build waiting resources.&quot; + &quot; Waiting for it to proceed first.&quot;,
+                        new Object[] {queueItemProject});
+<span class="nc" id="L831">                return null;</span>
+            }
+
+<span class="nc bnc" id="L834" title="All 2 branches missed.">            if (candidates != null) {</span>
+                // Mutable copy required - cached list is unmodifiable for thread-safety
+<span class="nc" id="L836">                candidates = new ArrayList&lt;&gt;(candidates);</span>
+<span class="nc" id="L837">                candidates.retainAll(this.resources);</span>
+            } else {
+<span class="nc" id="L839">                candidates = requiredResources.required;</span>
+            }
+
+<span class="nc bnc" id="L842" title="All 2 branches missed.">            for (LockableResource rs : candidates) {</span>
+<span class="nc bnc" id="L843" title="All 4 branches missed.">                if (number != 0 &amp;&amp; (selected.size() &gt;= number)) break;</span>
+<span class="nc bnc" id="L844" title="All 6 branches missed.">                if (!rs.isReserved() &amp;&amp; !rs.isLocked() &amp;&amp; !rs.isQueued()) selected.add(rs);</span>
+<span class="nc" id="L845">            }</span>
+
+            // if did not get wanted amount or did not get all
+<span class="nc" id="L848">            final int required_amount = getRequiredAmount(number, candidatesByScript, candidates);</span>
+
+<span class="nc bnc" id="L850" title="All 2 branches missed.">            if (selected.size() != required_amount) {</span>
+<span class="nc" id="L851">                log.log(</span>
+                        Level.FINEST,
+                        &quot;{0} found {1} resource(s) to queue. Waiting for correct amount: {2}.&quot;,
+<span class="nc" id="L854">                        new Object[] {queueItemProject, selected.size(), required_amount});</span>
+                // just to be sure, clean up
+<span class="nc bnc" id="L856" title="All 2 branches missed.">                for (LockableResource x : this.resources) {</span>
+<span class="nc bnc" id="L857" title="All 2 branches missed.">                    if (x.getQueueItemProject() != null</span>
+<span class="nc bnc" id="L858" title="All 2 branches missed.">                            &amp;&amp; x.getQueueItemProject().equals(queueItemProject)) x.unqueue();</span>
+<span class="nc" id="L859">                }</span>
+<span class="nc" id="L860">                return null;</span>
+            }
+
+<span class="nc bnc" id="L863" title="All 2 branches missed.">            for (LockableResource rsc : selected) {</span>
+<span class="nc" id="L864">                rsc.setQueued(queueItemId, queueItemProject);</span>
+<span class="nc" id="L865">            }</span>
+<span class="nc" id="L866">        }</span>
+<span class="nc" id="L867">        return selected;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Returns the amount of resources required by the task.
+     * If the groovy script does not return any candidates, it means nothing is needed, even if a
+     * higher amount is specified. A valid use case is a Matrix job, when not all configurations need resources.
+     */
+    private static int getRequiredAmount(int number, boolean candidatesByScript, List&lt;LockableResource&gt; candidates) {
+        final int required_amount;
+<span class="nc bnc" id="L878" title="All 4 branches missed.">        if (candidatesByScript &amp;&amp; candidates.isEmpty()) {</span>
+<span class="nc" id="L879">            required_amount = 0;</span>
+        } else {
+<span class="nc bnc" id="L881" title="All 2 branches missed.">            required_amount = number == 0 ? candidates.size() : number;</span>
+        }
+<span class="nc" id="L883">        return required_amount;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    // Adds already selected (in previous queue round) resources to 'selected'
+    // Return false if another item queued for this project -&gt; bail out
+    private boolean checkCurrentResourcesStatus(
+            List&lt;LockableResource&gt; selected, String project, long taskId, Logger log) {
+<span class="nc bnc" id="L891" title="All 2 branches missed.">        for (LockableResource r : this.resources) {</span>
+            // This project might already have something in queue
+<span class="nc" id="L893">            String rProject = r.getQueueItemProject();</span>
+<span class="nc bnc" id="L894" title="All 4 branches missed.">            if (rProject != null &amp;&amp; rProject.equals(project)) {</span>
+<span class="nc bnc" id="L895" title="All 2 branches missed.">                if (r.isQueuedByTask(taskId)) {</span>
+                    // this item has queued the resource earlier
+<span class="nc" id="L897">                    selected.add(r);</span>
+                } else {
+                    // The project has another buildable item waiting -&gt; bail out
+<span class="nc" id="L900">                    log.log(</span>
+                            Level.FINEST,
+                            &quot;{0} has another build that already queued resource {1}. Continue queueing.&quot;,
+                            new Object[] {project, r});
+<span class="nc" id="L904">                    return false;</span>
+                }
+            }
+<span class="nc" id="L907">        }</span>
+<span class="nc" id="L908">        return true;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    @Deprecated
+    public boolean lock(List&lt;LockableResource&gt; resources, Run&lt;?, ?&gt; build, @Nullable StepContext context) {
+<span class="nc" id="L914">        return this.lock(resources, build);</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    @Deprecated
+    public boolean lock(
+            List&lt;LockableResource&gt; resources,
+            Run&lt;?, ?&gt; build,
+            @Nullable StepContext context,
+            @Nullable String logmessage,
+            final String variable,
+            boolean inversePrecedence) {
+<span class="nc" id="L926">        return this.lock(resources, build);</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Try to lock the resource and return true if locked. */
+    public boolean lock(List&lt;LockableResource&gt; resourcesToLock, Run&lt;?, ?&gt; build) {
+<span class="nc" id="L932">        return lock(resourcesToLock, build, (String) null);</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Try to lock the resource and return true if locked.
+     *
+     * @param resourcesToLock The resources to lock.
+     * @param build The build that is locking the resources.
+     * @param reason The reason why the resources are being locked (displayed in UI).
+     * @return true if locked successfully.
+     */
+    public boolean lock(List&lt;LockableResource&gt; resourcesToLock, Run&lt;?, ?&gt; build, @Nullable String reason) {
+
+<span class="fc" id="L946">        LOGGER.fine(&quot;lock it: &quot; + resourcesToLock + &quot; for build &quot; + build + &quot; with reason: &quot; + reason);</span>
+
+<span class="pc bpc" id="L948" title="1 of 2 branches missed.">        if (build == null) {</span>
+<span class="nc" id="L949">            LOGGER.warning(&quot;lock() will fails, because the build does not exits. &quot; + resourcesToLock);</span>
+<span class="nc" id="L950">            return false; // not locked</span>
+        }
+
+<span class="fc" id="L953">        String cause = getCauses(resourcesToLock);</span>
+<span class="pc bpc" id="L954" title="1 of 2 branches missed.">        if (!cause.isEmpty()) {</span>
+<span class="nc" id="L955">            LOGGER.warning(&quot;lock() for build &quot; + build + &quot; will fails, because &quot; + cause);</span>
+<span class="nc" id="L956">            return false; // not locked</span>
+        }
+
+<span class="fc bfc" id="L959" title="All 2 branches covered.">        for (LockableResource r : resourcesToLock) {</span>
+<span class="fc" id="L960">            r.unqueue();</span>
+<span class="fc" id="L961">            r.setBuild(build);</span>
+<span class="pc bpc" id="L962" title="3 of 4 branches missed.">            if (reason != null &amp;&amp; !reason.isEmpty()) {</span>
+<span class="nc" id="L963">                r.setLockReason(reason);</span>
+            }
+<span class="fc" id="L965">            audit(&quot;LOCAL&quot;, &quot;ACQUIRED&quot;, r.getName(), build.getExternalizableId());</span>
+<span class="fc" id="L966">        }</span>
+
+<span class="fc" id="L968">        LockedResourcesBuildAction.findAndInitAction(build).addUsedResources(getResourcesNames(resourcesToLock));</span>
+
+<span class="fc" id="L970">        save();</span>
+
+<span class="fc" id="L972">        return true;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    private void freeResources(List&lt;LockableResource&gt; unlockResources, Run&lt;?, ?&gt; build) {
+
+<span class="fc" id="L978">        LOGGER.fine(&quot;free it: &quot; + unlockResources);</span>
+
+        // make sure there is a list of resource names to unlock
+<span class="pc bpc" id="L981" title="3 of 6 branches missed.">        if (unlockResources == null || unlockResources.isEmpty() || build == null) {</span>
+<span class="nc" id="L982">            return;</span>
+        }
+
+<span class="fc" id="L985">        List&lt;LockableResource&gt; toBeRemoved = new ArrayList&lt;&gt;();</span>
+
+<span class="fc bfc" id="L987" title="All 2 branches covered.">        for (LockableResource resource : unlockResources) {</span>
+            // No more contexts, unlock resource
+
+            // the resource has been currently unlocked (like by LRM page - button unlock, or by API)
+<span class="pc bpc" id="L991" title="1 of 2 branches missed.">            if (!build.equals(resource.getBuild())) continue;</span>
+
+<span class="fc" id="L993">            resource.unqueue();</span>
+<span class="fc" id="L994">            resource.setBuild(null);</span>
+<span class="fc" id="L995">            resource.setLockReason(null);</span>
+<span class="fc" id="L996">            audit(&quot;LOCAL&quot;, &quot;RELEASED&quot;, resource.getName(), build.getExternalizableId());</span>
+<span class="fc" id="L997">            uncacheIfFreeing(resource, true, false);</span>
+
+<span class="fc bfc" id="L999" title="All 2 branches covered.">            if (resource.isEphemeral()) {</span>
+<span class="fc" id="L1000">                LOGGER.fine(&quot;Remove ephemeral resource: &quot; + resource);</span>
+<span class="fc" id="L1001">                toBeRemoved.add(resource);</span>
+            }
+<span class="fc" id="L1003">        }</span>
+
+<span class="fc" id="L1005">        LockedResourcesBuildAction.findAndInitAction(build).removeUsedResources(getResourcesNames(unlockResources));</span>
+
+        // remove all ephemeral resources
+<span class="fc" id="L1008">        removeResources(toBeRemoved);</span>
+<span class="fc" id="L1009">    }</span>
+
+    public void unlockBuild(@Nullable Run&lt;?, ?&gt; build) {
+
+<span class="pc bpc" id="L1013" title="1 of 2 branches missed.">        if (build == null) {</span>
+<span class="nc" id="L1014">            return;</span>
+        }
+
+<span class="fc" id="L1017">        List&lt;String&gt; resourcesInUse =</span>
+<span class="fc" id="L1018">                LockedResourcesBuildAction.findAndInitAction(build).getCurrentUsedResourceNames();</span>
+
+<span class="pc bpc" id="L1020" title="1 of 2 branches missed.">        if (resourcesInUse.isEmpty()) {</span>
+<span class="fc" id="L1021">            return;</span>
+        }
+<span class="nc" id="L1023">        unlockNames(resourcesInUse, build);</span>
+<span class="nc" id="L1024">    }</span>
+
+    // ---------------------------------------------------------------------------
+    public void unlockNames(@Nullable List&lt;String&gt; resourceNamesToUnLock, Run&lt;?, ?&gt; build) {
+
+        // make sure there is a list of resource names to unlock
+<span class="pc bpc" id="L1030" title="2 of 4 branches missed.">        if (resourceNamesToUnLock == null || resourceNamesToUnLock.isEmpty()) {</span>
+<span class="nc" id="L1031">            return;</span>
+        }
+<span class="fc" id="L1033">        synchronized (syncResources) {</span>
+<span class="fc" id="L1034">            unlockResources(this.fromNames(resourceNamesToUnLock), build);</span>
+<span class="fc" id="L1035">        }</span>
+<span class="fc" id="L1036">    }</span>
+
+    // ---------------------------------------------------------------------------
+    public void unlockResources(List&lt;LockableResource&gt; resourcesToUnLock) {
+<span class="nc" id="L1040">        unlockResources(resourcesToUnLock, resourcesToUnLock.get(0).getBuild());</span>
+<span class="nc" id="L1041">    }</span>
+
+    // ---------------------------------------------------------------------------
+    public void unlockResources(List&lt;LockableResource&gt; resourcesToUnLock, Run&lt;?, ?&gt; build) {
+<span class="pc bpc" id="L1045" title="2 of 4 branches missed.">        if (resourcesToUnLock == null || resourcesToUnLock.isEmpty()) {</span>
+<span class="nc" id="L1046">            return;</span>
+        }
+<span class="fc" id="L1048">        synchronized (syncResources) {</span>
+<span class="fc" id="L1049">            this.freeResources(resourcesToUnLock, build);</span>
+
+<span class="fc bfc" id="L1051" title="All 2 branches covered.">            while (proceedNextContext()) {</span>
+                // process as many contexts as possible
+            }
+
+<span class="fc" id="L1055">            save();</span>
+<span class="fc" id="L1056">        }</span>
+<span class="fc" id="L1057">        scheduleQueueMaintenance();</span>
+<span class="fc" id="L1058">    }</span>
+
+    private boolean proceedNextContext() {
+<span class="fc" id="L1061">        QueuedContextStruct nextLocal = this.getNextQueuedContext();</span>
+<span class="fc" id="L1062">        RemoteQueueEntry nextRemote = this.getNextRemoteEntry();</span>
+
+<span class="fc bfc" id="L1064" title="All 4 branches covered.">        if (nextLocal == null &amp;&amp; nextRemote == null) {</span>
+<span class="fc" id="L1065">            LOGGER.fine(&quot;No context is queued which can be started once these resources are free'd.&quot;);</span>
+<span class="fc" id="L1066">            return false;</span>
+        }
+
+        // Process the higher-priority entry first; equal priority favours local (arrived earlier)
+<span class="fc bfc" id="L1070" title="All 4 branches covered.">        boolean pickRemote =</span>
+<span class="pc bpc" id="L1071" title="1 of 2 branches missed.">                nextRemote != null &amp;&amp; (nextLocal == null || nextRemote.getPriority() &gt; nextLocal.getPriority());</span>
+
+<span class="fc bfc" id="L1073" title="All 2 branches covered.">        if (pickRemote) {</span>
+<span class="fc" id="L1074">            return proceedRemoteEntry(nextRemote);</span>
+        } else {
+<span class="fc" id="L1076">            return proceedLocalEntry(nextLocal);</span>
+        }
+    }
+
+    private boolean proceedLocalEntry(@NonNull QueuedContextStruct nextContext) {
+<span class="fc" id="L1081">        LOGGER.finest(&quot;nextContext candidates: &quot; + nextContext.candidates);</span>
+<span class="fc" id="L1082">        List&lt;LockableResource&gt; requiredResourceForNextContext =</span>
+<span class="fc" id="L1083">                this.fromNames(nextContext.candidates, /*create un-existent resources */ true);</span>
+<span class="fc" id="L1084">        LOGGER.finest(&quot;nextContext real candidates: &quot; + requiredResourceForNextContext);</span>
+
+<span class="fc" id="L1086">        Run&lt;?, ?&gt; build = nextContext.getBuild();</span>
+<span class="pc bpc" id="L1087" title="1 of 2 branches missed.">        if (build == null) {</span>
+            // this shall never happen - skip context (build deleted while running?)
+<span class="nc" id="L1089">            LOGGER.warning(&quot;Skip this context, as the build cannot be retrieved&quot;);</span>
+<span class="nc" id="L1090">            return true;</span>
+        }
+<span class="fc" id="L1092">        boolean locked = this.lock(requiredResourceForNextContext, build, nextContext.getReason());</span>
+<span class="pc bpc" id="L1093" title="1 of 2 branches missed.">        if (!locked) {</span>
+            // defensive; shall never happen
+<span class="nc" id="L1095">            LOGGER.warning(&quot;Can not lock resources: &quot; + requiredResourceForNextContext);</span>
+<span class="nc" id="L1096">            return false;</span>
+        }
+
+<span class="fc" id="L1099">        LinkedHashMap&lt;String, List&lt;LockableResourceProperty&gt;&gt; resourcesToLock = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L1100" title="All 2 branches covered.">        for (LockableResource r : requiredResourceForNextContext) {</span>
+<span class="fc" id="L1101">            resourcesToLock.put(r.getName(), r.getProperties());</span>
+<span class="fc" id="L1102">        }</span>
+<span class="fc" id="L1103">        this.unqueueContext(nextContext.getContext());</span>
+<span class="fc" id="L1104">        LOGGER.fine(&quot;Continue with next context: &quot; + nextContext);</span>
+<span class="fc" id="L1105">        LockStepExecution.proceed(</span>
+                resourcesToLock,
+<span class="fc" id="L1107">                nextContext.getContext(),</span>
+<span class="fc" id="L1108">                nextContext.getResourceDescription(),</span>
+<span class="fc" id="L1109">                nextContext.getVariableName());</span>
+<span class="fc" id="L1110">        return true;</span>
+    }
+
+    private boolean proceedRemoteEntry(@NonNull RemoteQueueEntry entry) {
+<span class="fc" id="L1114">        List&lt;LockableResource&gt; resources = entry.getResolved();</span>
+<span class="pc bpc" id="L1115" title="2 of 4 branches missed.">        if (resources == null || resources.isEmpty()) {</span>
+<span class="nc" id="L1116">            LOGGER.warning(&quot;Remote queue entry has no resolved resources: &quot; + entry.getLockId());</span>
+<span class="nc" id="L1117">            return false;</span>
+        }
+<span class="fc" id="L1119">        boolean locked = lockForRemote(resources, entry.getLockId());</span>
+<span class="pc bpc" id="L1120" title="1 of 2 branches missed.">        if (!locked) {</span>
+<span class="nc" id="L1121">            LOGGER.warning(&quot;Cannot lock remote resources: &quot; + entry.getLockId());</span>
+<span class="nc" id="L1122">            return false;</span>
+        }
+<span class="fc" id="L1124">        getRemoteQueueEntries().remove(entry);</span>
+        // onAcquired marks the record ACQUIRED and builds lockEnvVars (incl. resource properties),
+        // using the shared LockStepExecution.buildLockEnvVars - same as local lock().
+<span class="fc" id="L1127">        entry.onAcquired(resources);</span>
+<span class="fc" id="L1128">        LOGGER.fine(</span>
+<span class="fc" id="L1129">                &quot;Remote queued-&gt;acquired: lockId=&quot; + entry.getLockId() + &quot; resources=&quot; + getResourcesNames(resources));</span>
+<span class="fc" id="L1130">        return true;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Returns names (IDs) of given *resources*. */
+    @Restricted(NoExternalUse.class)
+    public static List&lt;String&gt; getResourcesNames(final List&lt;LockableResource&gt; resources) {
+<span class="fc" id="L1137">        List&lt;String&gt; resourceNames = new ArrayList&lt;&gt;();</span>
+<span class="pc bpc" id="L1138" title="1 of 2 branches missed.">        if (resources != null) {</span>
+<span class="fc bfc" id="L1139" title="All 2 branches covered.">            for (LockableResource resource : resources) {</span>
+<span class="fc" id="L1140">                resourceNames.add(resource.getName());</span>
+<span class="fc" id="L1141">            }</span>
+        }
+<span class="fc" id="L1143">        return resourceNames;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Returns names (IDs) off all existing resources (inclusive ephemeral) */
+    @Restricted(NoExternalUse.class)
+    public List&lt;String&gt; getAllResourcesNames() {
+<span class="nc" id="L1150">        synchronized (syncResources) {</span>
+<span class="nc" id="L1151">            return getResourcesNames(this.resources);</span>
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Returns the next queued context with all its requirements satisfied.
+     *
+     */
+    @CheckForNull
+    private QueuedContextStruct getNextQueuedContext() {
+
+<span class="fc" id="L1163">        LOGGER.fine(&quot;current queue size: &quot; + this.queuedContexts.size());</span>
+<span class="fc" id="L1164">        LOGGER.finest(&quot;current queue: &quot; + this.queuedContexts);</span>
+<span class="fc" id="L1165">        List&lt;QueuedContextStruct&gt; toRemove = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L1166">        QueuedContextStruct nextEntry = null;</span>
+<span class="fc" id="L1167">        long earliestDeadline = Long.MAX_VALUE;</span>
+
+        // the first one added lock is the oldest one, and this wins
+
+<span class="pc bpc" id="L1171" title="1 of 4 branches missed.">        for (int idx = 0; idx &lt; this.queuedContexts.size() &amp;&amp; nextEntry == null; idx++) {</span>
+<span class="fc" id="L1172">            QueuedContextStruct entry = this.queuedContexts.get(idx);</span>
+            // check queue list first
+<span class="pc bpc" id="L1174" title="1 of 2 branches missed.">            if (!entry.isValid()) {</span>
+<span class="nc" id="L1175">                LOGGER.fine(&quot;well be removed: &quot; + idx + &quot; &quot; + entry);</span>
+<span class="nc" id="L1176">                toRemove.add(entry);</span>
+<span class="nc" id="L1177">                continue;</span>
+            }
+
+            // check if the entry has timed out waiting for resources
+<span class="pc bpc" id="L1181" title="1 of 2 branches missed.">            if (entry.isTimedOut()) {</span>
+<span class="nc" id="L1182">                LOGGER.info(&quot;Queue entry timed out waiting for resources: &quot; + entry);</span>
+<span class="nc" id="L1183">                toRemove.add(entry);</span>
+<span class="nc" id="L1184">                PrintStream logger = entry.getLogger();</span>
+<span class="nc" id="L1185">                String msg = &quot;[&quot; + entry.getResourceDescription()</span>
+                        + &quot;] timed out waiting for resource allocation after &quot;
+<span class="nc" id="L1187">                        + entry.getTimeoutForAllocateResource() + &quot; &quot;</span>
+<span class="nc" id="L1188">                        + entry.getTimeoutUnit().toLowerCase(java.util.Locale.ENGLISH);</span>
+<span class="nc" id="L1189">                printLogs(msg, logger, Level.WARNING);</span>
+<span class="nc" id="L1190">                entry.getContext()</span>
+<span class="nc" id="L1191">                        .onFailure(new org.jenkins.plugins.lockableresources.queue.LockWaitTimeoutException(msg));</span>
+<span class="nc" id="L1192">                continue;</span>
+            }
+
+            // track the earliest deadline among remaining entries for rescheduling
+<span class="fc" id="L1196">            long deadline = entry.getTimeoutDeadlineMillis();</span>
+<span class="pc bpc" id="L1197" title="3 of 4 branches missed.">            if (deadline &gt; 0 &amp;&amp; deadline &lt; earliestDeadline) {</span>
+<span class="nc" id="L1198">                earliestDeadline = deadline;</span>
+            }
+
+<span class="fc" id="L1201">            LOGGER.finest(&quot;oldest win - index: &quot; + idx + &quot; &quot; + entry);</span>
+
+<span class="fc" id="L1203">            nextEntry = getNextQueuedContextEntry(entry);</span>
+        }
+
+<span class="pc bpc" id="L1206" title="1 of 2 branches missed.">        if (!toRemove.isEmpty()) {</span>
+<span class="nc" id="L1207">            this.queuedContexts.removeAll(toRemove);</span>
+        }
+
+        // reschedule for the next earliest deadline, across both queues.
+        //
+        // There is one timeout task, and scheduleTimeoutAt() cancels whatever is pending before it
+        // schedules again. Computing the deadline from the local queue alone therefore does not just
+        // ignore remote entries - it cancels a wake-up a remote entry was relying on and never puts
+        // it back, so remote requests only ever time out when something else happens to run a
+        // maintenance pass.
+<span class="fc" id="L1217">        earliestDeadline = Math.min(earliestDeadline, earliestRemoteDeadline());</span>
+<span class="fc" id="L1218">        scheduleTimeoutAt(earliestDeadline);</span>
+
+<span class="fc" id="L1220">        return nextEntry;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Earliest allocate-timeout deadline among the queued remote requests, or {@link Long#MAX_VALUE}
+     * when none of them is waiting against a deadline.
+     * Must be called under {@link #syncResources}.
+     */
+    private long earliestRemoteDeadline() {
+<span class="fc" id="L1230">        long earliest = Long.MAX_VALUE;</span>
+<span class="fc bfc" id="L1231" title="All 2 branches covered.">        for (RemoteQueueEntry entry : getRemoteQueueEntries()) {</span>
+<span class="pc bpc" id="L1232" title="1 of 2 branches missed.">            if (!entry.isValid()) {</span>
+<span class="nc" id="L1233">                continue;</span>
+            }
+<span class="fc" id="L1235">            long deadline = entry.getTimeoutDeadlineMillis();</span>
+<span class="pc bpc" id="L1236" title="1 of 4 branches missed.">            if (deadline &gt; 0 &amp;&amp; deadline &lt; earliest) {</span>
+<span class="fc" id="L1237">                earliest = deadline;</span>
+            }
+<span class="fc" id="L1239">        }</span>
+<span class="fc" id="L1240">        return earliest;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    QueuedContextStruct getNextQueuedContextEntry(QueuedContextStruct entry) {
+<span class="fc" id="L1245">        List&lt;LockableResource&gt; candidates = this.getAvailableResources(entry.getResources());</span>
+<span class="pc bpc" id="L1246" title="1 of 4 branches missed.">        if (candidates == null || candidates.isEmpty()) {</span>
+<span class="fc" id="L1247">            return null;</span>
+        }
+
+<span class="fc" id="L1250">        entry.candidates = getResourcesNames(candidates);</span>
+<span class="fc" id="L1251">        LOGGER.fine(&quot;take this: &quot; + entry);</span>
+<span class="fc" id="L1252">        return entry;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Scans remote queue entries, removes invalid/timed-out ones, and returns the first entry
+     * (highest priority) whose resources are currently all available.
+     * Must be called under {@link #syncResources}.
+     */
+    @CheckForNull
+    private RemoteQueueEntry getNextRemoteEntry() {
+<span class="fc" id="L1263">        List&lt;RemoteQueueEntry&gt; list = getRemoteQueueEntries();</span>
+<span class="fc" id="L1264">        List&lt;RemoteQueueEntry&gt; toRemove = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L1265">        RemoteQueueEntry result = null;</span>
+
+<span class="fc bfc" id="L1267" title="All 2 branches covered.">        for (RemoteQueueEntry entry : list) {</span>
+<span class="pc bpc" id="L1268" title="1 of 2 branches missed.">            if (!entry.isValid()) {</span>
+<span class="nc" id="L1269">                toRemove.add(entry);</span>
+<span class="nc" id="L1270">                continue;</span>
+            }
+<span class="fc bfc" id="L1272" title="All 2 branches covered.">            if (entry.isTimedOut()) {</span>
+<span class="fc" id="L1273">                toRemove.add(entry);</span>
+<span class="fc" id="L1274">                LOGGER.info(&quot;Remote queue entry timed out waiting for resources: &quot; + entry);</span>
+<span class="fc" id="L1275">                entry.onTimeout();</span>
+<span class="fc" id="L1276">                continue;</span>
+            }
+<span class="fc bfc" id="L1278" title="All 2 branches covered.">            if (result == null) {</span>
+                // Resolve via the canonical path (same as local), with the exposure policy as filter.
+<span class="fc" id="L1280">                List&lt;LockableResource&gt; available =</span>
+<span class="fc" id="L1281">                        new RemoteResolver(this).availableForRemote(entry.getStructs(), entry.getLockRequest());</span>
+<span class="fc bfc" id="L1282" title="All 2 branches covered.">                if (available != null) {</span>
+<span class="fc" id="L1283">                    entry.setResolved(available);</span>
+<span class="fc" id="L1284">                    result = entry;</span>
+                }
+            }
+<span class="fc" id="L1287">        }</span>
+
+<span class="fc bfc" id="L1289" title="All 2 branches covered.">        if (!toRemove.isEmpty()) {</span>
+<span class="fc" id="L1290">            list.removeAll(toRemove);</span>
+        }
+<span class="fc" id="L1292">        return result;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Returns current queue */
+    @Restricted(NoExternalUse.class) // used by jelly
+    public List&lt;QueuedContextStruct&gt; getCurrentQueuedContext() {
+<span class="fc" id="L1299">        synchronized (syncResources) {</span>
+<span class="fc" id="L1300">            return Collections.unmodifiableList(this.queuedContexts);</span>
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Creates the resource if it does not exist and ephemeral resources are allowed.
+     *
+     * @param name the resource name
+     * @return true if resource was created, false if it already exists or ephemeral resources are
+     *     disabled
+     */
+    public boolean createResource(@CheckForNull String name) {
+<span class="pc bpc" id="L1313" title="1 of 2 branches missed.">        if (!allowEphemeralResources) {</span>
+<span class="nc" id="L1314">            LOGGER.fine(&quot;Ephemeral resources are disabled, not creating resource: &quot; + name);</span>
+<span class="nc" id="L1315">            return false;</span>
+        }
+<span class="fc" id="L1317">        name = Util.fixEmptyAndTrim(name);</span>
+<span class="fc" id="L1318">        LockableResource resource = new LockableResource(name);</span>
+<span class="fc" id="L1319">        resource.setEphemeral(true);</span>
+
+<span class="fc" id="L1321">        return this.addResource(resource, /*doSave*/ true);</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    public boolean createResourceWithLabel(@CheckForNull String name, @CheckForNull String label) {
+<span class="fc" id="L1326">        name = Util.fixEmptyAndTrim(name);</span>
+<span class="fc" id="L1327">        label = Util.fixEmptyAndTrim(label);</span>
+<span class="fc" id="L1328">        LockableResource resource = new LockableResource(name);</span>
+<span class="fc" id="L1329">        resource.setLabelsFromString(label);</span>
+
+<span class="fc" id="L1331">        return this.addResource(resource, /*doSave*/ true);</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    public boolean createResourceWithLabelAndProperties(
+            @CheckForNull String name, @CheckForNull String label, final Map&lt;String, String&gt; properties) {
+<span class="nc bnc" id="L1337" title="All 2 branches missed.">        if (properties == null) {</span>
+<span class="nc" id="L1338">            return false;</span>
+        }
+
+<span class="nc" id="L1341">        name = Util.fixEmptyAndTrim(name);</span>
+<span class="nc" id="L1342">        label = Util.fixEmptyAndTrim(label);</span>
+<span class="nc" id="L1343">        LockableResource resource = new LockableResource(name);</span>
+<span class="nc" id="L1344">        resource.setLabelsFromString(label);</span>
+<span class="nc" id="L1345">        resource.setProperties(properties.entrySet().stream()</span>
+<span class="nc" id="L1346">                .map(e -&gt; {</span>
+<span class="nc" id="L1347">                    LockableResourceProperty p = new LockableResourceProperty();</span>
+<span class="nc" id="L1348">                    p.setName(e.getKey());</span>
+<span class="nc" id="L1349">                    p.setValue(e.getValue());</span>
+<span class="nc" id="L1350">                    return p;</span>
+                })
+<span class="nc" id="L1352">                .collect(Collectors.toList()));</span>
+
+<span class="nc" id="L1354">        return this.addResource(resource, /*doSave*/ true);</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    @Restricted(NoExternalUse.class)
+    public boolean addResource(@Nullable final LockableResource resource) {
+<span class="nc" id="L1360">        return this.addResource(resource, /*doSave*/ false);</span>
+    }
+    // ---------------------------------------------------------------------------
+    @Restricted(NoExternalUse.class)
+    public boolean addResource(@Nullable final LockableResource resource, final boolean doSave) {
+
+<span class="pc bpc" id="L1366" title="3 of 6 branches missed.">        if (resource == null || resource.getName() == null || resource.getName().isEmpty()) {</span>
+<span class="nc" id="L1367">            LOGGER.warning(&quot;Internal failure: We will add wrong resource: '&quot; + resource + &quot;' &quot; + getStack());</span>
+<span class="nc" id="L1368">            return false;</span>
+        }
+<span class="fc" id="L1370">        synchronized (syncResources) {</span>
+<span class="fc bfc" id="L1371" title="All 2 branches covered.">            if (this.resourceExist(resource.getName())) {</span>
+<span class="fc" id="L1372">                LOGGER.finest(&quot;We will add existing resource: &quot; + resource + getStack());</span>
+<span class="fc" id="L1373">                return false;</span>
+            }
+<span class="fc" id="L1375">            this.resources.add(resource);</span>
+<span class="fc" id="L1376">            LOGGER.fine(&quot;Resource added : &quot; + resource);</span>
+
+            // Invalidate cache and process waiting pipeline jobs while still holding the lock
+<span class="fc" id="L1379">            cachedCandidates.invalidateAll();</span>
+<span class="pc bpc" id="L1380" title="1 of 2 branches missed.">            while (proceedNextContext()) {</span>
+                // process as many contexts as possible
+            }
+
+<span class="pc bpc" id="L1384" title="1 of 2 branches missed.">            if (doSave) {</span>
+<span class="fc" id="L1385">                this.save();</span>
+            }
+<span class="fc" id="L1387">        }</span>
+        // Notify Jenkins queue for freestyle jobs (must be outside synchronized block)
+<span class="fc" id="L1389">        scheduleQueueMaintenance();</span>
+<span class="fc" id="L1390">        return true;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Reserves an available resource for the userName indefinitely (until that person, or some
+     * explicit scripted action, decides to release the resource).
+     */
+    public boolean reserve(List&lt;LockableResource&gt; resources, String userName) {
+<span class="fc" id="L1399">        return reserve(resources, userName, null);</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Reserves an available resource for the userName indefinitely (until that person, or some
+     * explicit scripted action, decides to release the resource).
+     *
+     * @param resources list of resources to reserve
+     * @param userName the user reserving the resources
+     * @param reason the reason for reserving (optional)
+     * @return true if all resources were successfully reserved, false if any was not free
+     */
+    public boolean reserve(List&lt;LockableResource&gt; resources, String userName, String reason) {
+<span class="fc" id="L1413">        LOGGER.info(&quot;reserve() called user='&quot; + userName + &quot;' resources=&quot; + getResourcesNames(resources) + &quot; reason='&quot;</span>
+                + reason + &quot;'&quot;);
+<span class="fc" id="L1415">        synchronized (syncResources) {</span>
+<span class="fc bfc" id="L1416" title="All 2 branches covered.">            for (LockableResource r : resources) {</span>
+<span class="pc bpc" id="L1417" title="1 of 2 branches missed.">                if (!r.isFree()) {</span>
+<span class="nc" id="L1418">                    LOGGER.fine(&quot;reserve() failed because resource not free: &quot; + r.getName());</span>
+<span class="nc" id="L1419">                    return false;</span>
+                }
+<span class="fc" id="L1421">            }</span>
+<span class="fc bfc" id="L1422" title="All 2 branches covered.">            for (LockableResource r : resources) {</span>
+<span class="fc" id="L1423">                r.reserve(userName, reason);</span>
+<span class="fc" id="L1424">            }</span>
+<span class="fc" id="L1425">            save();</span>
+<span class="fc" id="L1426">        }</span>
+<span class="fc" id="L1427">        LOGGER.info(&quot;reserve() succeeded user='&quot; + userName + &quot;' resources=&quot; + getResourcesNames(resources));</span>
+<span class="fc" id="L1428">        return true;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Reserves a resource that may be or not be locked by some job (or reserved by some user)
+     * already, giving it away to the userName indefinitely (until that person, or some explicit
+     * scripted action, later decides to release the resource).
+     */
+    public boolean steal(List&lt;LockableResource&gt; resources, String userName) {
+<span class="nc" id="L1438">        return steal(resources, userName, null);</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Reserves a resource that may be or not be locked by some job (or reserved by some user)
+     * already, giving it away to the userName indefinitely (until that person, or some explicit
+     * scripted action, later decides to release the resource).
+     *
+     * @param resources list of resources to steal
+     * @param userName the user stealing the resources
+     * @param reason the reason for stealing (optional)
+     * @return true if stolen successfully
+     */
+    public boolean steal(List&lt;LockableResource&gt; resources, String userName, String reason) {
+<span class="nc" id="L1453">        synchronized (syncResources) {</span>
+<span class="nc bnc" id="L1454" title="All 2 branches missed.">            for (LockableResource r : resources) {</span>
+<span class="nc" id="L1455">                r.setReservedBy(userName);</span>
+<span class="nc" id="L1456">                r.setStolen();</span>
+<span class="nc" id="L1457">            }</span>
+<span class="nc" id="L1458">            unlockResources(resources);</span>
+<span class="nc" id="L1459">            Date date = new Date();</span>
+<span class="nc bnc" id="L1460" title="All 2 branches missed.">            for (LockableResource r : resources) {</span>
+<span class="nc" id="L1461">                r.setReservedTimestamp(date);</span>
+<span class="nc" id="L1462">                r.setLockReason(reason);</span>
+<span class="nc" id="L1463">            }</span>
+<span class="nc" id="L1464">            save();</span>
+<span class="nc" id="L1465">        }</span>
+<span class="nc" id="L1466">        return true;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Reserves a resource that may be or not be reserved by some person already, giving it away to
+     * the userName indefinitely (until that person, or some explicit scripted action, decides to
+     * release the resource).
+     */
+    public void reassign(List&lt;LockableResource&gt; resources, String userName) {
+<span class="nc" id="L1476">        synchronized (syncResources) {</span>
+<span class="nc" id="L1477">            Date date = new Date();</span>
+<span class="nc bnc" id="L1478" title="All 2 branches missed.">            for (LockableResource r : resources) {</span>
+<span class="nc bnc" id="L1479" title="All 2 branches missed.">                if (!r.isFree()) {</span>
+<span class="nc" id="L1480">                    r.unReserve();</span>
+                }
+<span class="nc" id="L1482">                r.setReservedBy(userName);</span>
+<span class="nc" id="L1483">                r.setReservedTimestamp(date);</span>
+<span class="nc" id="L1484">            }</span>
+<span class="nc" id="L1485">            save();</span>
+<span class="nc" id="L1486">        }</span>
+<span class="nc" id="L1487">    }</span>
+
+    // ---------------------------------------------------------------------------
+    private void unreserveResources(@NonNull List&lt;LockableResource&gt; resources) {
+<span class="nc bnc" id="L1491" title="All 2 branches missed.">        for (LockableResource l : resources) {</span>
+<span class="nc" id="L1492">            uncacheIfFreeing(l, false, true);</span>
+<span class="nc" id="L1493">            l.unReserve();</span>
+<span class="nc" id="L1494">        }</span>
+<span class="nc" id="L1495">        save();</span>
+<span class="nc" id="L1496">    }</span>
+
+    // ---------------------------------------------------------------------------
+    public void unreserve(List&lt;LockableResource&gt; resources) {
+        // make sure there is a list of resources to unreserve
+<span class="nc bnc" id="L1501" title="All 4 branches missed.">        if (resources == null || resources.isEmpty()) {</span>
+<span class="nc" id="L1502">            return;</span>
+        }
+
+<span class="nc" id="L1505">        synchronized (syncResources) {</span>
+<span class="nc" id="L1506">            LOGGER.fine(&quot;unreserve &quot; + resources);</span>
+<span class="nc" id="L1507">            unreserveResources(resources);</span>
+
+<span class="nc" id="L1509">            proceedNextContext();</span>
+
+<span class="nc" id="L1511">            save();</span>
+<span class="nc" id="L1512">        }</span>
+<span class="nc" id="L1513">        scheduleQueueMaintenance();</span>
+<span class="nc" id="L1514">    }</span>
+
+    // ---------------------------------------------------------------------------
+    @NonNull
+    @Override
+    public String getDisplayName() {
+<span class="fc" id="L1520">        return Messages.LockableResourcesManager_displayName();</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    public void reset(List&lt;LockableResource&gt; resources) {
+<span class="nc" id="L1525">        synchronized (syncResources) {</span>
+<span class="nc bnc" id="L1526" title="All 2 branches missed.">            for (LockableResource r : resources) {</span>
+<span class="nc" id="L1527">                uncacheIfFreeing(r, true, true);</span>
+<span class="nc" id="L1528">                r.reset();</span>
+<span class="nc" id="L1529">            }</span>
+
+<span class="nc bnc" id="L1531" title="All 2 branches missed.">            while (proceedNextContext()) {</span>
+                // process as many contexts as possible
+            }
+
+<span class="nc" id="L1535">            save();</span>
+<span class="nc" id="L1536">        }</span>
+<span class="nc" id="L1537">        scheduleQueueMaintenance();</span>
+<span class="nc" id="L1538">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Make the lockable resource reusable and notify the queue(s), if any WARNING: Do not use this
+     * from inside the lock step closure which originally locked this resource, to avoid nasty
+     * surprises! Namely, this *might* let a second consumer use the resource quickly, but when the
+     * original closure ends and unlocks again that resource, a third consumer might then effectively
+     * hijack it from the second one.
+     */
+    public void recycle(List&lt;LockableResource&gt; resources) {
+<span class="nc" id="L1549">        synchronized (syncResources) {</span>
+            // Not calling reset() because that also un-queues the resource
+            // and we want to proclaim it is usable (if anyone is waiting)
+<span class="nc" id="L1552">            this.unlockResources(resources);</span>
+<span class="nc" id="L1553">            this.unreserve(resources);</span>
+<span class="nc" id="L1554">        }</span>
+<span class="nc" id="L1555">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /** Change the order (position) of the given item in the queue*/
+    @Restricted(NoExternalUse.class) // used by jelly
+    public void changeQueueOrder(final String queueId, final int newPosition) throws IOException {
+<span class="nc" id="L1561">        synchronized (syncResources) {</span>
+<span class="nc bnc" id="L1562" title="All 4 branches missed.">            if (newPosition &lt; 0 || newPosition &gt;= this.queuedContexts.size()) {</span>
+<span class="nc" id="L1563">                throw new IOException(</span>
+<span class="nc" id="L1564">                        Messages.error_queuePositionOutOfRange(newPosition + 1, this.queuedContexts.size()));</span>
+            }
+
+<span class="nc" id="L1567">            int oldIndex = -1;</span>
+<span class="nc bnc" id="L1568" title="All 2 branches missed.">            for (int i = 0; i &lt; this.queuedContexts.size(); i++) {</span>
+<span class="nc" id="L1569">                QueuedContextStruct entry = this.queuedContexts.get(i);</span>
+<span class="nc bnc" id="L1570" title="All 2 branches missed.">                if (entry.getId().equals(queueId)) {</span>
+<span class="nc" id="L1571">                    oldIndex = i;</span>
+<span class="nc" id="L1572">                    break;</span>
+                }
+            }
+
+<span class="nc bnc" id="L1576" title="All 2 branches missed.">            if (oldIndex &lt; 0) {</span>
+                // no more exists !?
+<span class="nc" id="L1578">                throw new IOException(Messages.error_queueDoesNotExist(queueId));</span>
+            }
+
+<span class="nc" id="L1581">            Collections.swap(this.queuedContexts, oldIndex, newPosition);</span>
+<span class="nc" id="L1582">        }</span>
+<span class="nc" id="L1583">    }</span>
+
+    // ---------------------------------------------------------------------------
+    @Override
+    public boolean configure(StaplerRequest2 req, JSONObject json) {
+<span class="nc" id="L1588">        synchronized (syncResources) {</span>
+<span class="nc" id="L1589">            try (BulkChange bc = new BulkChange(this)) {</span>
+<span class="nc" id="L1590">                req.bindJSON(this, json);</span>
+<span class="nc" id="L1591">                bc.commit();</span>
+<span class="nc" id="L1592">            } catch (IOException exception) {</span>
+<span class="nc" id="L1593">                LOGGER.log(Level.WARNING, &quot;Exception occurred while committing bulkchange operation.&quot;, exception);</span>
+<span class="nc" id="L1594">                return false;</span>
+<span class="nc" id="L1595">            }</span>
+<span class="nc" id="L1596">        }</span>
+        // Consistency check after binding completes (form field order makes a
+        // setter-time check unreliable: forcedServerId binds before remotes).
+<span class="nc bnc" id="L1599" title="All 4 branches missed.">        if (!forcedServerId.isEmpty() &amp;&amp; !getRemotesAsMap().containsKey(forcedServerId)) {</span>
+<span class="nc" id="L1600">            LOGGER.warning(Messages.warning_forcedServerIdNotConfigured(forcedServerId));</span>
+        }
+<span class="nc" id="L1602">        return true;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    public List&lt;LockableResource&gt; getAvailableResources(final List&lt;LockableResourcesStruct&gt; requiredResourcesList) {
+<span class="fc" id="L1607">        return this.getAvailableResources(requiredResourcesList, null, null);</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Function removes all given resources */
+    public void removeResources(List&lt;LockableResource&gt; toBeRemoved) {
+<span class="fc" id="L1613">        synchronized (syncResources) {</span>
+<span class="fc" id="L1614">            this.resources.removeAll(toBeRemoved);</span>
+<span class="fc" id="L1615">        }</span>
+<span class="fc" id="L1616">        scheduleQueueMaintenance();</span>
+<span class="fc" id="L1617">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Checks if there are enough resources available to satisfy the requirements specified within
+     * requiredResources and returns the necessary available resources. If not enough resources are
+     * available, returns null.
+     */
+    public List&lt;LockableResource&gt; getAvailableResources(
+            final List&lt;LockableResourcesStruct&gt; requiredResourcesList,
+            final @Nullable PrintStream logger,
+            final @Nullable ResourceSelectStrategy selectStrategy) {
+<span class="fc" id="L1629">        return getAvailableResources(requiredResourcesList, logger, selectStrategy, r -&gt; true);</span>
+    }
+
+    /**
+     * As {@link #getAvailableResources(List, PrintStream, ResourceSelectStrategy)} but restricts the
+     * candidate pool to resources accepted by {@code candidateFilter}. This is the seam the remote bridge
+     * uses to apply its {@code exposeLabel} visibility filter; local callers pass &quot;accept all&quot;. The filter is
+     * a plain predicate (it knows nothing about exposeLabel), so the canonical resolver stays generic. It is
+     * applied to the candidate pool &lt;em&gt;before&lt;/em&gt; count-based selection, so a label request with
+     * {@code amount&lt;=0} (&quot;all&quot;) means &quot;all &lt;em&gt;visible&lt;/em&gt; matching&quot;.
+     */
+    public List&lt;LockableResource&gt; getAvailableResources(
+            final List&lt;LockableResourcesStruct&gt; requiredResourcesList,
+            final @Nullable PrintStream logger,
+            final @Nullable ResourceSelectStrategy selectStrategy,
+            @NonNull final Predicate&lt;LockableResource&gt; candidateFilter) {
+
+<span class="fc" id="L1646">        LOGGER.finest(&quot;getAvailableResources, &quot; + requiredResourcesList);</span>
+<span class="fc" id="L1647">        List&lt;LockableResource&gt; candidates = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L1648" title="All 2 branches covered.">        for (LockableResourcesStruct requiredResources : requiredResourcesList) {</span>
+<span class="fc" id="L1649">            List&lt;LockableResource&gt; available = new ArrayList&lt;&gt;();</span>
+            // filter by labels
+<span class="pc bpc" id="L1651" title="1 of 4 branches missed.">            if (requiredResources.label != null &amp;&amp; !requiredResources.label.isBlank()) {</span>
+                // get required amount first
+<span class="fc" id="L1653">                int requiredAmount = 0;</span>
+<span class="fc bfc" id="L1654" title="All 2 branches covered.">                if (requiredResources.requiredNumber != null) {</span>
+                    try {
+<span class="fc" id="L1656">                        requiredAmount = Integer.parseInt(requiredResources.requiredNumber);</span>
+<span class="nc" id="L1657">                    } catch (NumberFormatException ignored) {</span>
+<span class="fc" id="L1658">                    }</span>
+                }
+
+<span class="fc" id="L1661">                available = this.getFreeResourcesWithLabel(</span>
+                        requiredResources.label, requiredAmount, selectStrategy, logger, candidates, candidateFilter);
+<span class="pc bpc" id="L1663" title="1 of 2 branches missed.">            } else if (requiredResources.required != null) {</span>
+                // resource by name requested
+
+                // this is a little hack. The 'requiredResources.required' is a copy, and we need to find
+                // all of them in LRM
+                // fromNames() also re-create the resource (ephemeral things)
+<span class="fc" id="L1669">                available = fromNames(</span>
+<span class="fc" id="L1670">                        getResourcesNames(requiredResources.required), /*create un-existent resources */ true);</span>
+
+<span class="pc bpc" id="L1672" title="2 of 6 branches missed.">                if (available.stream().anyMatch(r -&gt; !candidateFilter.test(r)) || !this.areAllAvailable(available)) {</span>
+                    // not all available, or a requested resource is not visible to this caller
+<span class="fc" id="L1674">                    available = null;</span>
+                }
+            } else {
+<span class="nc" id="L1677">                LOGGER.warning(&quot;getAvailableResources, Not implemented: &quot; + requiredResources);</span>
+            }
+
+<span class="pc bpc" id="L1680" title="1 of 4 branches missed.">            if (available == null || available.isEmpty()) {</span>
+<span class="fc" id="L1681">                LOGGER.finest(&quot;No available resources found &quot; + requiredResourcesList);</span>
+<span class="fc" id="L1682">                return null;</span>
+            }
+
+<span class="pc bpc" id="L1685" title="1 of 2 branches missed.">            final boolean isPreReserved = !Collections.disjoint(candidates, available);</span>
+<span class="pc bpc" id="L1686" title="1 of 2 branches missed.">            if (isPreReserved) {</span>
+                // FIXME I think this is failure
+                // You use filter label1 and it lock resource1 and then in extra you will lock resource1
+                // But when I allow this line, many tests will fails, and I am pretty sure it will throws
+                // exceptions on end-user pipelines
+                // So when we want to fix, it it might be braking-change
+                // Therefore keep it here as warning for now
+<span class="nc" id="L1693">                printLogs(&quot;Extra filter tries to allocate pre-reserved resources.&quot;, logger, Level.WARNING);</span>
+<span class="nc" id="L1694">                available.removeAll(candidates);</span>
+            }
+
+<span class="fc" id="L1697">            candidates.addAll(available);</span>
+<span class="fc" id="L1698">        }</span>
+
+<span class="fc" id="L1700">        return candidates;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    private boolean areAllAvailable(List&lt;LockableResource&gt; resources) {
+<span class="fc bfc" id="L1705" title="All 2 branches covered.">        for (LockableResource resource : resources) {</span>
+<span class="fc bfc" id="L1706" title="All 2 branches covered.">            if (!resource.isFree()) {</span>
+<span class="fc" id="L1707">                return false;</span>
+            }
+<span class="fc" id="L1709">        }</span>
+<span class="fc" id="L1710">        return true;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    public static void printLogs(final String msg, final Level level, Logger L, final @Nullable PrintStream logger) {
+<span class="fc" id="L1715">        L.log(level, msg);</span>
+
+<span class="pc bpc" id="L1717" title="1 of 2 branches missed.">        if (logger != null) {</span>
+<span class="pc bpc" id="L1718" title="2 of 4 branches missed.">            if (level == Level.WARNING || level == Level.SEVERE) logger.println(level.getLocalizedName() + &quot;: &quot; + msg);</span>
+<span class="fc" id="L1719">            else logger.println(msg);</span>
+        }
+<span class="fc" id="L1721">    }</span>
+
+    // ---------------------------------------------------------------------------
+    private static void printLogs(final String msg, final @Nullable PrintStream logger, final Level level) {
+<span class="fc" id="L1725">        printLogs(msg, level, LOGGER, logger);</span>
+<span class="fc" id="L1726">    }</span>
+
+    // ---------------------------------------------------------------------------
+    @CheckForNull
+    @Restricted(NoExternalUse.class)
+    private List&lt;LockableResource&gt; getFreeResourcesWithLabel(
+            @NonNull String label,
+            long amount,
+            final @Nullable ResourceSelectStrategy selectStrategy,
+            final @Nullable PrintStream logger,
+            final List&lt;LockableResource&gt; alreadySelected,
+            @NonNull final Predicate&lt;LockableResource&gt; candidateFilter) {
+<span class="fc" id="L1738">        List&lt;LockableResource&gt; found = new ArrayList&lt;&gt;();</span>
+
+<span class="fc" id="L1740">        List&lt;LockableResource&gt; candidates = _getResourcesWithLabel(label, alreadySelected);</span>
+<span class="fc" id="L1741">        candidates.addAll(this.getResourcesWithLabel(label));</span>
+        // Restrict to the visible candidate pool before count-based selection (e.g. remote exposure policy).
+        // Applied here so amount&lt;=0 (&quot;all&quot;) resolves to &quot;all visible matching&quot;.
+<span class="pc bpc" id="L1744" title="1 of 2 branches missed.">        candidates.removeIf(r -&gt; !candidateFilter.test(r));</span>
+
+<span class="fc bfc" id="L1746" title="All 2 branches covered.">        if (amount &lt;= 0) {</span>
+<span class="fc" id="L1747">            amount = candidates.size();</span>
+        }
+
+<span class="pc bpc" id="L1750" title="1 of 2 branches missed.">        if (candidates.size() &lt; amount) {</span>
+<span class="nc" id="L1751">            printLogs(</span>
+                    &quot;Found &quot;
+<span class="nc" id="L1753">                            + candidates.size()</span>
+                            + &quot; possible resource(s). Waiting for correct amount: &quot;
+                            + amount
+                            + &quot;.&quot;
+                            + &quot;This may remain stuck, until you create enough resources&quot;,
+                    logger,
+                    Level.WARNING);
+<span class="nc" id="L1760">            return null; // there are not enough resources</span>
+        }
+
+<span class="pc bpc" id="L1763" title="2 of 4 branches missed.">        if (selectStrategy != null &amp;&amp; selectStrategy.equals(ResourceSelectStrategy.RANDOM)) {</span>
+<span class="nc" id="L1764">            Collections.shuffle(candidates);</span>
+        }
+
+<span class="pc bpc" id="L1767" title="1 of 2 branches missed.">        for (LockableResource r : candidates) {</span>
+            // TODO: it shall be used isFree() here, but in that case we need to change the
+            // logic in parametrized builds and that is much more effort as I want to spend here now
+<span class="pc bpc" id="L1770" title="2 of 4 branches missed.">            if (!r.isReserved() &amp;&amp; !r.isLocked()) {</span>
+<span class="fc" id="L1771">                found.add(r);</span>
+            }
+
+<span class="pc bpc" id="L1774" title="1 of 4 branches missed.">            if (amount &gt; 0 &amp;&amp; found.size() &gt;= amount) {</span>
+<span class="fc" id="L1775">                return found;</span>
+            }
+<span class="fc" id="L1777">        }</span>
+
+<span class="nc" id="L1779">        String msg = &quot;Found &quot; + found.size() + &quot; available resource(s). Waiting for correct amount: &quot; + amount + &quot;.&quot;;</span>
+<span class="nc bnc" id="L1780" title="All 2 branches missed.">        if (enabledBlockedCount != 0) {</span>
+<span class="nc" id="L1781">            msg += &quot;\nBlocking causes: &quot; + getCauses(candidates);</span>
+        }
+<span class="nc" id="L1783">        printLogs(msg, logger, Level.FINE);</span>
+
+<span class="nc" id="L1785">        return null;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    // for debug purpose
+    private String getCauses(List&lt;LockableResource&gt; resources) {
+<span class="fc" id="L1791">        StringBuilder buf = new StringBuilder();</span>
+<span class="fc" id="L1792">        int currentSize = 0;</span>
+<span class="fc bfc" id="L1793" title="All 2 branches covered.">        for (LockableResource resource : resources) {</span>
+<span class="fc" id="L1794">            String cause = resource.getLockCauseDetail();</span>
+<span class="pc bpc" id="L1795" title="1 of 2 branches missed.">            if (cause == null) continue; // means it is free, not blocked</span>
+
+<span class="nc" id="L1797">            currentSize++;</span>
+<span class="nc bnc" id="L1798" title="All 4 branches missed.">            if (enabledBlockedCount &gt; 0 &amp;&amp; currentSize == enabledBlockedCount) {</span>
+<span class="nc" id="L1799">                buf.append(&quot;\n  ...&quot;);</span>
+<span class="nc" id="L1800">                break;</span>
+            }
+<span class="nc" id="L1802">            buf.append(&quot;\n  &quot;).append(cause);</span>
+
+<span class="nc" id="L1804">            final String queueCause = getQueueCause(resource);</span>
+<span class="nc bnc" id="L1805" title="All 2 branches missed.">            if (!queueCause.isEmpty()) {</span>
+<span class="nc" id="L1806">                buf.append(queueCause);</span>
+            }
+<span class="nc" id="L1808">        }</span>
+<span class="fc" id="L1809">        return buf.toString();</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    // for debug purpose
+    private String getQueueCause(final LockableResource resource) {
+<span class="nc" id="L1815">        Map&lt;Run&lt;?, ?&gt;, Integer&gt; usage = new HashMap&lt;&gt;();</span>
+
+<span class="nc bnc" id="L1817" title="All 2 branches missed.">        for (QueuedContextStruct entry : this.queuedContexts) {</span>
+
+<span class="nc" id="L1819">            Run&lt;?, ?&gt; build = entry.getBuild();</span>
+<span class="nc bnc" id="L1820" title="All 2 branches missed.">            if (build == null) {</span>
+<span class="nc" id="L1821">                LOGGER.warning(&quot;Why we don`t have the build? &quot; + entry);</span>
+<span class="nc" id="L1822">                continue;</span>
+            }
+
+<span class="nc" id="L1825">            int count = 0;</span>
+<span class="nc bnc" id="L1826" title="All 2 branches missed.">            if (usage.containsKey(build)) {</span>
+<span class="nc" id="L1827">                count = usage.get(build);</span>
+            }
+
+<span class="nc bnc" id="L1830" title="All 2 branches missed.">            for (LockableResourcesStruct _struct : entry.getResources()) {</span>
+<span class="nc bnc" id="L1831" title="All 2 branches missed.">                if (_struct.isResourceRequired(resource)) {</span>
+<span class="nc" id="L1832">                    LOGGER.fine(&quot;found &quot; + resource + &quot; &quot; + count);</span>
+<span class="nc" id="L1833">                    count++;</span>
+<span class="nc" id="L1834">                    break;</span>
+                }
+<span class="nc" id="L1836">            }</span>
+
+<span class="nc" id="L1838">            usage.put(build, count);</span>
+<span class="nc" id="L1839">        }</span>
+
+<span class="nc" id="L1841">        StringBuilder buf = new StringBuilder();</span>
+<span class="nc" id="L1842">        int currentSize = 0;</span>
+<span class="nc bnc" id="L1843" title="All 2 branches missed.">        for (Map.Entry&lt;Run&lt;?, ?&gt;, Integer&gt; entry : usage.entrySet()) {</span>
+<span class="nc" id="L1844">            Run&lt;?, ?&gt; build = entry.getKey();</span>
+<span class="nc" id="L1845">            int count = entry.getValue();</span>
+
+<span class="nc bnc" id="L1847" title="All 4 branches missed.">            if (build != null &amp;&amp; count &gt; 0) {</span>
+<span class="nc" id="L1848">                currentSize++;</span>
+<span class="nc" id="L1849">                buf.append(&quot;\n    Queued &quot;)</span>
+<span class="nc" id="L1850">                        .append(count)</span>
+<span class="nc" id="L1851">                        .append(&quot; time(s) by build &quot;)</span>
+<span class="nc" id="L1852">                        .append(build.getFullDisplayName())</span>
+<span class="nc" id="L1853">                        .append(&quot; &quot;)</span>
+<span class="nc" id="L1854">                        .append(ModelHyperlinkNote.encodeTo(build));</span>
+
+<span class="nc bnc" id="L1856" title="All 2 branches missed.">                if (currentSize &gt;= enabledCausesCount) {</span>
+<span class="nc" id="L1857">                    buf.append(&quot;\n    ...&quot;);</span>
+<span class="nc" id="L1858">                    break;</span>
+                }
+            }
+<span class="nc" id="L1861">        }</span>
+<span class="nc" id="L1862">        return buf.toString();</span>
+    }
+
+    /*
+     * Adds the given context and the required resources to the queue if
+     * this context is not yet queued.
+     */
+    @Restricted(NoExternalUse.class)
+    public void queueContext(
+            StepContext context,
+            List&lt;LockableResourcesStruct&gt; requiredResources,
+            String resourceDescription,
+            String variableName,
+            boolean inversePrecedence,
+            int priority) {
+<span class="nc" id="L1877">        queueContext(</span>
+                context,
+                requiredResources,
+                resourceDescription,
+                variableName,
+                inversePrecedence,
+                priority,
+                null,
+                0,
+                &quot;MINUTES&quot;);
+<span class="nc" id="L1887">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /*
+     * Adds the given context and the required resources to the queue if
+     * this context is not yet queued, with reason and timeout for resource allocation.
+     */
+    @Restricted(NoExternalUse.class)
+    public void queueContext(
+            StepContext context,
+            List&lt;LockableResourcesStruct&gt; requiredResources,
+            String resourceDescription,
+            String variableName,
+            boolean inversePrecedence,
+            int priority,
+            String reason,
+            long timeoutForAllocateResource,
+            String timeoutUnit) {
+<span class="fc" id="L1905">        synchronized (syncResources) {</span>
+<span class="pc bpc" id="L1906" title="1 of 2 branches missed.">            for (QueuedContextStruct entry : this.queuedContexts) {</span>
+<span class="nc bnc" id="L1907" title="All 2 branches missed.">                if (entry.getContext() == context) {</span>
+<span class="nc" id="L1908">                    LOGGER.warning(&quot;queueContext, duplicated, &quot; + requiredResources);</span>
+<span class="nc" id="L1909">                    return;</span>
+                }
+<span class="nc" id="L1911">            }</span>
+
+<span class="fc" id="L1913">            int queueIndex = 0;</span>
+<span class="fc" id="L1914">            QueuedContextStruct newQueueItem = new QueuedContextStruct(</span>
+                    context,
+                    requiredResources,
+                    resourceDescription,
+                    variableName,
+                    priority,
+                    reason,
+                    timeoutForAllocateResource,
+                    timeoutUnit);
+
+<span class="pc bpc" id="L1924" title="3 of 4 branches missed.">            if (!inversePrecedence || priority != 0) {</span>
+<span class="fc" id="L1925">                queueIndex = this.queuedContexts.size() - 1;</span>
+<span class="pc bpc" id="L1926" title="1 of 2 branches missed.">                for (; queueIndex &gt;= 0; queueIndex--) {</span>
+<span class="nc" id="L1927">                    QueuedContextStruct entry = this.queuedContexts.get(queueIndex);</span>
+<span class="nc" id="L1928">                    final int rc = entry.compare(newQueueItem);</span>
+<span class="nc bnc" id="L1929" title="All 2 branches missed.">                    if (rc &gt; 0) {</span>
+<span class="nc" id="L1930">                        continue;</span>
+                    }
+                    break;
+                }
+<span class="fc" id="L1934">                queueIndex++;</span>
+            }
+
+<span class="fc" id="L1937">            this.queuedContexts.add(queueIndex, newQueueItem);</span>
+<span class="fc" id="L1938">            printLogs(</span>
+                    requiredResources + &quot; added into queue at position &quot; + queueIndex,
+<span class="fc" id="L1940">                    newQueueItem.getLogger(),</span>
+                    Level.FINE);
+
+<span class="fc" id="L1943">            save();</span>
+
+            // If this entry has a timeout and its deadline is earlier than the
+            // currently scheduled one, (re)schedule so it fires on time.
+<span class="fc" id="L1947">            long deadline = newQueueItem.getTimeoutDeadlineMillis();</span>
+<span class="pc bpc" id="L1948" title="5 of 6 branches missed.">            if (deadline &gt; 0 &amp;&amp; (nextTimeoutDeadline == 0 || deadline &lt; nextTimeoutDeadline)) {</span>
+<span class="nc" id="L1949">                scheduleTimeoutAt(deadline);</span>
+            }
+<span class="fc" id="L1951">        }</span>
+<span class="fc" id="L1952">    }</span>
+
+    // ---------------------------------------------------------------------------
+    public boolean unqueueContext(StepContext context) {
+<span class="fc" id="L1956">        synchronized (syncResources) {</span>
+<span class="pc bpc" id="L1957" title="1 of 2 branches missed.">            for (Iterator&lt;QueuedContextStruct&gt; iter = this.queuedContexts.listIterator(); iter.hasNext(); ) {</span>
+<span class="pc bpc" id="L1958" title="1 of 2 branches missed.">                if (iter.next().getContext() == context) {</span>
+<span class="fc" id="L1959">                    iter.remove();</span>
+<span class="fc" id="L1960">                    save();</span>
+<span class="fc" id="L1961">                    return true;</span>
+                }
+            }
+<span class="nc" id="L1964">        }</span>
+<span class="nc" id="L1965">        return false;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    // Remote queue support
+    // ---------------------------------------------------------------------------
+
+    /** Lazy init accessor - always call under {@link #syncResources}. */
+    private List&lt;RemoteQueueEntry&gt; getRemoteQueueEntries() {
+<span class="fc bfc" id="L1974" title="All 2 branches covered.">        if (remoteQueueEntries == null) {</span>
+<span class="fc" id="L1975">            remoteQueueEntries = new ArrayList&lt;&gt;();</span>
+        }
+<span class="fc" id="L1977">        return remoteQueueEntries;</span>
+    }
+
+    /**
+     * Returns a read-only snapshot of current remote queue entries.
+     * Used by the management UI to show remote API waiters alongside local queue entries.
+     */
+    @Restricted(NoExternalUse.class)
+    public List&lt;RemoteQueueEntry&gt; getCurrentRemoteQueueEntries() {
+<span class="nc" id="L1986">        synchronized (syncResources) {</span>
+<span class="nc" id="L1987">            return Collections.unmodifiableList(new ArrayList&lt;&gt;(getRemoteQueueEntries()));</span>
+        }
+    }
+
+    /**
+     * Adds a remote queue entry in priority-descending order (highest priority at front,
+     * matching local pipeline queue ordering). Must be called under {@link #syncResources}.
+     */
+    @Restricted(NoExternalUse.class)
+    public void queueRemote(@NonNull RemoteQueueEntry entry) {
+<span class="fc" id="L1997">        synchronized (syncResources) {</span>
+<span class="fc" id="L1998">            List&lt;RemoteQueueEntry&gt; list = getRemoteQueueEntries();</span>
+            int insertAt;
+<span class="pc bpc" id="L2000" title="3 of 4 branches missed.">            if (entry.getLockRequest().isInversePrecedence() &amp;&amp; entry.getPriority() == 0) {</span>
+                // Same rule as queueContext(): with the default priority, inversePrecedence means &quot;take the
+                // first position&quot;. The flag travels on the wire and is kept on the request, but this queue
+                // used to ignore it, so the very parameter that makes a local lock() jump the queue did
+                // nothing once the request arrived over the bridge.
+<span class="nc" id="L2005">                insertAt = 0;</span>
+            } else {
+<span class="fc" id="L2007">                insertAt = list.size();</span>
+<span class="pc bfc" id="L2008" title="All 2 branches covered.">                for (int i = list.size() - 1; i &gt;= 0; i--) {</span>
+<span class="pc bpc" id="L2009" title="1 of 2 branches missed.">                    if (list.get(i).getPriority() &lt; entry.getPriority()) {</span>
+<span class="nc" id="L2010">                        insertAt = i;</span>
+                    } else {
+                        break;
+                    }
+                }
+            }
+<span class="fc" id="L2016">            list.add(insertAt, entry);</span>
+<span class="fc" id="L2017">            LOGGER.fine(&quot;Remote acquire queued: lockId=&quot; + entry.getLockId() + &quot; priority=&quot; + entry.getPriority()</span>
+                    + &quot; position=&quot; + insertAt);
+
+            // Same as queueContext(): if this entry has a timeout and its deadline is earlier than the
+            // currently scheduled one, (re)schedule so it fires on time. Without this a remote request
+            // computes a deadline that nothing ever wakes up to enforce, so timeoutForAllocateResource
+            // stops being an upper bound on the wait - it only takes effect when a maintenance pass
+            // happens to run for some other reason, such as the holder releasing.
+<span class="fc" id="L2025">            long deadline = entry.getTimeoutDeadlineMillis();</span>
+<span class="pc bpc" id="L2026" title="3 of 6 branches missed.">            if (deadline &gt; 0 &amp;&amp; (nextTimeoutDeadline == 0 || deadline &lt; nextTimeoutDeadline)) {</span>
+<span class="fc" id="L2027">                scheduleTimeoutAt(deadline);</span>
+            }
+<span class="fc" id="L2029">        }</span>
+<span class="fc" id="L2030">    }</span>
+
+    /**
+     * Removes a remote queue entry by lockId (called when the client cancels a QUEUED request
+     * or when a release is received for a QUEUED record). Idempotent.
+     * Must be called under {@link #syncResources}.
+     */
+    @Restricted(NoExternalUse.class)
+    public void unqueueRemote(@NonNull String lockId) {
+<span class="fc" id="L2039">        synchronized (syncResources) {</span>
+<span class="fc" id="L2040">            List&lt;RemoteQueueEntry&gt; list = getRemoteQueueEntries();</span>
+<span class="fc" id="L2041">            list.removeIf(e -&gt; lockId.equals(e.getLockId()));</span>
+<span class="fc" id="L2042">        }</span>
+<span class="fc" id="L2043">    }</span>
+
+    /**
+     * Marks {@code resources} as remotely locked by {@code lockId}.
+     * Equivalent to {@link #lock(List, Run, String)} but uses {@code setRemoteLockedBy()} instead
+     * of {@code setBuild()} so that resources do not require an active Jenkins build.
+     *
+     * @return false if any resource is not free (defensive; caller should have pre-checked)
+     */
+    @Restricted(NoExternalUse.class)
+    public boolean lockForRemote(@NonNull List&lt;LockableResource&gt; resources, @NonNull String lockId) {
+<span class="fc bfc" id="L2054" title="All 2 branches covered.">        for (LockableResource r : resources) {</span>
+<span class="pc bpc" id="L2055" title="1 of 2 branches missed.">            if (!r.isFree()) {</span>
+<span class="nc" id="L2056">                LOGGER.warning(&quot;lockForRemote: resource &quot; + r.getName() + &quot; is not free, lockId=&quot; + lockId);</span>
+<span class="nc" id="L2057">                return false;</span>
+            }
+<span class="fc" id="L2059">        }</span>
+<span class="fc bfc" id="L2060" title="All 2 branches covered.">        for (LockableResource r : resources) {</span>
+<span class="fc" id="L2061">            r.unqueue();</span>
+<span class="fc" id="L2062">            r.setRemoteLockedBy(lockId);</span>
+<span class="fc" id="L2063">            audit(&quot;REMOTE&quot;, &quot;ACQUIRED&quot;, r.getName(), lockId);</span>
+<span class="fc" id="L2064">        }</span>
+<span class="fc" id="L2065">        save();</span>
+<span class="fc" id="L2066">        return true;</span>
+    }
+
+    /**
+     * Frees remotely locked resources and wakes any waiters (local or remote).
+     * Equivalent to {@link #unlockResources(List, Run)} but for remote locks.
+     */
+    @Restricted(NoExternalUse.class)
+    public void unlockRemoteResources(@NonNull List&lt;String&gt; resourceNames, @NonNull String lockId) {
+<span class="fc" id="L2075">        synchronized (syncResources) {</span>
+<span class="fc bfc" id="L2076" title="All 2 branches covered.">            for (String name : resourceNames) {</span>
+<span class="fc" id="L2077">                LockableResource r = fromName(name);</span>
+<span class="pc bpc" id="L2078" title="2 of 4 branches missed.">                if (r != null &amp;&amp; lockId.equals(r.getRemoteLockedBy())) {</span>
+<span class="fc" id="L2079">                    r.setRemoteLockedBy(null);</span>
+<span class="fc" id="L2080">                    audit(&quot;REMOTE&quot;, &quot;RELEASED&quot;, name, lockId);</span>
+                }
+<span class="fc" id="L2082">            }</span>
+<span class="fc bfc" id="L2083" title="All 2 branches covered.">            while (proceedNextContext()) {</span>
+                // drain all newly satisfiable waiters
+            }
+<span class="fc" id="L2086">            save();</span>
+<span class="fc" id="L2087">        }</span>
+<span class="fc" id="L2088">        scheduleQueueMaintenance();</span>
+<span class="fc" id="L2089">    }</span>
+
+    // ---------------------------------------------------------------------------
+    public static LockableResourcesManager get() {
+<span class="fc" id="L2093">        LockableResourcesManager mgr = GlobalConfiguration.all().get(LockableResourcesManager.class);</span>
+<span class="pc bpc" id="L2094" title="1 of 2 branches missed.">        if (mgr == null) {</span>
+<span class="nc" id="L2095">            mgr = Jenkins.get().getDescriptorByType(LockableResourcesManager.class);</span>
+        }
+<span class="pc bpc" id="L2097" title="1 of 2 branches missed.">        if (mgr == null) {</span>
+<span class="nc" id="L2098">            throw new IllegalStateException(&quot;LockableResourcesManager is not registered&quot;);</span>
+        }
+<span class="fc" id="L2100">        return mgr;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Trigger an immediate Queue re-evaluation so items waiting for lockable
+     * resources are dispatched as soon as resources become available, instead of
+     * waiting for the next 5-second timer tick.
+     * &lt;p&gt;
+     * Must be called &lt;b&gt;outside&lt;/b&gt; {@code synchronized(syncResources)} to avoid
+     * holding the plugin lock while Jenkins acquires the Queue lock.
+     */
+    public static void scheduleQueueMaintenance() {
+<span class="fc" id="L2113">        Jenkins j = Jenkins.getInstanceOrNull();</span>
+<span class="pc bpc" id="L2114" title="1 of 2 branches missed.">        if (j != null) {</span>
+<span class="fc" id="L2115">            j.getQueue().scheduleMaintenance();</span>
+        }
+<span class="fc" id="L2117">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Refresh the queue to allow waiting jobs to re-evaluate available resources.
+     * &lt;p&gt;
+     * This method should be called after modifying labels on existing resources,
+     * as label changes do not automatically trigger queue re-evaluation.
+     * &lt;p&gt;
+     * It performs the following actions:
+     * &lt;ol&gt;
+     *   &lt;li&gt;Invalidates the cached resource candidates&lt;/li&gt;
+     *   &lt;li&gt;Processes waiting pipeline job contexts&lt;/li&gt;
+     *   &lt;li&gt;Triggers Jenkins queue maintenance for freestyle jobs&lt;/li&gt;
+     * &lt;/ol&gt;
+     */
+    public void refreshQueue() {
+        // Invalidate cached candidates so waiting jobs re-evaluate with current labels
+<span class="nc" id="L2135">        cachedCandidates.invalidateAll();</span>
+
+        // Process waiting pipeline jobs (also handles timeouts)
+<span class="nc" id="L2138">        synchronized (syncResources) {</span>
+<span class="nc bnc" id="L2139" title="All 2 branches missed.">            while (proceedNextContext()) {</span>
+                // process as many contexts as possible
+            }
+<span class="nc" id="L2142">        }</span>
+
+        // Notify Jenkins queue for freestyle jobs
+<span class="nc" id="L2145">        scheduleQueueMaintenance();</span>
+<span class="nc" id="L2146">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Checks for timed-out entries in the pipeline lock queue and fails them.
+     * Called by {@link org.jenkins.plugins.lockableresources.queue.LockWaitTimeoutPeriodicWork}
+     * as a safety net.
+     */
+    @Restricted(NoExternalUse.class)
+    public void checkTimeouts() {
+<span class="fc" id="L2156">        synchronized (syncResources) {</span>
+            // proceedNextContext → getNextQueuedContext handles timeouts + rescheduling
+<span class="pc bpc" id="L2158" title="1 of 2 branches missed.">            while (proceedNextContext()) {</span>
+                // process as many contexts as possible
+            }
+<span class="fc" id="L2161">        }</span>
+<span class="fc" id="L2162">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Schedules (or reschedules) the single timeout task to fire at the given
+     * deadline. If {@code deadline} is {@link Long#MAX_VALUE} the current task
+     * is cancelled and nothing new is scheduled.
+     * Must be called while holding {@link #syncResources}.
+     */
+    private void scheduleTimeoutAt(long deadline) {
+        // Cancel the current task — we will either replace it or clear it
+<span class="pc bpc" id="L2173" title="1 of 2 branches missed.">        if (nextTimeoutTask != null) {</span>
+<span class="nc" id="L2174">            nextTimeoutTask.cancel(false);</span>
+<span class="nc" id="L2175">            nextTimeoutTask = null;</span>
+<span class="nc" id="L2176">            nextTimeoutDeadline = 0;</span>
+        }
+
+<span class="pc bpc" id="L2179" title="1 of 4 branches missed.">        if (deadline == Long.MAX_VALUE || deadline &lt;= 0) {</span>
+<span class="fc" id="L2180">            return;</span>
+        }
+
+<span class="fc" id="L2183">        nextTimeoutDeadline = deadline;</span>
+        // Small buffer so the deadline has definitely passed when we check
+<span class="fc" id="L2185">        long delayMs = Math.max(0, deadline - System.currentTimeMillis()) + 500L;</span>
+<span class="fc" id="L2186">        LOGGER.fine(&quot;Scheduling timeout check in &quot; + delayMs + &quot;ms&quot;);</span>
+<span class="fc" id="L2187">        nextTimeoutTask = jenkins.util.Timer.get()</span>
+<span class="fc" id="L2188">                .schedule(</span>
+                        () -&gt; {
+<span class="fc" id="L2190">                            LOGGER.fine(&quot;Scheduled timeout check fired&quot;);</span>
+<span class="fc" id="L2191">                            synchronized (syncResources) {</span>
+<span class="fc" id="L2192">                                nextTimeoutDeadline = 0;</span>
+<span class="fc" id="L2193">                                nextTimeoutTask = null;</span>
+<span class="pc bpc" id="L2194" title="1 of 2 branches missed.">                                while (proceedNextContext()) {</span>
+                                    // process as many contexts as possible
+                                }
+<span class="fc" id="L2197">                            }</span>
+<span class="fc" id="L2198">                        },</span>
+                        delayMs,
+                        java.util.concurrent.TimeUnit.MILLISECONDS);
+<span class="fc" id="L2201">    }</span>
+
+    // ---------------------------------------------------------------------------
+    private AtomicBoolean getSavePending() {
+<span class="fc" id="L2205">        AtomicBoolean sp = savePending;</span>
+<span class="fc bfc" id="L2206" title="All 2 branches covered.">        if (sp == null) {</span>
+<span class="fc" id="L2207">            synchronized (this) {</span>
+<span class="fc" id="L2208">                sp = savePending;</span>
+<span class="pc bpc" id="L2209" title="1 of 2 branches missed.">                if (sp == null) {</span>
+<span class="fc" id="L2210">                    savePending = sp = new AtomicBoolean(false);</span>
+                }
+<span class="fc" id="L2212">            }</span>
+        }
+<span class="fc" id="L2214">        return sp;</span>
+    }
+
+    private ScheduledExecutorService getSaveExecutor() {
+<span class="fc" id="L2218">        ScheduledExecutorService se = saveExecutor;</span>
+<span class="fc bfc" id="L2219" title="All 2 branches covered.">        if (se == null) {</span>
+<span class="fc" id="L2220">            synchronized (this) {</span>
+<span class="fc" id="L2221">                se = saveExecutor;</span>
+<span class="pc bpc" id="L2222" title="1 of 2 branches missed.">                if (se == null) {</span>
+<span class="fc" id="L2223">                    saveExecutor = se = Executors.newSingleThreadScheduledExecutor(r -&gt; {</span>
+<span class="fc" id="L2224">                        Thread t = new Thread(r, &quot;lockable-resources-async-save&quot;);</span>
+<span class="fc" id="L2225">                        t.setDaemon(true);</span>
+<span class="fc" id="L2226">                        return t;</span>
+                    });
+                }
+<span class="fc" id="L2229">            }</span>
+        }
+<span class="fc" id="L2231">        return se;</span>
+    }
+
+    @Override
+    public void save() {
+<span class="fc bfc" id="L2236" title="All 2 branches covered.">        if (enableSave == -1) {</span>
+            // read system property and cache it.
+<span class="pc bpc" id="L2238" title="1 of 2 branches missed.">            enableSave = SystemProperties.getBoolean(Constants.SYSTEM_PROPERTY_DISABLE_SAVE) ? 0 : 1;</span>
+        }
+
+<span class="pc bpc" id="L2241" title="1 of 2 branches missed.">        if (enableSave == 0) return; // saving is disabled</span>
+
+<span class="pc bpc" id="L2243" title="1 of 2 branches missed.">        if (BulkChange.contains(this)) return;</span>
+
+<span class="pc bpc" id="L2245" title="2 of 4 branches missed.">        if (asyncSaveEnabled &amp;&amp; saveCoalesceMs &gt; 0) {</span>
+<span class="fc bfc" id="L2246" title="All 2 branches covered.">            if (getSavePending().compareAndSet(false, true)) {</span>
+<span class="fc" id="L2247">                getSaveExecutor().schedule(this::doSave, saveCoalesceMs, TimeUnit.MILLISECONDS);</span>
+            }
+        } else {
+<span class="nc" id="L2250">            doSave();</span>
+        }
+<span class="fc" id="L2252">    }</span>
+
+    private void doSave() {
+<span class="fc" id="L2255">        getSavePending().set(false);</span>
+<span class="fc" id="L2256">        synchronized (syncResources) {</span>
+            try {
+<span class="fc" id="L2258">                getConfigFile().write(this);</span>
+<span class="nc" id="L2259">            } catch (IOException e) {</span>
+<span class="nc" id="L2260">                LOGGER.log(Level.WARNING, &quot;Failed to save &quot; + getConfigFile(), e);</span>
+<span class="fc" id="L2261">            }</span>
+<span class="fc" id="L2262">        }</span>
+<span class="fc" id="L2263">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Flush any pending async save during Jenkins shutdown so that lock state
+     * is never lost on an orderly restart.
+     */
+    @Terminator
+    public static void flushPendingSave() {
+<span class="nc" id="L2272">        LockableResourcesManager lrm = GlobalConfiguration.all().get(LockableResourcesManager.class);</span>
+<span class="nc bnc" id="L2273" title="All 2 branches missed.">        if (lrm == null) {</span>
+<span class="nc" id="L2274">            return;</span>
+        }
+<span class="nc" id="L2276">        ScheduledExecutorService se = lrm.saveExecutor;</span>
+<span class="nc bnc" id="L2277" title="All 2 branches missed.">        if (se != null) {</span>
+<span class="nc" id="L2278">            se.shutdownNow();</span>
+        }
+<span class="nc bnc" id="L2280" title="All 4 branches missed.">        if (lrm.savePending != null &amp;&amp; lrm.savePending.compareAndSet(true, false)) {</span>
+<span class="nc" id="L2281">            lrm.doSave();</span>
+<span class="nc" id="L2282">            LOGGER.fine(&quot;Flushed pending async save during shutdown&quot;);</span>
+        }
+<span class="nc" id="L2284">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /** For testing purpose. */
+    @Restricted(NoExternalUse.class)
+    public LockableResource getFirst() {
+<span class="nc" id="L2290">        return this.getResources().get(0);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

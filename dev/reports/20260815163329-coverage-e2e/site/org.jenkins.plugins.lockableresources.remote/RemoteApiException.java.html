@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RemoteApiException.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources.remote</a> &gt; <span class="el_source">RemoteApiException.java</span></div><h1>RemoteApiException.java</h1><pre class="source lang-java linenums">/*
+ * The MIT License
+ *
+ * See the &quot;LICENSE.txt&quot; file for full copyright and license information.
+ */
+package org.jenkins.plugins.lockableresources.remote;
+
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import java.io.IOException;
+
+/**
+ * Exception from remote API communication.
+ */
+public class RemoteApiException extends IOException {
+
+    private final int httpStatus;
+    private final String serverId;
+    private final String remoteCode;
+
+    public RemoteApiException(String message, int httpStatus, String serverId, String remoteCode) {
+<span class="fc" id="L21">        super(message);</span>
+<span class="fc" id="L22">        this.httpStatus = httpStatus;</span>
+<span class="fc" id="L23">        this.serverId = serverId;</span>
+<span class="fc" id="L24">        this.remoteCode = remoteCode;</span>
+<span class="fc" id="L25">    }</span>
+
+    public RemoteApiException(String message, Throwable cause, String serverId) {
+<span class="fc" id="L28">        super(message, cause);</span>
+<span class="fc" id="L29">        this.httpStatus = -1;</span>
+<span class="fc" id="L30">        this.serverId = serverId;</span>
+<span class="fc" id="L31">        this.remoteCode = null;</span>
+<span class="fc" id="L32">    }</span>
+
+    public int getHttpStatus() {
+<span class="fc" id="L35">        return httpStatus;</span>
+    }
+
+    public String getServerId() {
+<span class="nc" id="L39">        return serverId;</span>
+    }
+
+    @CheckForNull
+    public String getRemoteCode() {
+<span class="nc" id="L44">        return remoteCode;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

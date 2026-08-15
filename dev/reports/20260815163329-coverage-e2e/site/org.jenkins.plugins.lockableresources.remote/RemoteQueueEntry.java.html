@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RemoteQueueEntry.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources.remote</a> &gt; <span class="el_source">RemoteQueueEntry.java</span></div><h1>RemoteQueueEntry.java</h1><pre class="source lang-java linenums">/*
+ * The MIT License
+ *
+ * See the &quot;LICENSE.txt&quot; file for full copyright and license information.
+ */
+package org.jenkins.plugins.lockableresources.remote;
+
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import org.jenkins.plugins.lockableresources.LockableResource;
+import org.jenkins.plugins.lockableresources.LockableResourcesManager;
+import org.jenkins.plugins.lockableresources.queue.LockableResourcesStruct;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
+
+/**
+ * Remote-lock counterpart to {@link org.jenkins.plugins.lockableresources.queue.QueuedContextStruct}.
+ *
+ * &lt;p&gt;Holds a pending remote acquire request in the LRM queue so that remote locks participate in the same
+ * priority-sorted queue as local pipeline {@code lock()} steps. The request's requirements are carried as
+ * the same {@link LockableResourcesStruct} list local lock() uses, so queue promotion resolves through the
+ * canonical {@code getAvailableResources} path.
+ *
+ * &lt;p&gt;All access must be under {@code LockableResourcesManager.syncResources}.
+ */
+@Restricted(NoExternalUse.class)
+public final class RemoteQueueEntry {
+
+    @NonNull
+    private final RemoteLockRecord record;
+
+    /** Canonical requirements (main + extra), mirroring {@code LockStep.getResources()}. */
+    @NonNull
+    private final List&lt;LockableResourcesStruct&gt; structs;
+
+    private final int priority;
+    private final long timeoutDeadlineMillis;
+
+    /** Resources resolved by the LRM queue scan, ready to be locked on promotion. */
+    private transient List&lt;LockableResource&gt; resolved;
+
+    public RemoteQueueEntry(
+            @NonNull RemoteLockRecord record,
+            @NonNull List&lt;LockableResourcesStruct&gt; structs,
+            int priority,
+            long timeoutForAllocateResource,
+<span class="fc" id="L49">            @NonNull String timeoutUnit) {</span>
+<span class="fc" id="L50">        this.record = record;</span>
+<span class="fc" id="L51">        this.structs = structs;</span>
+<span class="fc" id="L52">        this.priority = priority;</span>
+<span class="fc bfc" id="L53" title="All 2 branches covered.">        if (timeoutForAllocateResource &gt; 0) {</span>
+            long deadlineMs;
+            try {
+<span class="fc" id="L56">                TimeUnit tu = TimeUnit.valueOf(timeoutUnit.toUpperCase(java.util.Locale.ENGLISH));</span>
+<span class="fc" id="L57">                deadlineMs = System.currentTimeMillis() + tu.toMillis(timeoutForAllocateResource);</span>
+<span class="nc" id="L58">            } catch (IllegalArgumentException e) {</span>
+<span class="nc" id="L59">                deadlineMs = 0;</span>
+<span class="fc" id="L60">            }</span>
+<span class="fc" id="L61">            this.timeoutDeadlineMillis = deadlineMs;</span>
+<span class="fc" id="L62">        } else {</span>
+<span class="fc" id="L63">            this.timeoutDeadlineMillis = 0;</span>
+        }
+<span class="fc" id="L65">    }</span>
+
+    @NonNull
+    public RemoteLockRecord getRecord() {
+<span class="nc" id="L69">        return record;</span>
+    }
+
+    @NonNull
+    public List&lt;LockableResourcesStruct&gt; getStructs() {
+<span class="fc" id="L74">        return structs;</span>
+    }
+
+    @NonNull
+    public String getLockId() {
+<span class="fc" id="L79">        return record.getLockId();</span>
+    }
+
+    public int getPriority() {
+<span class="fc" id="L83">        return priority;</span>
+    }
+
+    public long getTimeoutDeadlineMillis() {
+<span class="fc" id="L87">        return timeoutDeadlineMillis;</span>
+    }
+
+    @CheckForNull
+    public List&lt;LockableResource&gt; getResolved() {
+<span class="fc" id="L92">        return resolved;</span>
+    }
+
+    public void setResolved(@NonNull List&lt;LockableResource&gt; resolved) {
+<span class="fc" id="L96">        this.resolved = resolved;</span>
+<span class="fc" id="L97">    }</span>
+
+    public boolean isValid() {
+<span class="pc bpc" id="L100" title="1 of 2 branches missed.">        return record.getState() == RemoteLockState.QUEUED;</span>
+    }
+
+    public boolean isTimedOut() {
+<span class="pc bpc" id="L104" title="1 of 4 branches missed.">        return timeoutDeadlineMillis &gt; 0 &amp;&amp; System.currentTimeMillis() &gt; timeoutDeadlineMillis;</span>
+    }
+
+    /**
+     * Called when {@code resources} have been allocated. Transitions the record to ACQUIRED and builds
+     * {@code lockEnvVars} (including resource-property env vars) via {@link RemoteResolver#remoteLockEnvVars}
+     * - the same helper the immediate-acquire path uses, so both paths produce identical env vars
+     * (shared with local {@code lock()} through {@code LockStepExecution.buildLockEnvVars}).
+     */
+    public void onAcquired(@NonNull List&lt;LockableResource&gt; resources) {
+<span class="fc" id="L114">        record.markAcquired(</span>
+<span class="fc" id="L115">                LockableResourcesManager.getResourcesNames(resources),</span>
+<span class="fc" id="L116">                RemoteResolver.remoteLockEnvVars(record.getLockRequest().getVariable(), resources));</span>
+<span class="fc" id="L117">    }</span>
+
+    /** Called when the queue timeout expires. Transitions the record to FAILED. */
+    public void onTimeout() {
+<span class="fc" id="L121">        record.markFailed(&quot;LOCK_WAIT_TIMEOUT&quot;);</span>
+<span class="fc" id="L122">    }</span>
+
+    @NonNull
+    public RemoteLockRequest getLockRequest() {
+<span class="fc" id="L126">        return record.getLockRequest();</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L131">        return &quot;RemoteQueueEntry{lockId=&quot; + record.getLockId()</span>
+                + &quot;, priority=&quot; + priority
+<span class="fc" id="L133">                + &quot;, state=&quot; + record.getState() + &quot;}&quot;;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

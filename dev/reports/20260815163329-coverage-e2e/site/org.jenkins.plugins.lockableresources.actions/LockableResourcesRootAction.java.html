@@ -1,0 +1,1632 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LockableResourcesRootAction.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources.actions</a> &gt; <span class="el_source">LockableResourcesRootAction.java</span></div><h1>LockableResourcesRootAction.java</h1><pre class="source lang-java linenums">package org.jenkins.plugins.lockableresources.actions;
+
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
+import hudson.Extension;
+import hudson.ExtensionList;
+import hudson.Util;
+import hudson.model.Api;
+import hudson.model.Descriptor;
+import hudson.model.RootAction;
+import hudson.model.Run;
+import hudson.security.AccessDeniedException3;
+import hudson.security.Permission;
+import hudson.security.PermissionGroup;
+import hudson.security.PermissionScope;
+import jakarta.servlet.ServletException;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import jenkins.model.Jenkins;
+import org.jenkins.plugins.lockableresources.FreeDeadJobs;
+import org.jenkins.plugins.lockableresources.LockableResource;
+import org.jenkins.plugins.lockableresources.LockableResourceProperty;
+import org.jenkins.plugins.lockableresources.LockableResourcesManager;
+import org.jenkins.plugins.lockableresources.Messages;
+import org.jenkins.plugins.lockableresources.RemoteConnection;
+import org.jenkins.plugins.lockableresources.queue.LockableResourcesStruct;
+import org.jenkins.plugins.lockableresources.queue.QueuedContextStruct;
+import org.jenkins.plugins.lockableresources.remote.RemoteCatalog;
+import org.jenkins.plugins.lockableresources.remote.RemoteCatalogCache;
+import org.jenkins.plugins.lockableresources.remote.RemoteClientRegistry;
+import org.jenkins.plugins.lockableresources.remote.RemoteLockManager;
+import org.jenkins.plugins.lockableresources.remote.RemoteLockRequest;
+import org.jenkins.plugins.lockableresources.remote.RemoteQueueEntry;
+import org.jenkinsci.plugins.scriptsecurity.sandbox.groovy.SecureGroovyScript;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
+import org.kohsuke.stapler.StaplerRequest2;
+import org.kohsuke.stapler.StaplerResponse2;
+import org.kohsuke.stapler.export.Exported;
+import org.kohsuke.stapler.export.ExportedBean;
+import org.kohsuke.stapler.interceptor.RequirePOST;
+import org.kohsuke.stapler.verb.GET;
+
+@Extension
+@ExportedBean
+<span class="fc" id="L57">public class LockableResourcesRootAction implements RootAction {</span>
+
+<span class="fc" id="L59">    private static final Logger LOGGER = Logger.getLogger(LockableResourcesRootAction.class.getName());</span>
+
+<span class="fc" id="L61">    public static final PermissionGroup PERMISSIONS_GROUP = new PermissionGroup(</span>
+<span class="fc" id="L62">            LockableResourcesManager.class, Messages._LockableResourcesRootAction_PermissionGroup());</span>
+<span class="fc" id="L63">    public static final Permission UNLOCK = new Permission(</span>
+            PERMISSIONS_GROUP,
+            &quot;Unlock&quot;,
+<span class="fc" id="L66">            Messages._LockableResourcesRootAction_UnlockPermission_Description(),</span>
+            Jenkins.ADMINISTER,
+            PermissionScope.JENKINS);
+<span class="fc" id="L69">    public static final Permission RESERVE = new Permission(</span>
+            PERMISSIONS_GROUP,
+            &quot;Reserve&quot;,
+<span class="fc" id="L72">            Messages._LockableResourcesRootAction_ReservePermission_Description(),</span>
+            Jenkins.ADMINISTER,
+            PermissionScope.JENKINS);
+<span class="fc" id="L75">    public static final Permission STEAL = new Permission(</span>
+            PERMISSIONS_GROUP,
+            &quot;Steal&quot;,
+<span class="fc" id="L78">            Messages._LockableResourcesRootAction_StealPermission_Description(),</span>
+            Jenkins.ADMINISTER,
+            PermissionScope.JENKINS);
+<span class="fc" id="L81">    public static final Permission VIEW = new Permission(</span>
+            PERMISSIONS_GROUP,
+            &quot;View&quot;,
+<span class="fc" id="L84">            Messages._LockableResourcesRootAction_ViewPermission_Description(),</span>
+            Jenkins.READ,
+            PermissionScope.JENKINS);
+<span class="fc" id="L87">    public static final Permission QUEUE = new Permission(</span>
+            PERMISSIONS_GROUP,
+            &quot;Queue&quot;,
+<span class="fc" id="L90">            Messages._LockableResourcesRootAction_QueueChangeOrderPermission_Description(),</span>
+            Jenkins.ADMINISTER,
+            PermissionScope.JENKINS);
+<span class="fc" id="L93">    public static final Permission CONFIGURE = new Permission(</span>
+            PERMISSIONS_GROUP,
+            &quot;Configure&quot;,
+<span class="fc" id="L96">            Messages._LockableResourcesRootAction_ConfigurePermission_Description(),</span>
+            Jenkins.ADMINISTER,
+            PermissionScope.JENKINS);
+    /**
+     * Gates the remote lock REST API ({@code /lockable-resources/remote/v1/}).
+     * Grant this to the machine users whose API tokens remote client controllers
+     * use as {@code credentialsId}; this makes remote clients auditable in the
+     * authorization matrix instead of being implied by plain READ.
+     */
+<span class="fc" id="L105">    public static final Permission REMOTE = new Permission(</span>
+            PERMISSIONS_GROUP,
+            &quot;RemoteUse&quot;,
+<span class="fc" id="L108">            Messages._LockableResourcesRootAction_RemoteUsePermission_Description(),</span>
+            Jenkins.ADMINISTER,
+            PermissionScope.JENKINS);
+
+    public static final String ICON = &quot;symbol-lock-closed&quot;;
+
+    @CheckForNull
+    @Override
+    public String getIconFileName() {
+<span class="pc bpc" id="L117" title="1 of 2 branches missed.">        return Jenkins.get().hasPermission(VIEW) ? ICON : null;</span>
+    }
+
+    /**
+     * Returns the ManagementLink instance for use by the Jelly view when rendering
+     * within the Manage Jenkins layout.
+     * Used by {@code index.jelly}.
+     */
+    @Restricted(NoExternalUse.class)
+    public LockableResourcesManagementLink getManagementLink() {
+<span class="nc" id="L127">        return ExtensionList.lookupSingleton(LockableResourcesManagementLink.class);</span>
+    }
+
+    public Api getApi() {
+<span class="fc" id="L131">        return new Api(this);</span>
+    }
+
+    @CheckForNull
+    public String getUserName() {
+<span class="fc" id="L136">        return LockableResource.getUserName();</span>
+    }
+
+    @CheckForNull
+    @Override
+    public String getDisplayName() {
+<span class="pc bpc" id="L142" title="1 of 2 branches missed.">        return Jenkins.get().hasPermission(VIEW) ? Messages.LockableResourcesRootAction_PermissionGroup() : null;</span>
+    }
+
+    @Override
+    public String getUrlName() {
+<span class="fc" id="L147">        return &quot;lockable-resources&quot;;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    private static String formatDuration(long millis) {
+<span class="fc" id="L152">        long seconds = millis / 1000;</span>
+<span class="fc bfc" id="L153" title="All 2 branches covered.">        if (seconds &lt; 60) return seconds + &quot;s&quot;;</span>
+<span class="fc" id="L154">        long minutes = seconds / 60;</span>
+<span class="pc bpc" id="L155" title="1 of 2 branches missed.">        if (minutes &lt; 60) return minutes + &quot;m&quot;;</span>
+<span class="nc" id="L156">        long hours = minutes / 60;</span>
+<span class="nc" id="L157">        long remainingMin = minutes % 60;</span>
+<span class="nc bnc" id="L158" title="All 2 branches missed.">        if (hours &lt; 24) return hours + &quot;h &quot; + remainingMin + &quot;m&quot;;</span>
+<span class="nc" id="L159">        long days = hours / 24;</span>
+<span class="nc" id="L160">        long remainingHours = hours % 24;</span>
+<span class="nc" id="L161">        return days + &quot;d &quot; + remainingHours + &quot;h&quot;;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Returns a summary of resource states for the overview tab. */
+    @Restricted(NoExternalUse.class) // used by jelly
+    public Summary getSummary() {
+<span class="fc" id="L168">        Jenkins.get().checkPermission(VIEW);</span>
+
+<span class="fc" id="L170">        int locked = 0;</span>
+<span class="fc" id="L171">        int reserved = 0;</span>
+<span class="fc" id="L172">        int queued = 0;</span>
+<span class="fc" id="L173">        int free = 0;</span>
+<span class="fc" id="L174">        int total = 0;</span>
+
+<span class="fc bfc" id="L176" title="All 2 branches covered.">        for (LockableResource r : LockableResourcesManager.get().getReadOnlyResources()) {</span>
+<span class="fc" id="L177">            total++;</span>
+<span class="pc bpc" id="L178" title="1 of 2 branches missed.">            if (r.getReservedBy() != null) {</span>
+<span class="nc" id="L179">                reserved++;</span>
+<span class="pc bpc" id="L180" title="1 of 2 branches missed.">            } else if (r.isLocked()) {</span>
+<span class="nc" id="L181">                locked++;</span>
+            } else {
+                // Queued resources are counted as free since the queued state
+                // is transient and nearly invisible in practice.
+<span class="fc" id="L185">                free++;</span>
+            }
+<span class="fc" id="L187">        }</span>
+
+<span class="fc" id="L189">        int queueItems = 0;</span>
+<span class="fc" id="L190">        int distinctBuildsWaiting = 0;</span>
+<span class="fc" id="L191">        String oldestBuildName = null;</span>
+<span class="fc" id="L192">        String oldestBuildUrl = null;</span>
+<span class="fc" id="L193">        long oldestQueuedAt = Long.MAX_VALUE;</span>
+<span class="fc" id="L194">        Map&lt;String, Integer&gt; resourceDemand = new HashMap&lt;&gt;();</span>
+<span class="pc bpc" id="L195" title="1 of 2 branches missed.">        for (QueuedContextStruct context : LockableResourcesManager.get().getCurrentQueuedContext()) {</span>
+<span class="nc" id="L196">            queueItems += context.getResources().size();</span>
+<span class="nc" id="L197">            distinctBuildsWaiting++;</span>
+<span class="nc" id="L198">            Run&lt;?, ?&gt; run = context.getBuild();</span>
+<span class="nc bnc" id="L199" title="All 2 branches missed.">            for (LockableResourcesStruct rs : context.getResources()) {</span>
+<span class="nc bnc" id="L200" title="All 4 branches missed.">                if (rs.queuedAt &gt; 0 &amp;&amp; rs.queuedAt &lt; oldestQueuedAt) {</span>
+<span class="nc" id="L201">                    oldestQueuedAt = rs.queuedAt;</span>
+<span class="nc bnc" id="L202" title="All 2 branches missed.">                    oldestBuildName = (run != null) ? run.getFullDisplayName() : null;</span>
+<span class="nc bnc" id="L203" title="All 2 branches missed.">                    oldestBuildUrl = (run != null) ? run.getUrl() : null;</span>
+                }
+<span class="nc bnc" id="L205" title="All 2 branches missed.">                for (LockableResource r : rs.required) {</span>
+<span class="nc" id="L206">                    resourceDemand.merge(r.getName(), 1, (a, b) -&gt; a + b);</span>
+<span class="nc" id="L207">                }</span>
+<span class="nc" id="L208">            }</span>
+<span class="nc" id="L209">        }</span>
+<span class="fc" id="L210">        String oldestWaitTime = null;</span>
+<span class="pc bpc" id="L211" title="3 of 4 branches missed.">        if (oldestBuildName != null &amp;&amp; oldestQueuedAt &lt; Long.MAX_VALUE) {</span>
+<span class="nc" id="L212">            long elapsed = System.currentTimeMillis() - oldestQueuedAt;</span>
+<span class="nc" id="L213">            oldestWaitTime = formatDuration(elapsed);</span>
+        }
+<span class="fc" id="L215">        String mostContendedResource = null;</span>
+<span class="fc" id="L216">        int mostContendedCount = 0;</span>
+<span class="pc bpc" id="L217" title="1 of 2 branches missed.">        for (Map.Entry&lt;String, Integer&gt; entry : resourceDemand.entrySet()) {</span>
+<span class="nc bnc" id="L218" title="All 2 branches missed.">            if (entry.getValue() &gt; mostContendedCount) {</span>
+<span class="nc" id="L219">                mostContendedCount = entry.getValue();</span>
+<span class="nc" id="L220">                mostContendedResource = entry.getKey();</span>
+            }
+<span class="nc" id="L222">        }</span>
+
+<span class="fc" id="L224">        int labelsCount = getLabelsList().size();</span>
+
+<span class="fc" id="L226">        List&lt;LockableResourcesLabel&gt; topLabels = getLabelsList().values().stream()</span>
+<span class="pc" id="L227">                .sorted((a, b) -&gt; Integer.compare(b.getAssigned(), a.getAssigned()))</span>
+<span class="fc" id="L228">                .limit(3)</span>
+<span class="fc" id="L229">                .collect(Collectors.toList());</span>
+
+<span class="fc" id="L231">        return new Summary(</span>
+                total,
+                locked,
+                reserved,
+                queued,
+                free,
+                queueItems,
+                distinctBuildsWaiting,
+                labelsCount,
+                topLabels,
+                oldestBuildName,
+                oldestBuildUrl,
+                oldestWaitTime,
+                mostContendedResource,
+                mostContendedCount);
+    }
+
+    // ---------------------------------------------------------------------------
+    @Restricted(NoExternalUse.class)
+    public static final class Summary {
+        private final int total;
+        private final int locked;
+        private final int reserved;
+        private final int queued;
+        private final int free;
+        private final int queueItems;
+        private final int distinctBuildsWaiting;
+        private final int labelsCount;
+        private final List&lt;LockableResourcesLabel&gt; topLabels;
+        private final String oldestBuildName;
+        private final String oldestBuildUrl;
+        private final String oldestWaitTime;
+        private final String mostContendedResource;
+        private final int mostContendedCount;
+
+        Summary(
+                int total,
+                int locked,
+                int reserved,
+                int queued,
+                int free,
+                int queueItems,
+                int distinctBuildsWaiting,
+                int labelsCount,
+                List&lt;LockableResourcesLabel&gt; topLabels,
+                String oldestBuildName,
+                String oldestBuildUrl,
+                String oldestWaitTime,
+                String mostContendedResource,
+<span class="fc" id="L280">                int mostContendedCount) {</span>
+<span class="fc" id="L281">            this.total = total;</span>
+<span class="fc" id="L282">            this.locked = locked;</span>
+<span class="fc" id="L283">            this.reserved = reserved;</span>
+<span class="fc" id="L284">            this.queued = queued;</span>
+<span class="fc" id="L285">            this.free = free;</span>
+<span class="fc" id="L286">            this.queueItems = queueItems;</span>
+<span class="fc" id="L287">            this.distinctBuildsWaiting = distinctBuildsWaiting;</span>
+<span class="fc" id="L288">            this.labelsCount = labelsCount;</span>
+<span class="fc" id="L289">            this.topLabels = topLabels;</span>
+<span class="fc" id="L290">            this.oldestBuildName = oldestBuildName;</span>
+<span class="fc" id="L291">            this.oldestBuildUrl = oldestBuildUrl;</span>
+<span class="fc" id="L292">            this.oldestWaitTime = oldestWaitTime;</span>
+<span class="fc" id="L293">            this.mostContendedResource = mostContendedResource;</span>
+<span class="fc" id="L294">            this.mostContendedCount = mostContendedCount;</span>
+<span class="fc" id="L295">        }</span>
+
+        public int getTotal() {
+<span class="fc" id="L298">            return total;</span>
+        }
+
+        public int getLocked() {
+<span class="fc" id="L302">            return locked;</span>
+        }
+
+        public int getReserved() {
+<span class="fc" id="L306">            return reserved;</span>
+        }
+
+        public int getQueued() {
+<span class="nc" id="L310">            return queued;</span>
+        }
+
+        public int getFree() {
+<span class="fc" id="L314">            return free;</span>
+        }
+
+        public int getQueueItems() {
+<span class="fc" id="L318">            return queueItems;</span>
+        }
+
+        public int getDistinctBuildsWaiting() {
+<span class="nc" id="L322">            return distinctBuildsWaiting;</span>
+        }
+
+        public int getLabelsCount() {
+<span class="fc" id="L326">            return labelsCount;</span>
+        }
+
+        public List&lt;LockableResourcesLabel&gt; getTopLabels() {
+<span class="fc" id="L330">            return topLabels;</span>
+        }
+
+        public int getLockedPct() {
+<span class="pc bpc" id="L334" title="1 of 2 branches missed.">            return total &gt; 0 ? (locked * 100) / total : 0;</span>
+        }
+
+        public int getReservedPct() {
+<span class="pc bpc" id="L338" title="1 of 2 branches missed.">            return total &gt; 0 ? (reserved * 100) / total : 0;</span>
+        }
+
+        public int getFreePct() {
+<span class="pc bpc" id="L342" title="1 of 2 branches missed.">            return total &gt; 0 ? (free * 100) / total : 0;</span>
+        }
+
+        public String getOldestBuildName() {
+<span class="nc" id="L346">            return oldestBuildName;</span>
+        }
+
+        public String getOldestBuildUrl() {
+<span class="nc" id="L350">            return oldestBuildUrl;</span>
+        }
+
+        public String getOldestWaitTime() {
+<span class="nc" id="L354">            return oldestWaitTime;</span>
+        }
+
+        public String getMostContendedResource() {
+<span class="nc" id="L358">            return mostContendedResource;</span>
+        }
+
+        public int getMostContendedCount() {
+<span class="nc" id="L362">            return mostContendedCount;</span>
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Get a list of resources
+     *
+     * @return All resources.
+     */
+    @Exported
+    @Restricted(NoExternalUse.class) // used by jelly
+    public List&lt;LockableResource&gt; getResources() {
+<span class="fc" id="L375">        return LockableResourcesManager.get().getReadOnlyResources();</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Get a list of all labels
+     *
+     * @return All possible labels.
+     */
+    @Restricted(NoExternalUse.class) // used by jelly
+    public LinkedHashMap&lt;String, LockableResourcesLabel&gt; getLabelsList() {
+<span class="fc" id="L386">        LinkedHashMap&lt;String, LockableResourcesLabel&gt; map = new LinkedHashMap&lt;&gt;();</span>
+
+<span class="fc bfc" id="L388" title="All 2 branches covered.">        for (LockableResource r : LockableResourcesManager.get().getReadOnlyResources()) {</span>
+<span class="pc bpc" id="L389" title="2 of 4 branches missed.">            if (r == null || r.getName().isEmpty()) {</span>
+<span class="nc" id="L390">                continue; // defensive, shall never happens, but ...</span>
+            }
+<span class="fc" id="L392">            List&lt;String&gt; assignedLabels = r.getLabelsAsList();</span>
+<span class="fc bfc" id="L393" title="All 2 branches covered.">            if (assignedLabels.isEmpty()) {</span>
+<span class="fc" id="L394">                continue;</span>
+            }
+
+<span class="fc bfc" id="L397" title="All 2 branches covered.">            for (String labelString : assignedLabels) {</span>
+<span class="pc bpc" id="L398" title="2 of 4 branches missed.">                if (labelString == null || labelString.isEmpty()) {</span>
+<span class="nc" id="L399">                    continue; // defensive, shall never happens, but ...</span>
+                }
+<span class="fc" id="L401">                LockableResourcesLabel label = map.get(labelString);</span>
+<span class="fc bfc" id="L402" title="All 2 branches covered.">                if (label == null) {</span>
+<span class="fc" id="L403">                    label = new LockableResourcesLabel(labelString);</span>
+                }
+
+<span class="fc" id="L406">                label.update(r);</span>
+
+<span class="fc" id="L408">                map.put(labelString, label);</span>
+<span class="fc" id="L409">            }</span>
+<span class="fc" id="L410">        }</span>
+
+<span class="fc" id="L412">        return map;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    public static class LockableResourcesLabel {
+        String name;
+        int free;
+        int assigned;
+
+        // -------------------------------------------------------------------------
+<span class="fc" id="L422">        public LockableResourcesLabel(String _name) {</span>
+<span class="fc" id="L423">            this.name = _name;</span>
+<span class="fc" id="L424">            this.free = 0;</span>
+<span class="fc" id="L425">            this.assigned = 0;</span>
+<span class="fc" id="L426">        }</span>
+
+        // -------------------------------------------------------------------------
+        public void update(LockableResource resource) {
+<span class="fc" id="L430">            this.assigned++;</span>
+<span class="pc bpc" id="L431" title="1 of 2 branches missed.">            if (resource.isFree()) free++;</span>
+<span class="fc" id="L432">        }</span>
+
+        // -------------------------------------------------------------------------
+        public String getName() {
+<span class="fc" id="L436">            return this.name;</span>
+        }
+
+        // -------------------------------------------------------------------------
+        public int getFree() {
+<span class="fc" id="L441">            return this.free;</span>
+        }
+
+        // -------------------------------------------------------------------------
+        public int getAssigned() {
+<span class="fc" id="L446">            return this.assigned;</span>
+        }
+
+        // -------------------------------------------------------------------------
+        public int getPercentage() {
+<span class="pc bpc" id="L451" title="1 of 2 branches missed.">            if (this.assigned == 0) {</span>
+<span class="nc" id="L452">                return this.assigned;</span>
+            }
+<span class="fc" id="L454">            return (int) ((double) this.free / (double) this.assigned * 100);</span>
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // used by by
+    // src\main\resources\org\jenkins\plugins\lockableresources\actions\LockableResourcesRootAction\tableResources\table.jelly
+    @Restricted(NoExternalUse.class)
+    public LockableResource getResource(final String resourceName) {
+<span class="nc" id="L463">        return LockableResourcesManager.get().fromName(resourceName);</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Get amount of free resources assigned to given *labelString*
+     *
+     * @param labelString Label to search.
+     * @return Amount of free labels.
+     */
+    @Restricted(NoExternalUse.class) // used by jelly
+    @Deprecated // slow down plugin execution due concurrent modification checks
+    public int getFreeResourceAmount(final String labelString) {
+<span class="nc" id="L476">        this.informPerformanceIssue();</span>
+<span class="nc" id="L477">        LockableResourcesLabel label = this.getLabelsList().get(labelString);</span>
+<span class="nc bnc" id="L478" title="All 2 branches missed.">        return (label == null) ? 0 : label.getFree();</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Get percentage (0-100) usage of resources assigned to given *labelString*
+     *
+     * &lt;p&gt;Used by {@code actions/LockableResourcesRootAction/index.jelly}
+     *
+     * @since 2.19
+     * @param labelString Label to search.
+     * @return Percentage usages of *labelString* around all resources
+     */
+    @Restricted(NoExternalUse.class) // used by jelly
+    @Deprecated // slow down plugin execution due concurrent modification checks
+    public int getFreeResourcePercentage(final String labelString) {
+<span class="nc" id="L494">        this.informPerformanceIssue();</span>
+<span class="nc" id="L495">        LockableResourcesLabel label = this.getLabelsList().get(labelString);</span>
+<span class="nc bnc" id="L496" title="All 2 branches missed.">        return (label == null) ? 0 : label.getPercentage();</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Get all existing labels as list.
+     *
+     * @return All possible labels.
+     */
+    @Restricted(NoExternalUse.class) // used by jelly
+    @Deprecated // slow down plugin execution due concurrent modification checks
+    public Set&lt;String&gt; getAllLabels() {
+<span class="nc" id="L508">        this.informPerformanceIssue();</span>
+<span class="nc" id="L509">        return LockableResourcesManager.get().getAllLabels();</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Get amount of all labels.
+     *
+     * @return Amount of all labels.
+     */
+    @Restricted(NoExternalUse.class) // used by jelly
+    @Deprecated // slow down plugin execution due concurrent modification checks
+    public int getNumberOfAllLabels() {
+<span class="nc" id="L521">        this.informPerformanceIssue();</span>
+<span class="nc" id="L522">        return this.getLabelsList().size();</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Get amount of resources assigned to given *labelString*
+     *
+     * &lt;p&gt;Used by {@code actions/LockableResourcesRootAction/index.jelly}
+     *
+     * @param labelString Label to search.
+     * @return Amount of assigned resources.
+     */
+    @Restricted(NoExternalUse.class) // used by jelly
+    @Deprecated // slow down plugin execution due concurrent modification checks
+    public int getAssignedResourceAmount(String labelString) {
+<span class="nc" id="L537">        this.informPerformanceIssue();</span>
+<span class="nc" id="L538">        return LockableResourcesManager.get().getResourcesWithLabel(labelString).size();</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    private void informPerformanceIssue() {
+<span class="nc" id="L543">        String method = Thread.currentThread().getStackTrace()[2].getMethodName();</span>
+<span class="nc" id="L544">        StringBuilder buf = new StringBuilder();</span>
+<span class="nc bnc" id="L545" title="All 2 branches missed.">        for (StackTraceElement st : Thread.currentThread().getStackTrace()) {</span>
+<span class="nc" id="L546">            buf.append(&quot;\n&quot;).append(st);</span>
+        }
+<span class="nc" id="L548">        LOGGER.warning(&quot;lockable-resources-plugin: The method &quot;</span>
+                + method
+                + &quot; has been deprecated due performance issues. When you see this message, please inform plugin developers:&quot;
+                + buf);
+<span class="nc" id="L552">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Remote locks this controller currently holds or waits for on other controllers.
+     *
+     * &lt;p&gt;This is the client side of the picture: the resources listed elsewhere on this page belong to
+     * this controller, while these belong to someone else. The state shown here is what this controller
+     * last observed, not the remote's own record - the view says so.
+     */
+    @Restricted(NoExternalUse.class) // used by jelly
+    public List&lt;RemoteClientRegistry.Entry&gt; getRemoteLocks() {
+<span class="fc" id="L564">        Jenkins.get().checkPermission(VIEW);</span>
+<span class="fc" id="L565">        return RemoteClientRegistry.get().getAll();</span>
+    }
+
+    /**
+     * True when this controller serves resources remotely but has stopped handing out new locks.
+     *
+     * &lt;p&gt;Only interesting while the remote API is on: with it off, nothing is being served either way,
+     * and a banner about paused acquires would be noise.
+     */
+    @Restricted(NoExternalUse.class) // used by jelly
+    public boolean isRemoteAcquiresPaused() {
+<span class="fc" id="L576">        LockableResourcesManager lrm = LockableResourcesManager.get();</span>
+<span class="pc bpc" id="L577" title="2 of 4 branches missed.">        return lrm.isRemoteApiEnabled() &amp;&amp; !lrm.isAcceptNewAcquires();</span>
+    }
+
+    /** True when this controller delegates every lock() to one remote server. */
+    @Restricted(NoExternalUse.class) // used by jelly
+    public boolean isDelegatedMode() {
+<span class="fc" id="L583">        String forced = getForcedServerId();</span>
+<span class="pc bpc" id="L584" title="1 of 4 branches missed.">        return forced != null &amp;&amp; !forced.isEmpty();</span>
+    }
+
+    /**
+     * What the delegated target publishes, as last observed, or {@code null} when nothing has been
+     * fetched yet. Never blocks: a stale snapshot is refreshed in the background.
+     */
+    @CheckForNull
+    @Restricted(NoExternalUse.class) // used by jelly
+    public RemoteCatalog getDelegatedCatalog() {
+<span class="fc" id="L594">        Jenkins.get().checkPermission(VIEW);</span>
+<span class="fc" id="L595">        String forced = getForcedServerId();</span>
+<span class="pc bpc" id="L596" title="1 of 4 branches missed.">        if (forced == null || forced.isEmpty()) {</span>
+<span class="fc" id="L597">            return null;</span>
+        }
+<span class="fc" id="L599">        return RemoteCatalogCache.get().get(forced);</span>
+    }
+
+    /** True when a connection exists for this serverId but has been switched off. */
+    @Restricted(NoExternalUse.class) // used by jelly
+    public boolean isServerDisabled(String serverId) {
+        RemoteConnection remote =
+<span class="fc" id="L606">                LockableResourcesManager.get().getRemotesAsMap().get(serverId);</span>
+<span class="pc bpc" id="L607" title="2 of 4 branches missed.">        return remote != null &amp;&amp; !remote.isEnabled();</span>
+    }
+
+    /** Human-readable age of a timestamp, for the remote view. */
+    @Restricted(NoExternalUse.class) // used by jelly
+    public String getElapsedSince(long timestampMillis) {
+<span class="pc bpc" id="L613" title="1 of 2 branches missed.">        if (timestampMillis &lt;= 0) {</span>
+<span class="nc" id="L614">            return &quot;&quot;;</span>
+        }
+<span class="fc" id="L616">        return formatDuration(System.currentTimeMillis() - timestampMillis);</span>
+    }
+
+    /** True when this controller has any remote relation at all - server side or client side. */
+    @Restricted(NoExternalUse.class) // used by jelly
+    public boolean isRemoteConfigured() {
+<span class="fc" id="L622">        LockableResourcesManager lrm = LockableResourcesManager.get();</span>
+<span class="pc bpc" id="L623" title="3 of 4 branches missed.">        return lrm.isRemoteApiEnabled() || !lrm.getRemotes().isEmpty();</span>
+    }
+
+    /** The serverId every lock() on this controller is routed to, or empty when not delegating. */
+    @Restricted(NoExternalUse.class) // used by jelly
+    public String getForcedServerId() {
+<span class="fc" id="L629">        return LockableResourcesManager.get().getForcedServerId();</span>
+    }
+
+    /** Base URL of the delegated target, for the badge; empty when not delegating or unknown. */
+    @Restricted(NoExternalUse.class) // used by jelly
+    public String getForcedServerUrl() {
+<span class="fc" id="L635">        String forced = getForcedServerId();</span>
+<span class="pc bpc" id="L636" title="2 of 4 branches missed.">        if (forced == null || forced.isEmpty()) {</span>
+<span class="nc" id="L637">            return &quot;&quot;;</span>
+        }
+        RemoteConnection remote =
+<span class="fc" id="L640">                LockableResourcesManager.get().getRemotesAsMap().get(forced);</span>
+<span class="pc bpc" id="L641" title="1 of 2 branches missed.">        return remote != null ? remote.getUrl() : &quot;&quot;;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    @Restricted(NoExternalUse.class) // used by jelly
+    public Queue getQueue() throws Descriptor.FormException {
+        List&lt;QueuedContextStruct&gt; currentQueueContext =
+<span class="nc" id="L648">                List.copyOf(LockableResourcesManager.get().getCurrentQueuedContext());</span>
+<span class="nc" id="L649">        Queue queue = new Queue();</span>
+
+<span class="nc bnc" id="L651" title="All 2 branches missed.">        for (QueuedContextStruct context : currentQueueContext) {</span>
+<span class="nc bnc" id="L652" title="All 2 branches missed.">            for (LockableResourcesStruct resourceStruct : context.getResources()) {</span>
+<span class="nc" id="L653">                queue.add(resourceStruct, context);</span>
+<span class="nc" id="L654">            }</span>
+<span class="nc" id="L655">        }</span>
+
+<span class="nc bnc" id="L657" title="All 2 branches missed.">        for (RemoteQueueEntry remoteEntry : LockableResourcesManager.get().getCurrentRemoteQueueEntries()) {</span>
+<span class="nc" id="L658">            queue.add(remoteEntry);</span>
+<span class="nc" id="L659">        }</span>
+
+<span class="nc" id="L661">        queue.sortByPromotionOrder();</span>
+<span class="nc" id="L662">        return queue;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    public static class Queue {
+
+        List&lt;QueueStruct&gt; queue;
+        QueueStruct oldest;
+
+        // -------------------------------------------------------------------------
+        @Restricted(NoExternalUse.class) // used by jelly
+<span class="nc" id="L673">        public Queue() {</span>
+<span class="nc" id="L674">            this.queue = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L675">        }</span>
+
+        // -------------------------------------------------------------------------
+        @Restricted(NoExternalUse.class) // used by jelly
+        public void add(final LockableResourcesStruct resourceStruct, final QueuedContextStruct context)
+                throws Descriptor.FormException {
+<span class="nc" id="L681">            QueueStruct queueStruct = new QueueStruct(resourceStruct, context);</span>
+<span class="nc" id="L682">            queue.add(queueStruct);</span>
+<span class="nc bnc" id="L683" title="All 2 branches missed.">            if (resourceStruct.queuedAt == 0) {</span>
+                // Older versions of this plugin might miss this information.
+                // Therefore skip it here.
+<span class="nc" id="L686">                return;</span>
+            }
+<span class="nc bnc" id="L688" title="All 4 branches missed.">            if (oldest == null || oldest.getQueuedAt() &gt; queueStruct.getQueuedAt()) {</span>
+<span class="nc" id="L689">                oldest = queueStruct;</span>
+            }
+<span class="nc" id="L691">        }</span>
+
+        @Restricted(NoExternalUse.class) // used by jelly
+        public void add(final RemoteQueueEntry remoteEntry) {
+<span class="nc" id="L695">            QueueStruct queueStruct = new QueueStruct(remoteEntry);</span>
+<span class="nc" id="L696">            queue.add(queueStruct);</span>
+<span class="nc bnc" id="L697" title="All 2 branches missed.">            if (queueStruct.getQueuedAt() == 0) {</span>
+<span class="nc" id="L698">                return;</span>
+            }
+<span class="nc bnc" id="L700" title="All 4 branches missed.">            if (oldest == null || oldest.getQueuedAt() &gt; queueStruct.getQueuedAt()) {</span>
+<span class="nc" id="L701">                oldest = queueStruct;</span>
+            }
+<span class="nc" id="L703">        }</span>
+
+        // -------------------------------------------------------------------------
+        /**
+         * Orders the merged local and remote entries the way they will actually be promoted.
+         *
+         * &lt;p&gt;Local and remote entries arrive as two separately ordered lists, so simply concatenating
+         * them showed every remote entry behind every local one no matter its priority. Promotion
+         * ({@code LockableResourcesManager#proceedNextContext}) compares the heads of both queues and
+         * takes the higher priority, favouring local on a tie - which is exactly a stable sort by
+         * descending priority over &quot;locals first, then remotes&quot;.
+         */
+        @Restricted(NoExternalUse.class)
+        public void sortByPromotionOrder() {
+<span class="nc" id="L717">            this.queue.sort(Comparator.comparingInt(QueueStruct::getPriority).reversed());</span>
+<span class="nc" id="L718">        }</span>
+
+        // -------------------------------------------------------------------------
+        @Restricted(NoExternalUse.class) // used by jelly
+        public List&lt;QueueStruct&gt; getAll() {
+<span class="nc" id="L723">            return Collections.unmodifiableList(this.queue);</span>
+        }
+
+        // -------------------------------------------------------------------------
+        @Restricted(NoExternalUse.class) // used by jelly
+        public QueueStruct getOldest() {
+<span class="nc" id="L729">            return this.oldest;</span>
+        }
+
+        // -------------------------------------------------------------------------
+        @Restricted(NoExternalUse.class) // used by jelly
+        public static class QueueStruct {
+            List&lt;LockableResource&gt; requiredResources;
+            String requiredLabel;
+            String groovyScript;
+            String requiredNumber;
+<span class="nc" id="L739">            long queuedAt = 0;</span>
+<span class="nc" id="L740">            int priority = 0;</span>
+<span class="nc" id="L741">            String id = null;</span>
+            Run&lt;?, ?&gt; build;
+<span class="nc" id="L743">            boolean remote = false;</span>
+            String requestedBy;
+            String requestedByUrl;
+            String remoteReason;
+            String remoteRequest;
+
+            public QueueStruct(final LockableResourcesStruct resourceStruct, final QueuedContextStruct context)
+<span class="nc" id="L750">                    throws Descriptor.FormException {</span>
+<span class="nc" id="L751">                this.requiredResources = resourceStruct.required;</span>
+<span class="nc" id="L752">                this.requiredLabel = resourceStruct.label;</span>
+<span class="nc" id="L753">                this.requiredNumber = resourceStruct.requiredNumber;</span>
+<span class="nc" id="L754">                this.queuedAt = resourceStruct.queuedAt;</span>
+<span class="nc" id="L755">                this.build = context.getBuild();</span>
+<span class="nc" id="L756">                this.priority = context.getPriority();</span>
+<span class="nc" id="L757">                this.id = context.getId();</span>
+<span class="nc bnc" id="L758" title="All 2 branches missed.">                this.requestedBy = build != null ? build.getFullDisplayName() : &quot;&quot;;</span>
+<span class="nc bnc" id="L759" title="All 2 branches missed.">                this.requestedByUrl = build != null ? build.getUrl() : &quot;&quot;;</span>
+
+<span class="nc" id="L761">                final SecureGroovyScript systemGroovyScript = resourceStruct.getResourceMatchScript();</span>
+<span class="nc bnc" id="L762" title="All 2 branches missed.">                if (systemGroovyScript != null) {</span>
+<span class="nc" id="L763">                    this.groovyScript = systemGroovyScript.getScript();</span>
+                }
+<span class="nc" id="L765">            }</span>
+
+<span class="nc" id="L767">            public QueueStruct(@NonNull final RemoteQueueEntry remoteEntry) {</span>
+<span class="nc" id="L768">                this.queuedAt = remoteEntry.getRecord().getEnqueuedAt();</span>
+<span class="nc" id="L769">                this.priority = remoteEntry.getPriority();</span>
+<span class="nc" id="L770">                this.id = remoteEntry.getLockId();</span>
+<span class="nc" id="L771">                this.remote = true;</span>
+
+<span class="nc" id="L773">                RemoteLockRequest lr = remoteEntry.getLockRequest();</span>
+<span class="nc" id="L774">                this.remoteReason = Util.fixEmptyAndTrim(lr.getReason());</span>
+<span class="nc" id="L775">                this.remoteRequest = buildRemoteRequestText(lr);</span>
+
+<span class="nc" id="L777">                String cid = Util.fixEmptyAndTrim(remoteEntry.getRecord().getClientId());</span>
+<span class="nc bnc" id="L778" title="All 2 branches missed.">                this.requestedBy = cid != null ? cid : &quot;Remote API&quot;;</span>
+<span class="nc" id="L779">                this.requestedByUrl = &quot;&quot;;</span>
+<span class="nc" id="L780">            }</span>
+
+            // -----------------------------------------------------------------------
+            /** */
+            @Restricted(NoExternalUse.class) // used by jelly
+            public List&lt;LockableResource&gt; getRequiredResources() {
+<span class="nc" id="L786">                return this.requiredResources;</span>
+            }
+
+            // -----------------------------------------------------------------------
+            /** */
+            @NonNull
+            @Restricted(NoExternalUse.class) // used by jelly
+            public String getRequiredLabel() {
+<span class="nc bnc" id="L794" title="All 2 branches missed.">                return this.requiredLabel == null ? &quot;N/A&quot; : this.requiredLabel;</span>
+            }
+
+            // -----------------------------------------------------------------------
+            /** */
+            @NonNull
+            @Restricted(NoExternalUse.class) // used by jelly
+            public String getRequiredNumber() {
+<span class="nc bnc" id="L802" title="All 2 branches missed.">                return this.requiredNumber == null ? &quot;0&quot; : this.requiredNumber;</span>
+            }
+
+            // -----------------------------------------------------------------------
+            /** */
+            @NonNull
+            @Restricted(NoExternalUse.class) // used by jelly
+            public String getGroovyScript() {
+<span class="nc bnc" id="L810" title="All 2 branches missed.">                return this.groovyScript == null ? &quot;N/A&quot; : this.groovyScript;</span>
+            }
+
+            // -----------------------------------------------------------------------
+            /** */
+            @Restricted(NoExternalUse.class) // used by jelly
+            public Run&lt;?, ?&gt; getBuild() {
+<span class="nc" id="L817">                return this.build;</span>
+            }
+
+            // -----------------------------------------------------------------------
+            /** */
+            @Restricted(NoExternalUse.class) // used by jelly
+            public long getQueuedAt() {
+<span class="nc" id="L824">                return this.queuedAt;</span>
+            }
+
+            // -----------------------------------------------------------------------
+            /** Check if the queue takes too long. At the moment &quot;too long&quot; means over 1 hour. */
+            @Restricted(NoExternalUse.class) // used by jelly
+            public boolean takeTooLong() {
+<span class="nc bnc" id="L831" title="All 2 branches missed.">                return (new Date().getTime() - this.queuedAt) &gt; 3600000L;</span>
+            }
+
+            // -----------------------------------------------------------------------
+            /** Returns timestamp when the resource has been added into queue. */
+            @Restricted(NoExternalUse.class) // used by jelly
+            public Date getQueuedTimestamp() {
+<span class="nc" id="L838">                return new Date(this.queuedAt);</span>
+            }
+
+            // -----------------------------------------------------------------------
+            /** Returns queue priority. */
+            @Restricted(NoExternalUse.class) // used by jelly
+            public int getPriority() {
+<span class="nc bnc" id="L845" title="All 2 branches missed.">                if (this.id == null) {</span>
+                    // defensive
+                    // in case of jenkins update from older version and you have some queue
+                    // might happens, that there are no priority set
+<span class="nc" id="L849">                    return 0;</span>
+                }
+<span class="nc" id="L851">                return this.priority;</span>
+            }
+
+            // -----------------------------------------------------------------------
+            /** Returns queue ID. */
+            @Restricted(NoExternalUse.class)
+            public String getId() {
+<span class="nc bnc" id="L858" title="All 2 branches missed.">                if (this.id == null) {</span>
+                    // defensive
+                    // in case of jenkins update from older version and you have some queue
+                    // might happens, that there are no priority set
+<span class="nc" id="L862">                    return &quot;NN&quot;;</span>
+                }
+<span class="nc" id="L864">                return this.id;</span>
+            }
+
+            @Restricted(NoExternalUse.class)
+            public boolean isRemote() {
+<span class="nc" id="L869">                return this.remote;</span>
+            }
+
+            @Restricted(NoExternalUse.class)
+            public String getRequestedBy() {
+<span class="nc bnc" id="L874" title="All 2 branches missed.">                return this.requestedBy == null ? &quot;&quot; : this.requestedBy;</span>
+            }
+
+            @Restricted(NoExternalUse.class)
+            public String getRequestedByUrl() {
+<span class="nc bnc" id="L879" title="All 2 branches missed.">                return this.requestedByUrl == null ? &quot;&quot; : this.requestedByUrl;</span>
+            }
+
+            @Restricted(NoExternalUse.class)
+            public String getRemoteReason() {
+<span class="nc bnc" id="L884" title="All 2 branches missed.">                return this.remoteReason == null ? &quot;&quot; : this.remoteReason;</span>
+            }
+
+            @Restricted(NoExternalUse.class)
+            public String getRemoteRequest() {
+<span class="nc bnc" id="L889" title="All 2 branches missed.">                return this.remoteRequest == null ? &quot;&quot; : this.remoteRequest;</span>
+            }
+
+            @Restricted(NoExternalUse.class) // used by jelly
+            public boolean resourcesMatch() {
+<span class="nc bnc" id="L894" title="All 4 branches missed.">                return (requiredResources != null &amp;&amp; requiredResources.size() &gt; 0);</span>
+            }
+
+            // -----------------------------------------------------------------------
+            @Restricted(NoExternalUse.class) // used by jelly
+            public boolean labelsMatch() {
+<span class="nc bnc" id="L900" title="All 2 branches missed.">                return (requiredLabel != null);</span>
+            }
+
+            // -----------------------------------------------------------------------
+            @Restricted(NoExternalUse.class) // used by jelly
+            public boolean scriptMatch() {
+<span class="nc bnc" id="L906" title="All 4 branches missed.">                return (groovyScript != null &amp;&amp; !groovyScript.isEmpty());</span>
+            }
+
+            private static String buildRemoteRequestText(@NonNull RemoteLockRequest lr) {
+<span class="nc" id="L910">                List&lt;String&gt; parts = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L911" title="All 2 branches missed.">                if (Util.fixEmptyAndTrim(lr.getResource()) != null) {</span>
+<span class="nc" id="L912">                    parts.add(&quot;resource=&quot; + lr.getResource());</span>
+                }
+<span class="nc bnc" id="L914" title="All 2 branches missed.">                if (Util.fixEmptyAndTrim(lr.getLabel()) != null) {</span>
+<span class="nc" id="L915">                    parts.add(&quot;label=&quot; + lr.getLabel());</span>
+<span class="nc bnc" id="L916" title="All 2 branches missed.">                    if (lr.getQuantity() &gt; 0) {</span>
+<span class="nc" id="L917">                        parts.add(&quot;quantity=&quot; + lr.getQuantity());</span>
+                    }
+                }
+<span class="nc" id="L920">                List&lt;RemoteLockRequest.ExtraResource&gt; extra = lr.getExtra();</span>
+<span class="nc bnc" id="L921" title="All 4 branches missed.">                if (extra != null &amp;&amp; !extra.isEmpty()) {</span>
+<span class="nc" id="L922">                    parts.add(&quot;extra=&quot; + extra.size());</span>
+                }
+<span class="nc bnc" id="L924" title="All 2 branches missed.">                if (parts.isEmpty()) {</span>
+<span class="nc" id="L925">                    return &quot;remote request&quot;;</span>
+                }
+<span class="nc" id="L927">                return String.join(&quot;, &quot;, parts);</span>
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Returns current queue */
+    @Restricted(NoExternalUse.class) // used by jelly
+    @Deprecated // slow down plugin execution due concurrent modification checks
+    public List&lt;QueuedContextStruct&gt; getCurrentQueuedContext() {
+<span class="nc" id="L937">        return LockableResourcesManager.get().getCurrentQueuedContext();</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Returns current queue */
+    @Restricted(NoExternalUse.class) // used by jelly
+    @CheckForNull
+    @Deprecated // slow down plugin execution due concurrent modification checks
+    public LockableResourcesStruct getOldestQueue() {
+<span class="nc" id="L946">        LockableResourcesStruct oldest = null;</span>
+<span class="nc bnc" id="L947" title="All 2 branches missed.">        for (QueuedContextStruct context : this.getCurrentQueuedContext()) {</span>
+<span class="nc bnc" id="L948" title="All 2 branches missed.">            for (LockableResourcesStruct resourceStruct : context.getResources()) {</span>
+<span class="nc bnc" id="L949" title="All 2 branches missed.">                if (resourceStruct.queuedAt == 0) {</span>
+                    // Older versions of this plugin might miss this information.
+                    // Therefore skip it here.
+<span class="nc" id="L952">                    continue;</span>
+                }
+<span class="nc bnc" id="L954" title="All 4 branches missed.">                if (oldest == null || oldest.queuedAt &gt; resourceStruct.queuedAt) {</span>
+<span class="nc" id="L955">                    oldest = resourceStruct;</span>
+                }
+<span class="nc" id="L957">            }</span>
+<span class="nc" id="L958">        }</span>
+<span class="nc" id="L959">        return oldest;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    @RequirePOST
+    public void doUnlock(StaplerRequest2 req, StaplerResponse2 rsp) throws IOException, ServletException {
+<span class="nc" id="L965">        Jenkins.get().checkPermission(UNLOCK);</span>
+
+<span class="nc" id="L967">        List&lt;LockableResource&gt; resources = this.getResourcesFromRequest(req, rsp);</span>
+<span class="nc bnc" id="L968" title="All 2 branches missed.">        if (resources == null) {</span>
+<span class="nc" id="L969">            return;</span>
+        }
+
+<span class="nc" id="L972">        LockableResourcesManager.get().unlockResources(resources);</span>
+
+<span class="nc" id="L974">        rsp.forwardToPreviousPage(req);</span>
+<span class="nc" id="L975">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Force-releases a resource that is held by a remote lock (e.g. STALE lock with no active client).
+     * Called by the &quot;Force Release Remote Lock&quot; button in the resource table.
+     */
+    @RequirePOST
+    public void doReleaseRemoteLock(StaplerRequest2 req, StaplerResponse2 rsp) throws IOException, ServletException {
+<span class="fc" id="L984">        Jenkins.get().checkPermission(UNLOCK);</span>
+
+<span class="fc" id="L986">        List&lt;LockableResource&gt; resources = this.getResourcesFromRequest(req, rsp);</span>
+<span class="pc bpc" id="L987" title="1 of 2 branches missed.">        if (resources == null) {</span>
+<span class="nc" id="L988">            return;</span>
+        }
+
+<span class="fc bfc" id="L991" title="All 2 branches covered.">        for (LockableResource resource : resources) {</span>
+<span class="fc" id="L992">            String lockId = resource.getRemoteLockedBy();</span>
+<span class="pc bpc" id="L993" title="1 of 2 branches missed.">            if (lockId != null) {</span>
+<span class="fc" id="L994">                LOGGER.info(&quot;doReleaseRemoteLock: force-releasing remote lock lockId=&quot; + lockId + &quot; resource=&quot;</span>
+<span class="fc" id="L995">                        + resource.getName());</span>
+<span class="fc" id="L996">                RemoteLockManager.get().release(lockId);</span>
+            }
+<span class="fc" id="L998">        }</span>
+
+<span class="fc" id="L1000">        rsp.forwardToPreviousPage(req);</span>
+<span class="fc" id="L1001">    }</span>
+
+    // ---------------------------------------------------------------------------
+    @RequirePOST
+    public void doReserve(StaplerRequest2 req, StaplerResponse2 rsp) throws IOException, ServletException {
+<span class="nc" id="L1006">        Jenkins.get().checkPermission(RESERVE);</span>
+
+<span class="nc" id="L1008">        List&lt;LockableResource&gt; resources = this.getResourcesFromRequest(req, rsp);</span>
+<span class="nc bnc" id="L1009" title="All 2 branches missed.">        if (resources == null) {</span>
+<span class="nc" id="L1010">            return;</span>
+        }
+
+<span class="nc" id="L1013">        String reason = Util.fixEmptyAndTrim(req.getParameter(&quot;reason&quot;));</span>
+
+<span class="nc" id="L1015">        LOGGER.info(&quot;doReserve called for resources=&quot; + LockableResourcesManager.getResourcesNames(resources)</span>
+<span class="nc" id="L1016">                + &quot; reason='&quot; + reason + &quot;' fromIP=&quot; + req.getRemoteAddr());</span>
+
+<span class="nc" id="L1018">        String userName = getUserName();</span>
+<span class="nc bnc" id="L1019" title="All 2 branches missed.">        if (userName == null) {</span>
+<span class="nc" id="L1020">            LOGGER.warning(&quot;doReserve: userName is null (unauthenticated?) for resources=&quot;</span>
+<span class="nc" id="L1021">                    + LockableResourcesManager.getResourcesNames(resources));</span>
+<span class="nc" id="L1022">            rsp.sendError(401, Messages.error_notAuthenticated());</span>
+<span class="nc" id="L1023">            return;</span>
+        }
+
+<span class="nc" id="L1026">        boolean ok = LockableResourcesManager.get().reserve(resources, userName, reason);</span>
+<span class="nc bnc" id="L1027" title="All 2 branches missed.">        if (!ok) {</span>
+<span class="nc" id="L1028">            LOGGER.info(&quot;doReserve failed - resource already locked: &quot;</span>
+<span class="nc" id="L1029">                    + LockableResourcesManager.getResourcesNames(resources));</span>
+<span class="nc" id="L1030">            rsp.sendError(</span>
+<span class="nc" id="L1031">                    423, Messages.error_resourceAlreadyLocked(LockableResourcesManager.getResourcesNames(resources)));</span>
+<span class="nc" id="L1032">            return;</span>
+        }
+<span class="nc" id="L1034">        LOGGER.info(&quot;doReserve succeeded for user='&quot; + userName + &quot;' resources=&quot;</span>
+<span class="nc" id="L1035">                + LockableResourcesManager.getResourcesNames(resources));</span>
+<span class="nc" id="L1036">        rsp.forwardToPreviousPage(req);</span>
+<span class="nc" id="L1037">    }</span>
+
+    // ---------------------------------------------------------------------------
+    @RequirePOST
+    public void doSteal(StaplerRequest2 req, StaplerResponse2 rsp) throws IOException, ServletException {
+<span class="nc" id="L1042">        Jenkins.get().checkPermission(STEAL);</span>
+
+<span class="nc" id="L1044">        List&lt;LockableResource&gt; resources = this.getResourcesFromRequest(req, rsp);</span>
+<span class="nc bnc" id="L1045" title="All 2 branches missed.">        if (resources == null) {</span>
+<span class="nc" id="L1046">            return;</span>
+        }
+
+<span class="nc" id="L1049">        String reason = Util.fixEmptyAndTrim(req.getParameter(&quot;reason&quot;));</span>
+
+<span class="nc" id="L1051">        String userName = getUserName();</span>
+<span class="nc bnc" id="L1052" title="All 2 branches missed.">        if (userName == null) {</span>
+<span class="nc" id="L1053">            rsp.sendError(401, Messages.error_notAuthenticated());</span>
+<span class="nc" id="L1054">            return;</span>
+        }
+
+<span class="nc" id="L1057">        LockableResourcesManager.get().steal(resources, userName, reason);</span>
+<span class="nc" id="L1058">        rsp.forwardToPreviousPage(req);</span>
+<span class="nc" id="L1059">    }</span>
+
+    // ---------------------------------------------------------------------------
+    @RequirePOST
+    public void doReassign(StaplerRequest2 req, StaplerResponse2 rsp) throws IOException, ServletException {
+<span class="nc" id="L1064">        Jenkins.get().checkPermission(STEAL);</span>
+
+<span class="nc" id="L1066">        String userName = getUserName();</span>
+<span class="nc bnc" id="L1067" title="All 2 branches missed.">        if (userName == null) {</span>
+            // defensive: this can not happens because we check you permissions few lines before
+            // therefore you must be logged in
+<span class="nc" id="L1070">            throw new AccessDeniedException3(Jenkins.getAuthentication2(), STEAL);</span>
+        }
+
+<span class="nc" id="L1073">        List&lt;LockableResource&gt; resources = this.getResourcesFromRequest(req, rsp);</span>
+<span class="nc bnc" id="L1074" title="All 2 branches missed.">        if (resources == null) {</span>
+<span class="nc" id="L1075">            return;</span>
+        }
+
+<span class="nc bnc" id="L1078" title="All 2 branches missed.">        for (LockableResource resource : resources) {</span>
+<span class="nc bnc" id="L1079" title="All 2 branches missed.">            if (userName.equals(resource.getReservedBy())) {</span>
+                // Can not achieve much by re-assigning the
+                // resource I already hold to myself again,
+                // that would just burn the compute resources.
+                // ...unless something catches the event? (TODO?)
+<span class="nc" id="L1084">                return;</span>
+            }
+<span class="nc" id="L1086">        }</span>
+
+<span class="nc" id="L1088">        LockableResourcesManager.get().reassign(resources, userName);</span>
+
+<span class="nc" id="L1090">        rsp.forwardToPreviousPage(req);</span>
+<span class="nc" id="L1091">    }</span>
+
+    // ---------------------------------------------------------------------------
+    @RequirePOST
+    public void doUnreserve(StaplerRequest2 req, StaplerResponse2 rsp) throws IOException, ServletException {
+<span class="nc" id="L1096">        Jenkins.get().checkPermission(RESERVE);</span>
+
+<span class="nc" id="L1098">        List&lt;LockableResource&gt; resources = this.getResourcesFromRequest(req, rsp);</span>
+<span class="nc bnc" id="L1099" title="All 2 branches missed.">        if (resources == null) {</span>
+<span class="nc" id="L1100">            return;</span>
+        }
+
+<span class="nc" id="L1103">        String userName = getUserName();</span>
+<span class="nc bnc" id="L1104" title="All 2 branches missed.">        for (LockableResource resource : resources) {</span>
+<span class="nc bnc" id="L1105" title="All 4 branches missed.">            if ((userName == null || !userName.equals(resource.getReservedBy()))</span>
+<span class="nc bnc" id="L1106" title="All 2 branches missed.">                    &amp;&amp; !Jenkins.get().hasPermission(Jenkins.ADMINISTER)) {</span>
+<span class="nc" id="L1107">                throw new AccessDeniedException3(Jenkins.getAuthentication2(), RESERVE);</span>
+            }
+<span class="nc" id="L1109">        }</span>
+
+<span class="nc" id="L1111">        LockableResourcesManager.get().unreserve(resources);</span>
+
+<span class="nc" id="L1113">        rsp.forwardToPreviousPage(req);</span>
+<span class="nc" id="L1114">    }</span>
+
+    // ---------------------------------------------------------------------------
+    @RequirePOST
+    public void doReset(StaplerRequest2 req, StaplerResponse2 rsp) throws IOException, ServletException {
+<span class="nc" id="L1119">        Jenkins.get().checkPermission(UNLOCK);</span>
+        // Should this also be permitted by &quot;STEAL&quot;?..
+
+<span class="nc" id="L1122">        List&lt;LockableResource&gt; resources = this.getResourcesFromRequest(req, rsp);</span>
+<span class="nc bnc" id="L1123" title="All 2 branches missed.">        if (resources == null) {</span>
+<span class="nc" id="L1124">            return;</span>
+        }
+
+<span class="nc" id="L1127">        LockableResourcesManager.get().reset(resources);</span>
+
+<span class="nc" id="L1129">        rsp.forwardToPreviousPage(req);</span>
+<span class="nc" id="L1130">    }</span>
+
+    // ---------------------------------------------------------------------------
+    @RequirePOST
+    public void doRecycleDeadLocks(StaplerRequest2 req, StaplerResponse2 rsp) throws IOException, ServletException {
+<span class="nc" id="L1135">        Jenkins.get().checkPermission(Jenkins.ADMINISTER);</span>
+<span class="nc" id="L1136">        FreeDeadJobs.freePostMortemResources();</span>
+<span class="nc" id="L1137">        rsp.forwardToPreviousPage(req);</span>
+<span class="nc" id="L1138">    }</span>
+
+    // ---------------------------------------------------------------------------
+    @RequirePOST
+    public void doSaveNote(final StaplerRequest2 req, final StaplerResponse2 rsp) throws IOException, ServletException {
+<span class="nc" id="L1143">        Jenkins.get().checkPermission(RESERVE);</span>
+
+<span class="nc" id="L1145">        String resourceName = req.getParameter(&quot;resource&quot;);</span>
+<span class="nc bnc" id="L1146" title="All 2 branches missed.">        if (resourceName == null) {</span>
+<span class="nc" id="L1147">            resourceName = req.getParameter(&quot;resourceName&quot;);</span>
+        }
+
+<span class="nc" id="L1150">        final LockableResource resource = getResource(resourceName);</span>
+<span class="nc bnc" id="L1151" title="All 2 branches missed.">        if (resource == null) {</span>
+<span class="nc" id="L1152">            rsp.sendError(404, Messages.error_resourceDoesNotExist(resourceName));</span>
+        } else {
+<span class="nc" id="L1154">            String resourceNote = req.getParameter(&quot;note&quot;);</span>
+<span class="nc bnc" id="L1155" title="All 2 branches missed.">            if (resourceNote == null) {</span>
+<span class="nc" id="L1156">                resourceNote = req.getParameter(&quot;resourceNote&quot;);</span>
+            }
+<span class="nc" id="L1158">            resource.setNote(resourceNote);</span>
+<span class="nc" id="L1159">            LockableResourcesManager.get().save();</span>
+
+<span class="nc" id="L1161">            rsp.forwardToPreviousPage(req);</span>
+        }
+<span class="nc" id="L1163">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /** Returns resource names matching a Jenkins label expression as JSON. */
+    @Restricted(NoExternalUse.class)
+    @GET
+    public void doGetResourcesByLabelExpression(final StaplerRequest2 req, final StaplerResponse2 rsp)
+            throws IOException {
+<span class="nc" id="L1171">        Jenkins.get().checkPermission(VIEW);</span>
+
+<span class="nc" id="L1173">        String expr = Util.fixEmptyAndTrim(req.getParameter(&quot;expr&quot;));</span>
+
+        final List&lt;LockableResource&gt; resources;
+        try {
+<span class="nc bnc" id="L1177" title="All 2 branches missed.">            resources = (expr == null)</span>
+<span class="nc" id="L1178">                    ? LockableResourcesManager.get().getReadOnlyResources()</span>
+<span class="nc" id="L1179">                    : LockableResourcesManager.get().getResourcesWithLabel(expr);</span>
+<span class="nc" id="L1180">        } catch (IllegalArgumentException e) {</span>
+<span class="nc" id="L1181">            rsp.sendError(400, &quot;Invalid label expression: &quot; + e.getMessage());</span>
+<span class="nc" id="L1182">            return;</span>
+<span class="nc" id="L1183">        }</span>
+
+<span class="nc" id="L1185">        net.sf.json.JSONArray items = new net.sf.json.JSONArray();</span>
+<span class="nc bnc" id="L1186" title="All 2 branches missed.">        for (LockableResource r : resources) {</span>
+<span class="nc bnc" id="L1187" title="All 4 branches missed.">            if (r == null || r.getName().isEmpty()) {</span>
+<span class="nc" id="L1188">                continue;</span>
+            }
+<span class="nc" id="L1190">            net.sf.json.JSONObject obj = new net.sf.json.JSONObject();</span>
+<span class="nc" id="L1191">            obj.put(&quot;name&quot;, r.getName());</span>
+<span class="nc" id="L1192">            items.add(obj);</span>
+<span class="nc" id="L1193">        }</span>
+
+<span class="nc" id="L1195">        net.sf.json.JSONObject result = new net.sf.json.JSONObject();</span>
+<span class="nc bnc" id="L1196" title="All 2 branches missed.">        result.put(&quot;expr&quot;, expr == null ? &quot;&quot; : expr);</span>
+<span class="nc" id="L1197">        result.put(&quot;total&quot;, items.size());</span>
+<span class="nc" id="L1198">        result.put(&quot;items&quot;, items);</span>
+
+<span class="nc" id="L1200">        rsp.setContentType(&quot;application/json;charset=UTF-8&quot;);</span>
+<span class="nc" id="L1201">        rsp.getWriter().write(result.toString());</span>
+<span class="nc" id="L1202">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /** Change queue order (item position) */
+    @Restricted(NoExternalUse.class) // used by jelly
+    @RequirePOST
+    public void doChangeQueueOrder(final StaplerRequest2 req, final StaplerResponse2 rsp)
+            throws IOException, ServletException {
+<span class="nc" id="L1210">        Jenkins.get().checkPermission(QUEUE);</span>
+
+<span class="nc" id="L1212">        final String queueId = req.getParameter(&quot;id&quot;);</span>
+<span class="nc" id="L1213">        final String newIndexStr = req.getParameter(&quot;index&quot;);</span>
+
+<span class="nc" id="L1215">        LOGGER.fine(&quot;doChangeQueueOrder, id: &quot; + queueId + &quot; newIndexStr: &quot; + newIndexStr);</span>
+
+        final int newIndex;
+        try {
+<span class="nc" id="L1219">            newIndex = Integer.parseInt(newIndexStr);</span>
+<span class="nc" id="L1220">        } catch (NumberFormatException e) {</span>
+<span class="nc" id="L1221">            rsp.sendError(423, Messages.error_isNotANumber(newIndexStr));</span>
+<span class="nc" id="L1222">            return;</span>
+<span class="nc" id="L1223">        }</span>
+
+        try {
+<span class="nc" id="L1226">            LockableResourcesManager.get().changeQueueOrder(queueId, newIndex - 1);</span>
+<span class="nc" id="L1227">        } catch (IOException e) {</span>
+<span class="nc" id="L1228">            rsp.sendError(423, e.toString().replace(&quot;java.io.IOException: &quot;, &quot;&quot;));</span>
+<span class="nc" id="L1229">            return;</span>
+<span class="nc" id="L1230">        }</span>
+
+<span class="nc" id="L1232">        rsp.forwardToPreviousPage(req);</span>
+<span class="nc" id="L1233">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /** Returns a page of queue items as JSON for server-side pagination. */
+    @Restricted(NoExternalUse.class)
+    @RequirePOST
+    public void doGetQueuePage(final StaplerRequest2 req, final StaplerResponse2 rsp)
+            throws IOException, ServletException {
+<span class="nc" id="L1241">        Jenkins.get().checkPermission(VIEW);</span>
+
+<span class="nc" id="L1243">        int page = 1;</span>
+<span class="nc" id="L1244">        int size = 25;</span>
+<span class="nc" id="L1245">        String filter = Util.fixEmptyAndTrim(req.getParameter(&quot;filter&quot;));</span>
+<span class="nc" id="L1246">        String typeFilter = Util.fixEmptyAndTrim(req.getParameter(&quot;type&quot;));</span>
+<span class="nc" id="L1247">        String requestFilter = Util.fixEmptyAndTrim(req.getParameter(&quot;request&quot;));</span>
+<span class="nc" id="L1248">        String requestedByFilter = Util.fixEmptyAndTrim(req.getParameter(&quot;requestedBy&quot;));</span>
+
+        try {
+<span class="nc" id="L1251">            String pageParam = req.getParameter(&quot;page&quot;);</span>
+<span class="nc bnc" id="L1252" title="All 2 branches missed.">            if (pageParam != null) page = Math.max(1, Integer.parseInt(pageParam));</span>
+<span class="nc" id="L1253">        } catch (NumberFormatException ignored) {</span>
+<span class="nc" id="L1254">        }</span>
+        try {
+<span class="nc" id="L1256">            String sizeParam = req.getParameter(&quot;size&quot;);</span>
+<span class="nc bnc" id="L1257" title="All 2 branches missed.">            if (sizeParam != null) size = Math.max(1, Math.min(200, Integer.parseInt(sizeParam)));</span>
+<span class="nc" id="L1258">        } catch (NumberFormatException ignored) {</span>
+<span class="nc" id="L1259">        }</span>
+
+        Queue queue;
+        try {
+<span class="nc" id="L1263">            queue = getQueue();</span>
+<span class="nc" id="L1264">        } catch (Descriptor.FormException e) {</span>
+<span class="nc" id="L1265">            rsp.sendError(500, e.getMessage());</span>
+<span class="nc" id="L1266">            return;</span>
+<span class="nc" id="L1267">        }</span>
+
+<span class="nc" id="L1269">        List&lt;Queue.QueueStruct&gt; allItems = queue.getAll();</span>
+
+        // Apply filter if provided
+<span class="nc bnc" id="L1272" title="All 8 branches missed.">        if (filter != null || typeFilter != null || requestFilter != null || requestedByFilter != null) {</span>
+<span class="nc bnc" id="L1273" title="All 2 branches missed.">            final String lowerFilter = filter != null ? filter.toLowerCase(Locale.ENGLISH) : null;</span>
+<span class="nc bnc" id="L1274" title="All 2 branches missed.">            final String lowerTypeFilter = typeFilter != null ? typeFilter.toLowerCase(Locale.ENGLISH) : null;</span>
+<span class="nc bnc" id="L1275" title="All 2 branches missed.">            final String lowerRequestFilter = requestFilter != null ? requestFilter.toLowerCase(Locale.ENGLISH) : null;</span>
+            final String lowerRequestedByFilter =
+<span class="nc bnc" id="L1277" title="All 2 branches missed.">                    requestedByFilter != null ? requestedByFilter.toLowerCase(Locale.ENGLISH) : null;</span>
+<span class="nc" id="L1278">            allItems = allItems.stream()</span>
+<span class="nc" id="L1279">                    .filter(item -&gt; {</span>
+<span class="nc bnc" id="L1280" title="All 2 branches missed.">                        if (lowerTypeFilter != null</span>
+<span class="nc" id="L1281">                                &amp;&amp; !getQueueItemType(item)</span>
+<span class="nc" id="L1282">                                        .toLowerCase(Locale.ENGLISH)</span>
+<span class="nc bnc" id="L1283" title="All 2 branches missed.">                                        .contains(lowerTypeFilter)) {</span>
+<span class="nc" id="L1284">                            return false;</span>
+                        }
+<span class="nc bnc" id="L1286" title="All 2 branches missed.">                        if (lowerRequestFilter != null</span>
+<span class="nc" id="L1287">                                &amp;&amp; !getQueueItemRequestText(item)</span>
+<span class="nc" id="L1288">                                        .toLowerCase(Locale.ENGLISH)</span>
+<span class="nc bnc" id="L1289" title="All 2 branches missed.">                                        .contains(lowerRequestFilter)) {</span>
+<span class="nc" id="L1290">                            return false;</span>
+                        }
+<span class="nc bnc" id="L1292" title="All 2 branches missed.">                        if (lowerRequestedByFilter != null) {</span>
+<span class="nc" id="L1293">                            String requestedByText = item.getRequestedBy();</span>
+<span class="nc bnc" id="L1294" title="All 2 branches missed.">                            if (!requestedByText.toLowerCase(Locale.ENGLISH).contains(lowerRequestedByFilter)) {</span>
+<span class="nc" id="L1295">                                return false;</span>
+                            }
+                        }
+
+<span class="nc bnc" id="L1299" title="All 2 branches missed.">                        if (lowerFilter == null) {</span>
+<span class="nc" id="L1300">                            return true;</span>
+                        }
+
+<span class="nc bnc" id="L1303" title="All 2 branches missed.">                        if (item.resourcesMatch()) {</span>
+<span class="nc bnc" id="L1304" title="All 2 branches missed.">                            for (LockableResource r : item.getRequiredResources()) {</span>
+<span class="nc bnc" id="L1305" title="All 2 branches missed.">                                if (r.getName().toLowerCase(Locale.ENGLISH).contains(lowerFilter)) return true;</span>
+<span class="nc" id="L1306">                            }</span>
+                        }
+<span class="nc bnc" id="L1308" title="All 2 branches missed.">                        if (item.labelsMatch()</span>
+<span class="nc" id="L1309">                                &amp;&amp; item.getRequiredLabel()</span>
+<span class="nc" id="L1310">                                        .toLowerCase(Locale.ENGLISH)</span>
+<span class="nc bnc" id="L1311" title="All 2 branches missed.">                                        .contains(lowerFilter)) {</span>
+<span class="nc" id="L1312">                            return true;</span>
+                        }
+<span class="nc" id="L1314">                        Run&lt;?, ?&gt; b = item.getBuild();</span>
+<span class="nc bnc" id="L1315" title="All 2 branches missed.">                        if (b != null</span>
+<span class="nc" id="L1316">                                &amp;&amp; b.getFullDisplayName()</span>
+<span class="nc" id="L1317">                                        .toLowerCase(Locale.ENGLISH)</span>
+<span class="nc bnc" id="L1318" title="All 2 branches missed.">                                        .contains(lowerFilter)) {</span>
+<span class="nc" id="L1319">                            return true;</span>
+                        }
+                        // Remote rows have no resource list, no label and no build, so without these two
+                        // the free-text filter could only ever match their lock id.
+<span class="nc" id="L1323">                        if (getQueueItemRequestText(item)</span>
+<span class="nc" id="L1324">                                .toLowerCase(Locale.ENGLISH)</span>
+<span class="nc bnc" id="L1325" title="All 2 branches missed.">                                .contains(lowerFilter)) {</span>
+<span class="nc" id="L1326">                            return true;</span>
+                        }
+<span class="nc bnc" id="L1328" title="All 2 branches missed.">                        if (item.getRequestedBy().toLowerCase(Locale.ENGLISH).contains(lowerFilter)) {</span>
+<span class="nc" id="L1329">                            return true;</span>
+                        }
+<span class="nc" id="L1331">                        return item.getId().toLowerCase(Locale.ENGLISH).contains(lowerFilter);</span>
+                    })
+<span class="nc" id="L1333">                    .collect(Collectors.toList());</span>
+        }
+
+<span class="nc" id="L1336">        int total = allItems.size();</span>
+<span class="nc" id="L1337">        int pages = (int) Math.ceil((double) total / size);</span>
+<span class="nc" id="L1338">        int fromIndex = Math.min((page - 1) * size, total);</span>
+<span class="nc" id="L1339">        int toIndex = Math.min(fromIndex + size, total);</span>
+<span class="nc" id="L1340">        List&lt;Queue.QueueStruct&gt; pageItems = allItems.subList(fromIndex, toIndex);</span>
+
+        // Build JSON response
+<span class="nc" id="L1343">        net.sf.json.JSONObject result = new net.sf.json.JSONObject();</span>
+<span class="nc" id="L1344">        result.put(&quot;page&quot;, page);</span>
+<span class="nc" id="L1345">        result.put(&quot;size&quot;, size);</span>
+<span class="nc" id="L1346">        result.put(&quot;total&quot;, total);</span>
+<span class="nc" id="L1347">        result.put(&quot;pages&quot;, pages);</span>
+
+<span class="nc" id="L1349">        net.sf.json.JSONArray items = new net.sf.json.JSONArray();</span>
+<span class="nc" id="L1350">        int index = fromIndex;</span>
+<span class="nc bnc" id="L1351" title="All 2 branches missed.">        for (Queue.QueueStruct item : pageItems) {</span>
+<span class="nc" id="L1352">            net.sf.json.JSONObject obj = new net.sf.json.JSONObject();</span>
+<span class="nc" id="L1353">            obj.put(&quot;index&quot;, index + 1);</span>
+<span class="nc" id="L1354">            obj.put(&quot;id&quot;, item.getId());</span>
+<span class="nc" id="L1355">            obj.put(&quot;priority&quot;, item.getPriority());</span>
+<span class="nc" id="L1356">            obj.put(&quot;queuedAt&quot;, item.getQueuedAt());</span>
+<span class="nc" id="L1357">            obj.put(&quot;requestText&quot;, getQueueItemRequestText(item));</span>
+<span class="nc" id="L1358">            obj.put(</span>
+                    &quot;queuedAtHuman&quot;,
+<span class="nc bnc" id="L1360" title="All 2 branches missed.">                    item.getQueuedAt() &gt; 0</span>
+<span class="nc" id="L1361">                            ? Util.getTimeSpanString(System.currentTimeMillis() - item.getQueuedAt())</span>
+<span class="nc" id="L1362">                            : &quot;&quot;);</span>
+
+<span class="nc" id="L1364">            obj.put(&quot;requestedBy&quot;, item.getRequestedBy());</span>
+<span class="nc" id="L1365">            obj.put(&quot;requestedByUrl&quot;, item.getRequestedByUrl());</span>
+
+<span class="nc bnc" id="L1367" title="All 2 branches missed.">            if (item.isRemote()) {</span>
+<span class="nc" id="L1368">                obj.put(&quot;type&quot;, &quot;remote&quot;);</span>
+<span class="nc" id="L1369">                obj.put(&quot;request&quot;, item.getRemoteRequest());</span>
+<span class="nc" id="L1370">                obj.put(&quot;reason&quot;, item.getRemoteReason());</span>
+<span class="nc bnc" id="L1371" title="All 2 branches missed.">            } else if (item.resourcesMatch()) {</span>
+<span class="nc" id="L1372">                obj.put(&quot;type&quot;, &quot;resources&quot;);</span>
+<span class="nc" id="L1373">                net.sf.json.JSONArray resources = new net.sf.json.JSONArray();</span>
+<span class="nc bnc" id="L1374" title="All 2 branches missed.">                for (LockableResource r : item.getRequiredResources()) {</span>
+<span class="nc" id="L1375">                    net.sf.json.JSONObject ro = new net.sf.json.JSONObject();</span>
+<span class="nc" id="L1376">                    ro.put(&quot;name&quot;, r.getName());</span>
+<span class="nc" id="L1377">                    ro.put(&quot;ephemeral&quot;, r.isEphemeral());</span>
+<span class="nc bnc" id="L1378" title="All 2 branches missed.">                    ro.put(&quot;description&quot;, r.getDescription() != null ? r.getDescription() : &quot;&quot;);</span>
+<span class="nc" id="L1379">                    resources.add(ro);</span>
+<span class="nc" id="L1380">                }</span>
+<span class="nc" id="L1381">                obj.put(&quot;request&quot;, resources);</span>
+<span class="nc" id="L1382">                obj.put(&quot;reason&quot;, &quot;&quot;);</span>
+<span class="nc bnc" id="L1383" title="All 2 branches missed.">            } else if (item.labelsMatch()) {</span>
+<span class="nc" id="L1384">                obj.put(&quot;type&quot;, &quot;label&quot;);</span>
+<span class="nc" id="L1385">                obj.put(&quot;request&quot;, item.getRequiredLabel());</span>
+<span class="nc" id="L1386">                String requiredNum = item.getRequiredNumber();</span>
+<span class="nc bnc" id="L1387" title="All 2 branches missed.">                obj.put(&quot;reason&quot;, &quot;0&quot;.equals(requiredNum) ? &quot;all&quot; : requiredNum + &quot; required&quot;);</span>
+<span class="nc" id="L1388">            } else {</span>
+<span class="nc" id="L1389">                obj.put(&quot;type&quot;, &quot;groovy&quot;);</span>
+<span class="nc" id="L1390">                obj.put(&quot;request&quot;, &quot;Groovy expression&quot;);</span>
+<span class="nc" id="L1391">                obj.put(&quot;reason&quot;, &quot;&quot;);</span>
+            }
+
+<span class="nc" id="L1394">            items.add(obj);</span>
+<span class="nc" id="L1395">            index++;</span>
+<span class="nc" id="L1396">        }</span>
+<span class="nc" id="L1397">        result.put(&quot;items&quot;, items);</span>
+
+        // Warning info
+<span class="nc" id="L1400">        Queue.QueueStruct oldest = queue.getOldest();</span>
+<span class="nc bnc" id="L1401" title="All 4 branches missed.">        if (oldest != null &amp;&amp; oldest.takeTooLong()) {</span>
+<span class="nc" id="L1402">            result.put(&quot;warningCount&quot;, allItems.size());</span>
+<span class="nc" id="L1403">            result.put(&quot;warningAge&quot;, Util.getTimeSpanString(System.currentTimeMillis() - oldest.getQueuedAt()));</span>
+        }
+
+<span class="nc" id="L1406">        rsp.setContentType(&quot;application/json;charset=UTF-8&quot;);</span>
+<span class="nc" id="L1407">        rsp.getWriter().write(result.toString());</span>
+<span class="nc" id="L1408">    }</span>
+
+    private String getQueueItemType(final Queue.QueueStruct item) {
+<span class="nc bnc" id="L1411" title="All 2 branches missed.">        if (item.isRemote()) {</span>
+<span class="nc" id="L1412">            return &quot;remote&quot;;</span>
+        }
+<span class="nc bnc" id="L1414" title="All 2 branches missed.">        if (item.resourcesMatch()) {</span>
+<span class="nc" id="L1415">            return &quot;resources&quot;;</span>
+        }
+<span class="nc bnc" id="L1417" title="All 2 branches missed.">        if (item.labelsMatch()) {</span>
+<span class="nc" id="L1418">            return &quot;label&quot;;</span>
+        }
+<span class="nc" id="L1420">        return &quot;groovy&quot;;</span>
+    }
+
+    private String getQueueItemRequestText(final Queue.QueueStruct item) {
+<span class="nc bnc" id="L1424" title="All 2 branches missed.">        if (item.isRemote()) {</span>
+<span class="nc" id="L1425">            return item.getRemoteRequest();</span>
+        }
+<span class="nc bnc" id="L1427" title="All 2 branches missed.">        if (item.resourcesMatch()) {</span>
+<span class="nc" id="L1428">            return item.getRequiredResources().stream()</span>
+<span class="nc" id="L1429">                    .map(LockableResource::getName)</span>
+<span class="nc" id="L1430">                    .collect(Collectors.joining(&quot;, &quot;));</span>
+        }
+<span class="nc bnc" id="L1432" title="All 2 branches missed.">        if (item.labelsMatch()) {</span>
+<span class="nc" id="L1433">            return item.getRequiredLabel();</span>
+        }
+<span class="nc" id="L1435">        return &quot;Groovy expression&quot;;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Parse properties from a JSON array. */
+    private List&lt;LockableResourceProperty&gt; parsePropertiesFromJson(net.sf.json.JSONObject json) {
+<span class="nc" id="L1441">        List&lt;LockableResourceProperty&gt; properties = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L1442">        net.sf.json.JSONArray propsArr = json.optJSONArray(&quot;properties&quot;);</span>
+<span class="nc bnc" id="L1443" title="All 2 branches missed.">        if (propsArr != null) {</span>
+<span class="nc bnc" id="L1444" title="All 2 branches missed.">            for (int i = 0; i &lt; propsArr.size(); i++) {</span>
+<span class="nc" id="L1445">                net.sf.json.JSONObject p = propsArr.getJSONObject(i);</span>
+<span class="nc" id="L1446">                String pName = Util.fixEmptyAndTrim(p.optString(&quot;name&quot;, null));</span>
+<span class="nc" id="L1447">                String pValue = p.optString(&quot;value&quot;, &quot;&quot;);</span>
+<span class="nc bnc" id="L1448" title="All 2 branches missed.">                if (pName != null) {</span>
+<span class="nc" id="L1449">                    LockableResourceProperty prop = new LockableResourceProperty();</span>
+<span class="nc" id="L1450">                    prop.setName(pName);</span>
+<span class="nc" id="L1451">                    prop.setValue(pValue);</span>
+<span class="nc" id="L1452">                    properties.add(prop);</span>
+                }
+            }
+        }
+<span class="nc" id="L1456">        return properties;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /** Create a new lockable resource from the management page. */
+    @Restricted(NoExternalUse.class)
+    @RequirePOST
+    public void doCreateResource(final StaplerRequest2 req, final StaplerResponse2 rsp)
+            throws IOException, ServletException {
+<span class="nc" id="L1465">        Jenkins.get().checkPermission(CONFIGURE);</span>
+
+        String name;
+        String description;
+        String labels;
+<span class="nc" id="L1470">        List&lt;LockableResourceProperty&gt; properties = new ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L1472">        String contentType = req.getContentType();</span>
+<span class="nc bnc" id="L1473" title="All 4 branches missed.">        if (contentType != null &amp;&amp; contentType.contains(&quot;application/json&quot;)) {</span>
+            // JSON body from the inline dialog
+<span class="nc" id="L1475">            net.sf.json.JSONObject json = net.sf.json.JSONObject.fromObject(</span>
+<span class="nc" id="L1476">                    new String(req.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));</span>
+<span class="nc" id="L1477">            name = Util.fixEmptyAndTrim(json.optString(&quot;name&quot;, null));</span>
+<span class="nc" id="L1478">            description = Util.fixEmptyAndTrim(json.optString(&quot;description&quot;, null));</span>
+<span class="nc" id="L1479">            labels = Util.fixEmptyAndTrim(json.optString(&quot;labels&quot;, null));</span>
+<span class="nc" id="L1480">            properties = parsePropertiesFromJson(json);</span>
+<span class="nc" id="L1481">        } else {</span>
+            // Form-encoded (e.g. from tests)
+<span class="nc" id="L1483">            name = Util.fixEmptyAndTrim(req.getParameter(&quot;name&quot;));</span>
+<span class="nc" id="L1484">            description = Util.fixEmptyAndTrim(req.getParameter(&quot;description&quot;));</span>
+<span class="nc" id="L1485">            labels = Util.fixEmptyAndTrim(req.getParameter(&quot;labels&quot;));</span>
+        }
+
+<span class="nc bnc" id="L1488" title="All 2 branches missed.">        if (name == null) {</span>
+<span class="nc" id="L1489">            rsp.sendError(400, &quot;Resource name is required.&quot;);</span>
+<span class="nc" id="L1490">            return;</span>
+        }
+
+<span class="nc" id="L1493">        LockableResourcesManager manager = LockableResourcesManager.get();</span>
+<span class="nc bnc" id="L1494" title="All 2 branches missed.">        if (manager.fromName(name) != null) {</span>
+<span class="nc" id="L1495">            rsp.sendError(409, Messages.error_resourceAlreadyExists(name));</span>
+<span class="nc" id="L1496">            return;</span>
+        }
+
+<span class="nc" id="L1499">        LockableResource resource = new LockableResource(name);</span>
+
+<span class="nc bnc" id="L1501" title="All 2 branches missed.">        if (description != null) {</span>
+<span class="nc" id="L1502">            resource.setDescription(description);</span>
+        }
+<span class="nc bnc" id="L1504" title="All 2 branches missed.">        if (labels != null) {</span>
+<span class="nc" id="L1505">            resource.setLabelsFromString(labels);</span>
+        }
+<span class="nc bnc" id="L1507" title="All 2 branches missed.">        if (!properties.isEmpty()) {</span>
+<span class="nc" id="L1508">            resource.setProperties(properties);</span>
+        }
+
+<span class="nc" id="L1511">        boolean added = manager.addResource(resource, /*doSave*/ true);</span>
+<span class="nc bnc" id="L1512" title="All 2 branches missed.">        if (!added) {</span>
+<span class="nc" id="L1513">            rsp.sendError(409, Messages.error_resourceAlreadyExists(name));</span>
+<span class="nc" id="L1514">            return;</span>
+        }
+
+<span class="nc" id="L1517">        rsp.forwardToPreviousPage(req);</span>
+<span class="nc" id="L1518">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /** Edit an existing lockable resource from the management page. */
+    @Restricted(NoExternalUse.class)
+    @RequirePOST
+    public void doEditResource(final StaplerRequest2 req, final StaplerResponse2 rsp)
+            throws IOException, ServletException {
+<span class="nc" id="L1526">        Jenkins.get().checkPermission(CONFIGURE);</span>
+
+<span class="nc" id="L1528">        String contentType = req.getContentType();</span>
+<span class="nc bnc" id="L1529" title="All 4 branches missed.">        if (contentType == null || !contentType.contains(&quot;application/json&quot;)) {</span>
+<span class="nc" id="L1530">            rsp.sendError(400, &quot;JSON body required.&quot;);</span>
+<span class="nc" id="L1531">            return;</span>
+        }
+
+<span class="nc" id="L1534">        net.sf.json.JSONObject json = net.sf.json.JSONObject.fromObject(</span>
+<span class="nc" id="L1535">                new String(req.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));</span>
+
+<span class="nc" id="L1537">        String name = Util.fixEmptyAndTrim(json.optString(&quot;name&quot;, null));</span>
+<span class="nc bnc" id="L1538" title="All 2 branches missed.">        if (name == null) {</span>
+<span class="nc" id="L1539">            rsp.sendError(400, &quot;Resource name is required.&quot;);</span>
+<span class="nc" id="L1540">            return;</span>
+        }
+
+<span class="nc" id="L1543">        LockableResourcesManager manager = LockableResourcesManager.get();</span>
+<span class="nc" id="L1544">        synchronized (LockableResourcesManager.syncResources) {</span>
+<span class="nc" id="L1545">            LockableResource resource = manager.fromName(name);</span>
+<span class="nc bnc" id="L1546" title="All 2 branches missed.">            if (resource == null) {</span>
+<span class="nc" id="L1547">                rsp.sendError(404, Messages.error_resourceDoesNotExist(name));</span>
+<span class="nc" id="L1548">                return;</span>
+            }
+
+<span class="nc" id="L1551">            resource.setDescription(Util.fixEmptyAndTrim(json.optString(&quot;description&quot;, null)));</span>
+<span class="nc" id="L1552">            resource.setLabelsFromString(Util.fixEmptyAndTrim(json.optString(&quot;labels&quot;, null)));</span>
+<span class="nc" id="L1553">            resource.setProperties(parsePropertiesFromJson(json));</span>
+
+<span class="nc" id="L1555">            manager.save();</span>
+<span class="nc" id="L1556">        }</span>
+<span class="nc" id="L1557">        rsp.forwardToPreviousPage(req);</span>
+<span class="nc" id="L1558">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /** Delete a lockable resource from the management page. */
+    @Restricted(NoExternalUse.class)
+    @RequirePOST
+    public void doDeleteResource(final StaplerRequest2 req, final StaplerResponse2 rsp)
+            throws IOException, ServletException {
+<span class="nc" id="L1566">        Jenkins.get().checkPermission(CONFIGURE);</span>
+
+<span class="nc" id="L1568">        String name = req.getParameter(&quot;resource&quot;);</span>
+<span class="nc" id="L1569">        LockableResourcesManager manager = LockableResourcesManager.get();</span>
+<span class="nc" id="L1570">        synchronized (LockableResourcesManager.syncResources) {</span>
+<span class="nc" id="L1571">            LockableResource resource = manager.fromName(name);</span>
+<span class="nc bnc" id="L1572" title="All 2 branches missed.">            if (resource == null) {</span>
+<span class="nc" id="L1573">                rsp.sendError(404, Messages.error_resourceDoesNotExist(name));</span>
+<span class="nc" id="L1574">                return;</span>
+            }
+
+<span class="nc bnc" id="L1577" title="All 2 branches missed.">            if (!resource.isFree()) {</span>
+<span class="nc bnc" id="L1578" title="All 4 branches missed.">                String cause = resource.isLocked() ? &quot;locked&quot; : resource.isReserved() ? &quot;reserved&quot; : &quot;queued&quot;;</span>
+<span class="nc" id="L1579">                rsp.sendError(423, Messages.error_resourceAlreadyLocked(name) + &quot; (&quot; + cause + &quot;)&quot;);</span>
+<span class="nc" id="L1580">                return;</span>
+            }
+
+<span class="nc" id="L1583">            List&lt;LockableResource&gt; toRemove = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L1584">            toRemove.add(resource);</span>
+<span class="nc" id="L1585">            manager.removeResources(toRemove);</span>
+<span class="nc" id="L1586">            manager.save();</span>
+<span class="nc" id="L1587">        }</span>
+<span class="nc" id="L1588">        rsp.forwardToPreviousPage(req);</span>
+<span class="nc" id="L1589">    }</span>
+
+    // ---------------------------------------------------------------------------
+    private List&lt;LockableResource&gt; getResourcesFromRequest(final StaplerRequest2 req, final StaplerResponse2 rsp)
+            throws IOException, ServletException {
+        // todo, when you try to improve the API to use multiple resources (a list instead of single
+        // one)
+        // this will be the best place to change it. Probably it will be enough to add a code piece here
+        // like req.getParameter(&quot;resources&quot;); And split the content by some delimiter like ' ' (space)
+<span class="fc" id="L1598">        String name = req.getParameter(&quot;resource&quot;);</span>
+<span class="fc" id="L1599">        LockableResource r = LockableResourcesManager.get().fromName(name);</span>
+<span class="pc bpc" id="L1600" title="1 of 2 branches missed.">        if (r == null) {</span>
+<span class="nc" id="L1601">            rsp.sendError(404, Messages.error_resourceDoesNotExist(name));</span>
+<span class="nc" id="L1602">            return null;</span>
+        }
+
+<span class="fc" id="L1605">        List&lt;LockableResource&gt; resources = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L1606">        resources.add(r);</span>
+<span class="fc" id="L1607">        return resources;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Routes {@code /lockable-resources/remote/*} to the remote lock API.
+     */
+    public Object getDynamic(String token) {
+<span class="pc bpc" id="L1615" title="1 of 2 branches missed.">        if (&quot;remote&quot;.equals(token)) {</span>
+<span class="fc" id="L1616">            return new RemoteRouterAction();</span>
+        }
+<span class="nc" id="L1618">        return null;</span>
+    }
+
+    /** Routes {@code /lockable-resources/remote/v1/*} to {@link RemoteApiV1Action}. */
+    @Restricted(NoExternalUse.class)
+<span class="fc" id="L1623">    public static final class RemoteRouterAction {</span>
+        public Object getDynamic(String token) {
+<span class="pc bpc" id="L1625" title="1 of 2 branches missed.">            if (&quot;v1&quot;.equals(token)) {</span>
+<span class="fc" id="L1626">                return new RemoteApiV1Action();</span>
+            }
+<span class="nc" id="L1628">            return null;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

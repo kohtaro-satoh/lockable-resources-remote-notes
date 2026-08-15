@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>QueuedContextStruct.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources.queue</a> &gt; <span class="el_source">QueuedContextStruct.java</span></div><h1>QueuedContextStruct.java</h1><pre class="source lang-java linenums">/*
+ * The MIT License
+ *
+ * See the &quot;LICENSE.txt&quot; file for full copyright and license information.
+ */
+package org.jenkins.plugins.lockableresources.queue;
+
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import hudson.model.Run;
+import hudson.model.TaskListener;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.io.Serializable;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
+
+/*
+ * This class is used to queue pipeline contexts
+ * which shall be executed once the necessary
+ * resources are free'd.
+ */
+public class QueuedContextStruct implements Serializable {
+
+    /*
+     * Reference to the pipeline step context.
+     */
+    private StepContext context;
+
+    /*
+     * Reference to the resources required by the step context.
+     */
+    private List&lt;LockableResourcesStruct&gt; lockableResourcesStruct;
+
+    /*
+     * Description of the required resources used within logging messages.
+     */
+    private String resourceDescription;
+
+    /*
+     * Name of the variable to save the locks taken.
+     */
+    private String variableName;
+
+    /*
+     * The reason why the resource is being locked.
+     */
+    private String reason;
+
+<span class="fc" id="L55">    private int priority = 0;</span>
+
+    /*
+     * Timeout for waiting to acquire the resource, in the specified timeoutUnit.
+     * 0 means no timeout (wait indefinitely).
+     */
+<span class="fc" id="L61">    private long timeoutForAllocateResource = 0;</span>
+
+    /*
+     * Time unit for the timeout. Defaults to MINUTES.
+     */
+<span class="fc" id="L66">    private String timeoutUnit = &quot;MINUTES&quot;;</span>
+
+    /*
+     * Pre-computed absolute deadline (epoch millis) when this entry times out.
+     * 0 means no timeout. Calculated once at construction time to avoid
+     * repeated TimeUnit.valueOf() + toMillis() on every queue check.
+     */
+<span class="fc" id="L73">    private long timeoutDeadlineMillis = 0;</span>
+
+    // cached candidates
+<span class="fc" id="L76">    public transient List&lt;String&gt; candidates = null;</span>
+
+<span class="fc" id="L78">    private static final Logger LOGGER = Logger.getLogger(QueuedContextStruct.class.getName());</span>
+
+<span class="fc" id="L80">    private String id = null;</span>
+
+    /*
+     * Constructor for the QueuedContextStruct class.
+     */
+    @Restricted(NoExternalUse.class)
+    public QueuedContextStruct(
+            StepContext context,
+            List&lt;LockableResourcesStruct&gt; lockableResourcesStruct,
+            String resourceDescription,
+            String variableName,
+            int priority) {
+<span class="nc" id="L92">        this(context, lockableResourcesStruct, resourceDescription, variableName, priority, null, 0, &quot;MINUTES&quot;);</span>
+<span class="nc" id="L93">    }</span>
+
+    /*
+     * Constructor for the QueuedContextStruct class with reason and timeout.
+     */
+    @Restricted(NoExternalUse.class)
+    public QueuedContextStruct(
+            StepContext context,
+            List&lt;LockableResourcesStruct&gt; lockableResourcesStruct,
+            String resourceDescription,
+            String variableName,
+            int priority,
+            String reason,
+            long timeoutForAllocateResource,
+<span class="fc" id="L107">            String timeoutUnit) {</span>
+<span class="fc" id="L108">        this.context = context;</span>
+<span class="fc" id="L109">        this.lockableResourcesStruct = lockableResourcesStruct;</span>
+<span class="fc" id="L110">        this.resourceDescription = resourceDescription;</span>
+<span class="fc" id="L111">        this.variableName = variableName;</span>
+<span class="fc" id="L112">        this.priority = priority;</span>
+<span class="fc" id="L113">        this.reason = reason;</span>
+<span class="fc" id="L114">        this.timeoutForAllocateResource = timeoutForAllocateResource;</span>
+<span class="pc bpc" id="L115" title="1 of 2 branches missed.">        this.timeoutUnit = timeoutUnit != null ? timeoutUnit : &quot;MINUTES&quot;;</span>
+<span class="fc" id="L116">        this.id = UUID.randomUUID().toString();</span>
+
+        // Pre-compute deadline once to avoid repeated calculation on every queue check
+<span class="pc bpc" id="L119" title="1 of 2 branches missed.">        if (timeoutForAllocateResource &gt; 0) {</span>
+            try {
+<span class="nc" id="L121">                TimeUnit unit = TimeUnit.valueOf(this.timeoutUnit);</span>
+<span class="nc" id="L122">                this.timeoutDeadlineMillis = System.currentTimeMillis() + unit.toMillis(timeoutForAllocateResource);</span>
+<span class="nc" id="L123">            } catch (IllegalArgumentException e) {</span>
+<span class="nc" id="L124">                LOGGER.warning(&quot;Invalid timeoutUnit '&quot; + this.timeoutUnit + &quot;', timeout disabled&quot;);</span>
+<span class="nc" id="L125">                this.timeoutDeadlineMillis = 0;</span>
+<span class="nc" id="L126">            }</span>
+        }
+<span class="fc" id="L128">    }</span>
+
+    @Restricted(NoExternalUse.class)
+    public int compare(QueuedContextStruct other) {
+<span class="nc bnc" id="L132" title="All 2 branches missed.">        if (this.priority &gt; other.getPriority()) return -1;</span>
+<span class="nc bnc" id="L133" title="All 2 branches missed.">        else if (this.priority == other.getPriority()) return 0;</span>
+<span class="nc" id="L134">        else return 1;</span>
+    }
+
+    @Restricted(NoExternalUse.class)
+    public int getPriority() {
+<span class="fc" id="L139">        return this.priority;</span>
+    }
+
+    @Restricted(NoExternalUse.class)
+    public String getId() {
+<span class="pc bpc" id="L144" title="1 of 2 branches missed.">        if (this.id == null) {</span>
+<span class="nc" id="L145">            this.id = UUID.randomUUID().toString();</span>
+        }
+<span class="fc" id="L147">        return this.id;</span>
+    }
+
+    /*
+     * Gets the pipeline step context.
+     */
+    @Restricted(NoExternalUse.class)
+    public StepContext getContext() {
+<span class="fc" id="L155">        return this.context;</span>
+    }
+
+    /** Return build, where is the resource used. */
+    @CheckForNull
+    @Restricted(NoExternalUse.class)
+    public Run&lt;?, ?&gt; getBuild() {
+        try {
+<span class="pc bpc" id="L163" title="1 of 2 branches missed.">            if (this.getContext() == null) {</span>
+<span class="nc" id="L164">                return null;</span>
+            }
+<span class="fc" id="L166">            return this.getContext().get(Run.class);</span>
+<span class="nc" id="L167">        } catch (Exception e) {</span>
+            // for some reason there is no Run object for this context
+<span class="nc" id="L169">            LOGGER.log(</span>
+                    Level.WARNING,
+                    &quot;Cannot get the build object from the context to proceed with lock. The build probably does not exists (deleted?)&quot;,
+                    e);
+<span class="nc" id="L173">            return null;</span>
+        }
+    }
+
+    @Restricted(NoExternalUse.class)
+    public boolean isValid() {
+<span class="fc" id="L179">        Run&lt;?, ?&gt; run = this.getBuild();</span>
+<span class="pc bpc" id="L180" title="2 of 4 branches missed.">        if (run == null || run.isBuilding() == false) {</span>
+            // skip this one, for some reason there is no Run object for this context
+<span class="nc" id="L182">            LOGGER.warning(&quot;The queue &quot; + this + &quot; will be removed, because the build does not exists&quot;);</span>
+<span class="nc" id="L183">            return false;</span>
+        }
+<span class="fc" id="L185">        return true;</span>
+    }
+
+    @Restricted(NoExternalUse.class)
+    /*
+     * Gets the required resources.
+     */
+    public List&lt;LockableResourcesStruct&gt; getResources() {
+<span class="fc" id="L193">        return this.lockableResourcesStruct;</span>
+    }
+
+    @Restricted(NoExternalUse.class)
+    /*
+     * Gets the resource description for logging messages.
+     */
+    public String getResourceDescription() {
+<span class="fc" id="L201">        return this.resourceDescription;</span>
+    }
+
+    @Restricted(NoExternalUse.class)
+    /*
+     * Gets the variable name to save the locks taken.
+     */
+    public String getVariableName() {
+<span class="fc" id="L209">        return this.variableName;</span>
+    }
+
+    /**
+     * Checks whether this queued context has exceeded its allocation timeout.
+     * Uses a pre-computed deadline for performance since this is called on every queue check.
+     *
+     * @return true if a timeout was set and has expired, false otherwise
+     */
+    @Restricted(NoExternalUse.class)
+    public boolean isTimedOut() {
+<span class="pc bpc" id="L220" title="3 of 4 branches missed.">        return timeoutDeadlineMillis &gt; 0 &amp;&amp; System.currentTimeMillis() &gt; timeoutDeadlineMillis;</span>
+    }
+
+    /**
+     * Returns the pre-computed deadline (epoch millis) when this entry times out.
+     * 0 means no timeout is configured.
+     */
+    @Restricted(NoExternalUse.class)
+    public long getTimeoutDeadlineMillis() {
+<span class="fc" id="L229">        return this.timeoutDeadlineMillis;</span>
+    }
+
+    /**
+     * Returns the configured timeout for resource allocation.
+     */
+    @Restricted(NoExternalUse.class)
+    public long getTimeoutForAllocateResource() {
+<span class="nc" id="L237">        return this.timeoutForAllocateResource;</span>
+    }
+
+    /**
+     * Returns the time unit for the allocation timeout.
+     */
+    @Restricted(NoExternalUse.class)
+    public String getTimeoutUnit() {
+<span class="nc" id="L245">        return this.timeoutUnit;</span>
+    }
+
+    @Restricted(NoExternalUse.class)
+    /*
+     * Gets the reason for locking.
+     */
+    public String getReason() {
+<span class="fc" id="L253">        return this.reason;</span>
+    }
+
+    @Restricted(NoExternalUse.class)
+    public String toString() {
+<span class="fc" id="L258">        return &quot;build: &quot;</span>
+<span class="fc" id="L259">                + this.getBuild()</span>
+                + &quot; resources: &quot;
+<span class="fc" id="L261">                + this.getResourceDescription()</span>
+                + &quot; priority: &quot;
+                + this.priority
+                + &quot; id: &quot;
+<span class="fc" id="L265">                + this.getId();</span>
+    }
+
+    @Restricted(NoExternalUse.class)
+    public PrintStream getLogger() {
+<span class="fc" id="L270">        PrintStream logger = null;</span>
+        try {
+<span class="fc" id="L272">            TaskListener taskListener = this.getContext().get(TaskListener.class);</span>
+<span class="pc bpc" id="L273" title="1 of 2 branches missed.">            if (taskListener != null) {</span>
+<span class="fc" id="L274">                logger = taskListener.getLogger();</span>
+            }
+<span class="nc" id="L276">        } catch (IOException | InterruptedException e) {</span>
+<span class="nc" id="L277">            LOGGER.log(Level.FINE, &quot;Could not get logger for next context: &quot; + e, e);</span>
+<span class="fc" id="L278">        }</span>
+<span class="fc" id="L279">        return logger;</span>
+    }
+
+    private static final long serialVersionUID = 1L;
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

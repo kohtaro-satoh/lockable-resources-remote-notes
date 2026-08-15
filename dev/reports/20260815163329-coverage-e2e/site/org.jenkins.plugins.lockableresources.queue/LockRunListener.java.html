@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LockRunListener.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources.queue</a> &gt; <span class="el_source">LockRunListener.java</span></div><h1>LockRunListener.java</h1><pre class="source lang-java linenums">/*
+ * The MIT License
+ *
+ * See the &quot;LICENSE.txt&quot; file for full copyright and license information.
+ */
+package org.jenkins.plugins.lockableresources.queue;
+
+import edu.umd.cs.findbugs.annotations.NonNull;
+import hudson.EnvVars;
+import hudson.Extension;
+import hudson.model.AbstractBuild;
+import hudson.model.Job;
+import hudson.model.Run;
+import hudson.model.StringParameterValue;
+import hudson.model.TaskListener;
+import hudson.model.listeners.RunListener;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import org.jenkins.plugins.lockableresources.LockableResource;
+import org.jenkins.plugins.lockableresources.LockableResourceProperty;
+import org.jenkins.plugins.lockableresources.LockableResourcesManager;
+import org.jenkins.plugins.lockableresources.actions.ResourceVariableNameAction;
+
+@Extension
+<span class="fc" id="L28">public class LockRunListener extends RunListener&lt;Run&lt;?, ?&gt;&gt; {</span>
+
+    static final String LOG_PREFIX = &quot;[lockable-resources]&quot;;
+<span class="fc" id="L31">    static final Logger LOGGER = Logger.getLogger(LockRunListener.class.getName());</span>
+
+    @Override
+    public void onStarted(Run&lt;?, ?&gt; build, TaskListener listener) {
+        // Skip locking for multiple configuration projects,
+        // only the child jobs will actually lock resources.
+<span class="pc bpc" id="L37" title="1 of 2 branches missed.">        if (build.getClass().getName().equals(&quot;hudson.matrix.MatrixBuild&quot;)) {</span>
+<span class="nc" id="L38">            return;</span>
+        }
+
+<span class="pc bpc" id="L41" title="1 of 2 branches missed.">        if (build instanceof AbstractBuild) {</span>
+<span class="nc" id="L42">            AbstractBuild&lt;?, ?&gt; abstractBuild = (AbstractBuild&lt;?, ?&gt;) build;</span>
+<span class="nc" id="L43">            LockableResourcesManager lrm = LockableResourcesManager.get();</span>
+<span class="nc" id="L44">            synchronized (LockableResourcesManager.syncResources) {</span>
+<span class="nc" id="L45">                Job&lt;?, ?&gt; proj = Utils.getProject(build);</span>
+<span class="nc" id="L46">                List&lt;LockableResource&gt; required = new ArrayList&lt;&gt;();</span>
+
+                // Resolve build parameters so that ${PARAM} references in
+                // resource names, labels, and numbers are expanded.
+                EnvVars buildEnv;
+                try {
+<span class="nc" id="L52">                    buildEnv = abstractBuild.getEnvironment(listener);</span>
+<span class="nc" id="L53">                } catch (IOException | InterruptedException e) {</span>
+<span class="nc" id="L54">                    buildEnv = new EnvVars();</span>
+<span class="nc" id="L55">                }</span>
+
+<span class="nc" id="L57">                LockableResourcesStruct resources = Utils.requiredResources(proj, buildEnv);</span>
+
+<span class="nc bnc" id="L59" title="All 2 branches missed.">                if (resources != null) {</span>
+<span class="nc bnc" id="L60" title="All 2 branches missed.">                    if (resources.requiredNumber != null</span>
+<span class="nc bnc" id="L61" title="All 2 branches missed.">                            || !resources.label.isEmpty()</span>
+<span class="nc bnc" id="L62" title="All 2 branches missed.">                            || resources.getResourceMatchScriptText() != null) {</span>
+<span class="nc" id="L63">                        required.addAll(lrm.getResourcesFromProject(proj.getFullName()));</span>
+                    } else {
+<span class="nc" id="L65">                        required.addAll(resources.required);</span>
+                    }
+
+<span class="nc bnc" id="L68" title="All 2 branches missed.">                    if (lrm.lock(required, build)) {</span>
+                        // build.addAction(LockedResourcesBuildAction.fromResources(required));
+<span class="nc" id="L70">                        listener.getLogger().printf(&quot;%s acquired lock on %s%n&quot;, LOG_PREFIX, required);</span>
+<span class="nc" id="L71">                        LOGGER.info(build.getFullDisplayName() + &quot; acquired lock on &quot; + required);</span>
+<span class="nc bnc" id="L72" title="All 2 branches missed.">                        if (resources.requiredVar != null) {</span>
+<span class="nc" id="L73">                            List&lt;StringParameterValue&gt; envsToSet = new ArrayList&lt;&gt;();</span>
+
+                            // add the comma separated list of names acquired
+<span class="nc" id="L76">                            envsToSet.add(new StringParameterValue(</span>
+                                    resources.requiredVar,
+<span class="nc" id="L78">                                    required.stream()</span>
+<span class="nc" id="L79">                                            .map(LockableResource::getName)</span>
+<span class="nc" id="L80">                                            .collect(Collectors.joining(&quot;,&quot;))));</span>
+
+                            // also add a numbered variable for each acquired lock along with properties of the lock
+<span class="nc" id="L83">                            int index = 0;</span>
+<span class="nc bnc" id="L84" title="All 2 branches missed.">                            for (LockableResource lr : required) {</span>
+<span class="nc" id="L85">                                String lockEnvName = resources.requiredVar + index;</span>
+<span class="nc" id="L86">                                envsToSet.add(new StringParameterValue(lockEnvName, lr.getName()));</span>
+<span class="nc bnc" id="L87" title="All 2 branches missed.">                                for (LockableResourceProperty lockProperty : lr.getProperties()) {</span>
+<span class="nc" id="L88">                                    String propEnvName = lockEnvName + &quot;_&quot; + lockProperty.getName();</span>
+<span class="nc" id="L89">                                    envsToSet.add(new StringParameterValue(propEnvName, lockProperty.getValue()));</span>
+<span class="nc" id="L90">                                }</span>
+<span class="nc" id="L91">                                ++index;</span>
+<span class="nc" id="L92">                            }</span>
+
+<span class="nc" id="L94">                            build.addAction(new ResourceVariableNameAction(envsToSet));</span>
+<span class="nc" id="L95">                        }</span>
+                    } else {
+<span class="nc" id="L97">                        listener.getLogger().printf(&quot;%s failed to lock %s%n&quot;, LOG_PREFIX, required);</span>
+<span class="nc" id="L98">                        LOGGER.warning(build.getFullDisplayName() + &quot; failed to lock &quot; + required);</span>
+                    }
+                }
+<span class="nc" id="L101">            }</span>
+        }
+<span class="fc" id="L103">    }</span>
+
+    @Override
+    public void onCompleted(Run&lt;?, ?&gt; build, @NonNull TaskListener listener) {
+        // Skip unlocking for multiple configuration projects,
+        // only the child jobs will actually unlock resources.
+<span class="pc bpc" id="L109" title="1 of 2 branches missed.">        if (build.getClass().getName().equals(&quot;hudson.matrix.MatrixBuild&quot;)) {</span>
+<span class="nc" id="L110">            return;</span>
+        }
+<span class="fc" id="L112">        LOGGER.info(build.getFullDisplayName());</span>
+<span class="fc" id="L113">        LockableResourcesManager.get().unlockBuild(build);</span>
+<span class="fc" id="L114">    }</span>
+
+    @Override
+    public void onDeleted(Run&lt;?, ?&gt; build) {
+        // Skip unlocking for multiple configuration projects,
+        // only the child jobs will actually unlock resources.
+<span class="nc bnc" id="L120" title="All 2 branches missed.">        if (build.getClass().getName().equals(&quot;hudson.matrix.MatrixBuild&quot;)) {</span>
+<span class="nc" id="L121">            return;</span>
+        }
+<span class="nc" id="L123">        LOGGER.info(build.getFullDisplayName());</span>
+<span class="nc" id="L124">        LockableResourcesManager.get().unlockBuild(build);</span>
+<span class="nc" id="L125">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RemoteResolver.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources.remote</a> &gt; <span class="el_source">RemoteResolver.java</span></div><h1>RemoteResolver.java</h1><pre class="source lang-java linenums">/*
+ * The MIT License
+ *
+ * See the &quot;LICENSE.txt&quot; file for full copyright and license information.
+ */
+package org.jenkins.plugins.lockableresources.remote;
+
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import org.jenkins.plugins.lockableresources.LockStepExecution;
+import org.jenkins.plugins.lockableresources.LockStepResource;
+import org.jenkins.plugins.lockableresources.LockableResource;
+import org.jenkins.plugins.lockableresources.LockableResourceProperty;
+import org.jenkins.plugins.lockableresources.LockableResourcesManager;
+import org.jenkins.plugins.lockableresources.ResourceSelectStrategy;
+import org.jenkins.plugins.lockableresources.queue.LockableResourcesStruct;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
+
+/**
+ * Server-side resolution for remote lock requests: the admission check (existence/exposure) and
+ * resolution through the &lt;b&gt;canonical&lt;/b&gt; {@link LockableResourcesManager#getAvailableResources} path -
+ * the same one local {@code lock()} uses, with the configured {@code exposeLabel} set as the candidate
+ * filter. The server never re-implements {@code lock()} semantics; this class only decides
+ * &lt;em&gt;which&lt;/em&gt; resources a remote request may see and resolves them, then hands off to the manager.
+ *
+ * &lt;p&gt;A pure, stateless collaborator over the manager's public API. Every call must be made while holding
+ * {@link LockableResourcesManager#syncResources} - the caller acquires it; this class never takes the lock
+ * itself.
+ */
+@Restricted(NoExternalUse.class)
+public final class RemoteResolver {
+
+    private final LockableResourcesManager lrm;
+
+<span class="fc" id="L43">    public RemoteResolver(@NonNull LockableResourcesManager lrm) {</span>
+<span class="fc" id="L44">        this.lrm = lrm;</span>
+<span class="fc" id="L45">    }</span>
+
+    /**
+     * Admission check for a remote request: every selector (the main one and each {@code extra}
+     * entry) must reference something this remote client could actually lock - a resource that exists and
+     * is exposed, or a label with at least one exposed candidate. Exposure means &quot;carries any configured
+     * {@code exposeLabel}&quot; (see {@link LockableResourcesManager#getExposeLabels()}). This is the only
+     * remote-specific gate; the actual resolution still goes through the canonical
+     * {@link LockableResourcesManager#getAvailableResources} path. Must be called under
+     * {@link LockableResourcesManager#syncResources}.
+     *
+     * @return an error code ({@code &quot;UNKNOWN_RESOURCE&quot;} / {@code &quot;UNKNOWN_LABEL&quot;}) or {@code null} when all
+     *     selectors are admissible. The caller maps the code to HTTP 404.
+     */
+    @CheckForNull
+    public String validateRemoteSelectors(@NonNull RemoteLockRequest req) {
+<span class="fc" id="L61">        Set&lt;String&gt; exposeLabels = lrm.getExposeLabels();</span>
+<span class="fc" id="L62">        String main = validateSelector(req.getResource(), req.getLabel(), exposeLabels);</span>
+<span class="fc bfc" id="L63" title="All 2 branches covered.">        if (main != null) {</span>
+<span class="fc" id="L64">            return main;</span>
+        }
+<span class="fc" id="L66">        List&lt;RemoteLockRequest.ExtraResource&gt; extra = req.getExtra();</span>
+<span class="fc bfc" id="L67" title="All 2 branches covered.">        if (extra != null) {</span>
+<span class="fc bfc" id="L68" title="All 2 branches covered.">            for (RemoteLockRequest.ExtraResource e : extra) {</span>
+<span class="fc" id="L69">                String err = validateSelector(e.getResource(), e.getLabel(), exposeLabels);</span>
+<span class="pc bpc" id="L70" title="1 of 2 branches missed.">                if (err != null) {</span>
+<span class="nc" id="L71">                    return err;</span>
+                }
+<span class="fc" id="L73">            }</span>
+        }
+<span class="fc" id="L75">        return null;</span>
+    }
+
+    @CheckForNull
+    private String validateSelector(
+            @CheckForNull String resource, @CheckForNull String label, @NonNull Set&lt;String&gt; exposeLabels) {
+<span class="fc bfc" id="L81" title="All 2 branches covered.">        if (resource != null) {</span>
+<span class="fc" id="L82">            LockableResource r = lrm.fromName(resource);</span>
+<span class="fc bfc" id="L83" title="All 4 branches covered.">            return (r != null &amp;&amp; isExposed(r, exposeLabels)) ? null : &quot;UNKNOWN_RESOURCE&quot;;</span>
+        }
+<span class="pc bpc" id="L85" title="1 of 4 branches missed.">        if (label != null &amp;&amp; !label.isEmpty()) {</span>
+<span class="fc bfc" id="L86" title="All 2 branches covered.">            return hasExposedCandidate(label, exposeLabels) ? null : &quot;UNKNOWN_LABEL&quot;;</span>
+        }
+<span class="fc" id="L88">        return null; // absent selector (e.g. main when extra-only) - nothing to validate</span>
+    }
+
+    /** A resource is exposed to remote clients iff it carries at least one configured exposeLabel (OR). */
+    /** Exposed resources, in declaration order, for the discovery endpoint. */
+    @NonNull
+    public List&lt;LockableResource&gt; exposedResources() {
+<span class="fc" id="L95">        Set&lt;String&gt; exposeLabels = lrm.getExposeLabels();</span>
+<span class="fc" id="L96">        List&lt;LockableResource&gt; exposed = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L97" title="All 2 branches covered.">        for (LockableResource r : lrm.getResources()) {</span>
+<span class="fc bfc" id="L98" title="All 2 branches covered.">            if (isExposed(r, exposeLabels)) {</span>
+<span class="fc" id="L99">                exposed.add(r);</span>
+            }
+<span class="fc" id="L101">        }</span>
+<span class="fc" id="L102">        return exposed;</span>
+    }
+
+    private static boolean isExposed(@NonNull LockableResource r, @NonNull Set&lt;String&gt; exposeLabels) {
+<span class="pc bpc" id="L106" title="1 of 4 branches missed.">        return !exposeLabels.isEmpty() &amp;&amp; !Collections.disjoint(r.getLabelsAsList(), exposeLabels);</span>
+    }
+
+    private boolean hasExposedCandidate(@NonNull String label, @NonNull Set&lt;String&gt; exposeLabels) {
+<span class="pc bpc" id="L110" title="1 of 2 branches missed.">        if (exposeLabels.isEmpty()) {</span>
+<span class="nc" id="L111">            return false; // exposeLabel is opt-in: empty exposes nothing</span>
+        }
+<span class="fc bfc" id="L113" title="All 2 branches covered.">        for (LockableResource r : lrm.getResources()) {</span>
+<span class="fc" id="L114">            List&lt;String&gt; labels = r.getLabelsAsList();</span>
+<span class="pc bpc" id="L115" title="1 of 4 branches missed.">            if (labels.contains(label) &amp;&amp; !Collections.disjoint(labels, exposeLabels)) {</span>
+<span class="fc" id="L116">                return true;</span>
+            }
+<span class="fc" id="L118">        }</span>
+<span class="fc" id="L119">        return false;</span>
+    }
+
+    /**
+     * Runs the canonical {@code lock()} parameter validation over a remote request, exactly as
+     * {@link LockStep#validate} does for a local step: no target while empty values are disallowed,
+     * {@code resource} and {@code label} together, {@code priority} combined with
+     * {@code inversePrecedence}, and an unknown {@code resourceSelectStrategy}. Each {@code extra}
+     * entry is validated as well.
+     *
+     * &lt;p&gt;Keeping this on the canonical validator is what makes the bridge transparent: the rules stay
+     * in one place, and a request the local DSL would reject is rejected here with the same message.
+     *
+     * @throws IllegalArgumentException if the request is not a valid {@code lock()} request; the caller
+     *     maps it to HTTP 400.
+     */
+    @Restricted(NoExternalUse.class)
+    public static void validateAsLocalStep(@NonNull RemoteLockRequest req, boolean allowEmptyOrNullValues) {
+<span class="fc" id="L137">        List&lt;LockStepResource&gt; extra = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L138">        List&lt;RemoteLockRequest.ExtraResource&gt; requested = req.getExtra();</span>
+<span class="fc bfc" id="L139" title="All 2 branches covered.">        if (requested != null) {</span>
+<span class="fc bfc" id="L140" title="All 2 branches covered.">            for (RemoteLockRequest.ExtraResource e : requested) {</span>
+<span class="fc" id="L141">                LockStepResource resource = new LockStepResource(e.getResource());</span>
+<span class="fc" id="L142">                resource.setLabel(e.getLabel());</span>
+<span class="fc" id="L143">                resource.setQuantity(e.getQuantity());</span>
+<span class="fc" id="L144">                extra.add(resource);</span>
+<span class="fc" id="L145">            }</span>
+        }
+<span class="fc" id="L147">        LockStepResource.validate(</span>
+<span class="fc" id="L148">                req.getResource(),</span>
+<span class="fc" id="L149">                req.getLabel(),</span>
+<span class="fc" id="L150">                req.getResourceSelectStrategy(),</span>
+                extra,
+<span class="fc" id="L152">                req.getPriority(),</span>
+<span class="fc" id="L153">                req.isInversePrecedence(),</span>
+                allowEmptyOrNullValues);
+<span class="fc" id="L155">    }</span>
+
+    /**
+     * Builds the canonical {@link LockableResourcesStruct} list for a remote request, mirroring
+     * {@code LockStep.getResources()} (main selector + each {@code extra} entry). Resources are resolved by
+     * name only (no ephemeral creation): admission ({@link #validateRemoteSelectors}) has already confirmed
+     * every named selector exists and is exposed, so a remote request never materialises new resources on
+     * the server. Must be called under {@link LockableResourcesManager#syncResources}.
+     */
+    @NonNull
+    public List&lt;LockableResourcesStruct&gt; toRemoteStructs(@NonNull RemoteLockRequest req) {
+<span class="fc" id="L166">        List&lt;LockableResourcesStruct&gt; structs = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L167">        addRemoteStruct(structs, req.getResource(), req.getLabel(), req.getQuantity());</span>
+<span class="fc" id="L168">        List&lt;RemoteLockRequest.ExtraResource&gt; extra = req.getExtra();</span>
+<span class="fc bfc" id="L169" title="All 2 branches covered.">        if (extra != null) {</span>
+<span class="fc bfc" id="L170" title="All 2 branches covered.">            for (RemoteLockRequest.ExtraResource e : extra) {</span>
+<span class="fc" id="L171">                addRemoteStruct(structs, e.getResource(), e.getLabel(), e.getQuantity());</span>
+<span class="fc" id="L172">            }</span>
+        }
+<span class="fc" id="L174">        return structs;</span>
+    }
+
+    private void addRemoteStruct(
+            List&lt;LockableResourcesStruct&gt; structs,
+            @CheckForNull String resource,
+            @CheckForNull String label,
+            int quantity) {
+<span class="pc bpc" id="L182" title="1 of 4 branches missed.">        boolean hasLabel = label != null &amp;&amp; !label.isEmpty();</span>
+<span class="pc bpc" id="L183" title="1 of 4 branches missed.">        if (resource == null &amp;&amp; !hasLabel) {</span>
+<span class="nc" id="L184">            return; // absent selector (e.g. main when extra-only)</span>
+        }
+<span class="fc" id="L186">        List&lt;String&gt; names = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L187" title="All 2 branches covered.">        if (resource != null) {</span>
+            // No ephemeral creation here: admission (validateRemoteSelectors) guarantees the name exists and
+            // is exposed, so a remote request never creates new resources on the server.
+<span class="fc" id="L190">            names.add(resource);</span>
+        }
+<span class="fc" id="L192">        structs.add(new LockableResourcesStruct(names, label, quantity));</span>
+<span class="fc" id="L193">    }</span>
+
+    /**
+     * Resolves a remote request (given its canonical {@code structs}, from {@link #toRemoteStructs})
+     * through the canonical {@link LockableResourcesManager#getAvailableResources} path, applying the
+     * configured {@code exposeLabel} set as the candidate-visibility filter (a resource is visible iff it
+     * carries any exposeLabel - OR). The filter is a plain {@link java.util.function.Predicate} so the
+     * canonical resolver never learns about exposeLabel; the &quot;requested-label AND exposeLabel&quot; intersection
+     * is expressed entirely here, leaving local lock()'s single-label matching untouched. Returns the
+     * resources to lock (atomically) or {@code null} if not all currently satisfiable (-&gt; QUEUED, like
+     * local). Shared by the immediate acquire and queue-promotion paths. Must be called under
+     * {@link LockableResourcesManager#syncResources}.
+     */
+    @CheckForNull
+    public List&lt;LockableResource&gt; availableForRemote(
+            @NonNull List&lt;LockableResourcesStruct&gt; structs, @NonNull RemoteLockRequest req) {
+<span class="pc bpc" id="L209" title="1 of 2 branches missed.">        if (structs.isEmpty()) {</span>
+<span class="nc" id="L210">            return null;</span>
+        }
+<span class="fc" id="L212">        Set&lt;String&gt; exposeLabels = lrm.getExposeLabels();</span>
+<span class="fc" id="L213">        List&lt;LockableResource&gt; available = lrm.getAvailableResources(</span>
+<span class="fc" id="L214">                structs, null, parseSelectStrategy(req.getResourceSelectStrategy()), r -&gt; isExposed(r, exposeLabels));</span>
+<span class="pc bpc" id="L215" title="1 of 4 branches missed.">        return (available == null || available.isEmpty()) ? null : available;</span>
+    }
+
+    /**
+     * Builds {@code lockEnvVars} for an acquired remote lock from the resolved resources, via the shared
+     * {@link LockStepExecution#buildLockEnvVars} - identical to local, including resource-property env
+     * vars. Returns {@code null} when no {@code variable} was requested.
+     */
+    @CheckForNull
+    public static Map&lt;String, String&gt; remoteLockEnvVars(
+            @CheckForNull String variable, @NonNull List&lt;LockableResource&gt; resources) {
+<span class="fc" id="L226">        LinkedHashMap&lt;String, List&lt;LockableResourceProperty&gt;&gt; map = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L227" title="All 2 branches covered.">        for (LockableResource r : resources) {</span>
+<span class="fc" id="L228">            map.put(r.getName(), r.getProperties());</span>
+<span class="fc" id="L229">        }</span>
+<span class="fc" id="L230">        return LockStepExecution.buildLockEnvVars(variable, map);</span>
+    }
+
+    private static ResourceSelectStrategy parseSelectStrategy(@CheckForNull String strategy) {
+<span class="pc bpc" id="L234" title="1 of 2 branches missed.">        if (strategy != null) {</span>
+            try {
+<span class="fc" id="L236">                return ResourceSelectStrategy.valueOf(strategy.toUpperCase(Locale.ENGLISH));</span>
+<span class="nc" id="L237">            } catch (IllegalArgumentException ignored) {</span>
+                // fall through to default
+            }
+        }
+<span class="nc" id="L241">        return ResourceSelectStrategy.SEQUENTIAL;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

@@ -1,0 +1,340 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LockStep.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources</a> &gt; <span class="el_source">LockStep.java</span></div><h1>LockStep.java</h1><pre class="source lang-java linenums">package org.jenkins.plugins.lockableresources;
+
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
+import edu.umd.cs.findbugs.annotations.Nullable;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import hudson.Extension;
+import hudson.model.AutoCompletionCandidates;
+import hudson.model.Item;
+import hudson.model.TaskListener;
+import hudson.util.FormValidation;
+import hudson.util.ListBoxModel;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import jenkins.model.Jenkins;
+import org.jenkinsci.plugins.workflow.steps.Step;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
+import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
+import org.jenkinsci.plugins.workflow.steps.StepExecution;
+import org.kohsuke.stapler.AncestorInPath;
+import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.DataBoundSetter;
+import org.kohsuke.stapler.QueryParameter;
+import org.kohsuke.stapler.interceptor.RequirePOST;
+
+public class LockStep extends Step implements Serializable {
+<span class="fc" id="L34">    private static final Logger LOG = Logger.getLogger(LockStep.class.getName());</span>
+
+    private static final long serialVersionUID = -953609907239674360L;
+
+<span class="fc" id="L38">    @CheckForNull</span>
+    public String resource = null;
+
+<span class="fc" id="L41">    @CheckForNull</span>
+    @SuppressFBWarnings(value = &quot;PA_PUBLIC_PRIMITIVE_ATTRIBUTE&quot;, justification = &quot;Preserve API compatibility.&quot;)
+    public String label = null;
+
+    /** The reason why this resource is being locked, displayed in the UI while locked. */
+<span class="fc" id="L46">    @CheckForNull</span>
+    @SuppressFBWarnings(value = &quot;PA_PUBLIC_PRIMITIVE_ATTRIBUTE&quot;, justification = &quot;Preserve API compatibility.&quot;)
+    public String reason = null;
+
+<span class="fc" id="L50">    @SuppressFBWarnings(value = &quot;PA_PUBLIC_PRIMITIVE_ATTRIBUTE&quot;, justification = &quot;Preserve API compatibility.&quot;)</span>
+    public int quantity = 0;
+
+    /** name of environment variable to store locked resources in */
+<span class="fc" id="L54">    @CheckForNull</span>
+    @SuppressFBWarnings(value = &quot;PA_PUBLIC_PRIMITIVE_ATTRIBUTE&quot;, justification = &quot;Preserve API compatibility.&quot;)
+    public String variable = null;
+
+<span class="fc" id="L58">    @SuppressFBWarnings(value = &quot;PA_PUBLIC_PRIMITIVE_ATTRIBUTE&quot;, justification = &quot;Preserve API compatibility.&quot;)</span>
+    public boolean inversePrecedence = false;
+
+<span class="fc" id="L61">    @SuppressFBWarnings(value = &quot;PA_PUBLIC_PRIMITIVE_ATTRIBUTE&quot;, justification = &quot;Preserve API compatibility.&quot;)</span>
+<span class="fc" id="L62">    public String resourceSelectStrategy = ResourceSelectStrategy.SEQUENTIAL.name();</span>
+
+<span class="fc" id="L64">    @SuppressFBWarnings(value = &quot;PA_PUBLIC_PRIMITIVE_ATTRIBUTE&quot;, justification = &quot;Preserve API compatibility.&quot;)</span>
+    public boolean skipIfLocked = false;
+
+<span class="fc" id="L67">    @CheckForNull</span>
+    @SuppressFBWarnings(value = &quot;PA_PUBLIC_PRIMITIVE_ATTRIBUTE&quot;, justification = &quot;Preserve API compatibility.&quot;)
+    public String serverId = null;
+
+<span class="fc" id="L71">    @CheckForNull</span>
+    @SuppressFBWarnings(value = &quot;PA_PUBLIC_PRIMITIVE_ATTRIBUTE&quot;, justification = &quot;Preserve API compatibility.&quot;)
+    public List&lt;LockStepResource&gt; extra = null;
+
+<span class="fc" id="L75">    @SuppressFBWarnings(value = &quot;PA_PUBLIC_PRIMITIVE_ATTRIBUTE&quot;, justification = &quot;Preserve API compatibility.&quot;)</span>
+    public int priority = 0;
+
+    /**
+     * Timeout in the specified {@link #timeoutUnit} for waiting to acquire the resource.
+     * 0 means no timeout (wait indefinitely). When the timeout expires, the step fails
+     * with an exception instead of waiting forever.
+     */
+<span class="fc" id="L83">    @SuppressFBWarnings(value = &quot;PA_PUBLIC_PRIMITIVE_ATTRIBUTE&quot;, justification = &quot;Preserve API compatibility.&quot;)</span>
+    public long timeoutForAllocateResource = 0;
+
+    /**
+     * Time unit for {@link #timeoutForAllocateResource}. Defaults to MINUTES.
+     */
+<span class="fc" id="L89">    @SuppressFBWarnings(value = &quot;PA_PUBLIC_PRIMITIVE_ATTRIBUTE&quot;, justification = &quot;Preserve API compatibility.&quot;)</span>
+    public String timeoutUnit = &quot;MINUTES&quot;;
+
+    // it should be LockStep() - without params. But keeping this for backward compatibility
+    // so `lock('resource1')` still works and `lock(label: 'label1', quantity: 3)` works too (resource
+    // is not required)
+    @DataBoundConstructor
+<span class="fc" id="L96">    public LockStep(@Nullable String resource) {</span>
+<span class="pc bpc" id="L97" title="1 of 4 branches missed.">        if (resource != null &amp;&amp; !resource.trim().isEmpty()) {</span>
+<span class="pc bpc" id="L98" title="1 of 2 branches missed.">            if (!resource.equals(resource.trim())) {</span>
+<span class="nc" id="L99">                LOG.warning(&quot;The provided 'resource' should not start or end with spaces.&quot;);</span>
+            }
+<span class="fc" id="L101">            this.resource = resource.trim();</span>
+        }
+<span class="fc" id="L103">    }</span>
+
+    @DataBoundSetter
+    public void setInversePrecedence(boolean inversePrecedence) {
+<span class="nc" id="L107">        this.inversePrecedence = inversePrecedence;</span>
+<span class="nc" id="L108">    }</span>
+
+    @DataBoundSetter
+    public void setResourceSelectStrategy(String resourceSelectStrategy) {
+<span class="nc bnc" id="L112" title="All 4 branches missed.">        if (resourceSelectStrategy != null &amp;&amp; !resourceSelectStrategy.isEmpty()) {</span>
+            // Validate the strategy is valid
+            try {
+<span class="nc" id="L115">                ResourceSelectStrategy.valueOf(resourceSelectStrategy.toUpperCase(Locale.ENGLISH));</span>
+<span class="nc" id="L116">            } catch (IllegalArgumentException e) {</span>
+<span class="nc" id="L117">                throw new IllegalArgumentException(Messages.error_invalidResourceSelectionStrategy(</span>
+                        resourceSelectStrategy,
+<span class="nc" id="L119">                        Arrays.stream(ResourceSelectStrategy.values())</span>
+<span class="nc" id="L120">                                .map(Enum::toString)</span>
+<span class="nc" id="L121">                                .map(s -&gt; s.toLowerCase(Locale.ENGLISH))</span>
+<span class="nc" id="L122">                                .collect(Collectors.joining(&quot;, &quot;))));</span>
+<span class="nc" id="L123">            }</span>
+<span class="nc" id="L124">            this.resourceSelectStrategy = resourceSelectStrategy;</span>
+        }
+<span class="nc" id="L126">    }</span>
+
+    @DataBoundSetter
+    public void setSkipIfLocked(boolean skipIfLocked) {
+<span class="fc" id="L130">        this.skipIfLocked = skipIfLocked;</span>
+<span class="fc" id="L131">    }</span>
+
+    @DataBoundSetter
+    public void setServerId(String serverId) {
+<span class="pc bpc" id="L135" title="2 of 4 branches missed.">        if (serverId != null &amp;&amp; !serverId.trim().isEmpty()) {</span>
+<span class="pc bpc" id="L136" title="1 of 2 branches missed.">            if (!serverId.equals(serverId.trim())) {</span>
+<span class="nc" id="L137">                LOG.warning(&quot;The provided 'serverId' should not start or end with spaces.&quot;);</span>
+            }
+<span class="fc" id="L139">            this.serverId = serverId.trim();</span>
+        }
+<span class="fc" id="L141">    }</span>
+
+    @DataBoundSetter
+    public void setLabel(String label) {
+<span class="pc bpc" id="L145" title="2 of 4 branches missed.">        if (label != null &amp;&amp; !label.trim().isEmpty()) {</span>
+<span class="pc bpc" id="L146" title="1 of 2 branches missed.">            if (!label.equals(label.trim())) {</span>
+<span class="nc" id="L147">                LOG.warning(&quot;The provided 'label' should not start or end with spaces.&quot;);</span>
+            }
+<span class="fc" id="L149">            this.label = label.trim();</span>
+        }
+<span class="fc" id="L151">    }</span>
+
+    @DataBoundSetter
+    public void setReason(String reason) {
+<span class="nc bnc" id="L155" title="All 4 branches missed.">        if (reason != null &amp;&amp; !reason.trim().isEmpty()) {</span>
+<span class="nc" id="L156">            this.reason = reason.trim();</span>
+        }
+<span class="nc" id="L158">    }</span>
+
+    @DataBoundSetter
+    public void setVariable(String variable) {
+<span class="pc bpc" id="L162" title="2 of 4 branches missed.">        if (variable != null &amp;&amp; !variable.trim().isEmpty()) {</span>
+<span class="pc bpc" id="L163" title="1 of 2 branches missed.">            if (!variable.equals(variable.trim())) {</span>
+<span class="nc" id="L164">                LOG.warning(&quot;The provided 'variable' should not start or end with spaces.&quot;);</span>
+            }
+<span class="fc" id="L166">            this.variable = variable.trim();</span>
+        }
+<span class="fc" id="L168">    }</span>
+
+    @DataBoundSetter
+    public void setQuantity(int quantity) {
+<span class="fc" id="L172">        this.quantity = quantity;</span>
+<span class="fc" id="L173">    }</span>
+
+    @DataBoundSetter
+    public void setPriority(int priority) {
+<span class="fc" id="L177">        this.priority = priority;</span>
+<span class="fc" id="L178">    }</span>
+
+    @DataBoundSetter
+    public void setExtra(@CheckForNull List&lt;LockStepResource&gt; extra) {
+<span class="fc" id="L182">        this.extra = extra;</span>
+<span class="fc" id="L183">    }</span>
+
+    @DataBoundSetter
+    public void setTimeoutForAllocateResource(long timeoutForAllocateResource) {
+<span class="fc" id="L187">        this.timeoutForAllocateResource = Math.max(0, timeoutForAllocateResource);</span>
+<span class="fc" id="L188">    }</span>
+
+    @DataBoundSetter
+    public void setTimeoutUnit(String timeoutUnit) {
+<span class="pc bpc" id="L192" title="2 of 4 branches missed.">        if (timeoutUnit != null &amp;&amp; !timeoutUnit.trim().isEmpty()) {</span>
+            // Validate it is a valid TimeUnit name
+            try {
+<span class="fc" id="L195">                java.util.concurrent.TimeUnit.valueOf(timeoutUnit.toUpperCase(Locale.ENGLISH));</span>
+<span class="nc" id="L196">            } catch (IllegalArgumentException e) {</span>
+<span class="nc" id="L197">                throw new IllegalArgumentException(&quot;Invalid timeoutUnit: &quot; + timeoutUnit);</span>
+<span class="fc" id="L198">            }</span>
+<span class="fc" id="L199">            this.timeoutUnit = timeoutUnit.toUpperCase(Locale.ENGLISH);</span>
+        }
+<span class="fc" id="L201">    }</span>
+
+    @Extension
+<span class="fc" id="L204">    public static final class DescriptorImpl extends StepDescriptor {</span>
+
+        @Override
+        public String getFunctionName() {
+<span class="fc" id="L208">            return &quot;lock&quot;;</span>
+        }
+
+        @NonNull
+        @Override
+        public String getDisplayName() {
+<span class="fc" id="L214">            return Messages.LockStep_displayName();</span>
+        }
+
+        @Override
+        public boolean takesImplicitBlockArgument() {
+<span class="fc" id="L219">            return true;</span>
+        }
+
+        @RequirePOST
+        public AutoCompletionCandidates doAutoCompleteResource(
+                @QueryParameter String value, @AncestorInPath Item item) {
+<span class="nc" id="L225">            return RequiredResourcesProperty.DescriptorImpl.doAutoCompleteResourceNames(value, item);</span>
+        }
+
+        @RequirePOST
+        public ListBoxModel doFillResourceSelectStrategyItems(@AncestorInPath Item item) {
+<span class="nc bnc" id="L230" title="All 2 branches missed.">            if (item != null) {</span>
+<span class="nc" id="L231">                item.checkPermission(Item.CONFIGURE);</span>
+            } else {
+<span class="nc" id="L233">                Jenkins.get().checkPermission(Jenkins.ADMINISTER);</span>
+            }
+<span class="nc" id="L235">            ListBoxModel items = new ListBoxModel();</span>
+<span class="nc bnc" id="L236" title="All 2 branches missed.">            for (ResourceSelectStrategy resSelStrategy : ResourceSelectStrategy.values()) {</span>
+<span class="nc" id="L237">                items.add(resSelStrategy.name());</span>
+            }
+<span class="nc" id="L239">            return items;</span>
+        }
+
+        @RequirePOST
+        public static FormValidation doCheckLabel(
+                @QueryParameter String value, @QueryParameter String resource, @AncestorInPath Item item) {
+<span class="nc" id="L245">            return LockStepResource.DescriptorImpl.doCheckLabel(value, resource, item);</span>
+        }
+
+        @RequirePOST
+        public static FormValidation doCheckResource(
+                @QueryParameter String value, @QueryParameter String label, @AncestorInPath Item item) {
+<span class="nc" id="L251">            return LockStepResource.DescriptorImpl.doCheckLabel(label, value, item);</span>
+        }
+
+        @RequirePOST
+        public static FormValidation doCheckResourceSelectStrategy(
+                @QueryParameter String resourceSelectStrategy, @AncestorInPath Item item) {
+            // check permission, security first
+<span class="nc bnc" id="L258" title="All 2 branches missed.">            if (item != null) {</span>
+<span class="nc" id="L259">                item.checkPermission(Item.CONFIGURE);</span>
+            } else {
+<span class="nc" id="L261">                Jenkins.get().checkPermission(Jenkins.ADMINISTER);</span>
+            }
+<span class="nc bnc" id="L263" title="All 4 branches missed.">            if (resourceSelectStrategy != null &amp;&amp; !resourceSelectStrategy.isEmpty()) {</span>
+                try {
+<span class="nc" id="L265">                    ResourceSelectStrategy.valueOf(resourceSelectStrategy.toUpperCase(Locale.ENGLISH));</span>
+<span class="nc" id="L266">                } catch (IllegalArgumentException e) {</span>
+<span class="nc" id="L267">                    return FormValidation.error(Messages.error_invalidResourceSelectionStrategy(</span>
+                            resourceSelectStrategy,
+<span class="nc" id="L269">                            Arrays.stream(ResourceSelectStrategy.values())</span>
+<span class="nc" id="L270">                                    .map(Enum::toString)</span>
+<span class="nc" id="L271">                                    .map(strategy -&gt; strategy.toLowerCase(Locale.ENGLISH))</span>
+<span class="nc" id="L272">                                    .collect(Collectors.joining(&quot;, &quot;))));</span>
+<span class="nc" id="L273">                }</span>
+            }
+<span class="nc" id="L275">            return FormValidation.ok();</span>
+        }
+
+        @RequirePOST
+        public ListBoxModel doFillTimeoutUnitItems(@AncestorInPath Item item) {
+<span class="nc bnc" id="L280" title="All 2 branches missed.">            if (item != null) {</span>
+<span class="nc" id="L281">                item.checkPermission(Item.CONFIGURE);</span>
+            } else {
+<span class="nc" id="L283">                Jenkins.get().checkPermission(Jenkins.ADMINISTER);</span>
+            }
+<span class="nc" id="L285">            ListBoxModel items = new ListBoxModel();</span>
+<span class="nc" id="L286">            items.add(&quot;Seconds&quot;, &quot;SECONDS&quot;);</span>
+<span class="nc" id="L287">            items.add(&quot;Minutes&quot;, &quot;MINUTES&quot;);</span>
+<span class="nc" id="L288">            items.add(&quot;Hours&quot;, &quot;HOURS&quot;);</span>
+<span class="nc" id="L289">            return items;</span>
+        }
+
+        @Override
+        public Set&lt;Class&lt;?&gt;&gt; getRequiredContext() {
+<span class="fc" id="L294">            return Collections.singleton(TaskListener.class);</span>
+        }
+    }
+
+    @Override
+    public String toString() {
+<span class="pc bpc" id="L300" title="1 of 4 branches missed.">        if (extra != null &amp;&amp; !extra.isEmpty()) {</span>
+<span class="fc" id="L301">            return getResources().stream()</span>
+<span class="fc" id="L302">                    .map(res -&gt; &quot;{&quot; + res.toString() + &quot;}&quot;)</span>
+<span class="fc" id="L303">                    .collect(Collectors.joining(&quot;,&quot;));</span>
+<span class="pc bpc" id="L304" title="1 of 4 branches missed.">        } else if (resource != null || label != null) {</span>
+<span class="fc" id="L305">            String ret = LockStepResource.toString(resource, label, quantity, reason);</span>
+<span class="fc bfc" id="L306" title="All 2 branches covered.">            if (this.priority != 0) {</span>
+<span class="fc" id="L307">                ret += &quot;, Priority: &quot; + this.priority;</span>
+            }
+<span class="fc" id="L309">            return ret;</span>
+        } else {
+<span class="nc" id="L311">            return &quot;nothing&quot;;</span>
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    /** Label and resource are mutual exclusive. */
+    public void validate(boolean allowEmptyOrNullValues) {
+<span class="fc" id="L318">        LockStepResource.validate(</span>
+                resource, label, resourceSelectStrategy, extra, priority, inversePrecedence, allowEmptyOrNullValues);
+<span class="fc" id="L320">    }</span>
+
+    // -------------------------------------------------------------------------
+    public List&lt;LockStepResource&gt; getResources() {
+<span class="fc" id="L324">        List&lt;LockStepResource&gt; resources = new ArrayList&lt;&gt;();</span>
+<span class="pc bpc" id="L325" title="3 of 4 branches missed.">        if (resource != null || label != null) {</span>
+<span class="fc" id="L326">            resources.add(new LockStepResource(resource, label, quantity, reason));</span>
+        }
+
+<span class="fc bfc" id="L329" title="All 2 branches covered.">        if (extra != null) {</span>
+<span class="fc" id="L330">            resources.addAll(extra);</span>
+        }
+<span class="fc" id="L332">        return resources;</span>
+    }
+
+    @Override
+    public StepExecution start(StepContext context) {
+<span class="fc" id="L337">        return new LockStepExecution(this, context);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
