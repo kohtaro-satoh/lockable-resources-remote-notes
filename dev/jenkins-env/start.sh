@@ -32,11 +32,28 @@ fi
 CLEAN=false
 IN_PLACE_BUILD=false
 DEBUG_MODE=false
+# LRR_COVERAGE lets run-e2e.sh / run-load.sh turn this on: they call start.sh themselves, so a
+# flag passed to them has to reach here somehow.
+COVERAGE="${LRR_COVERAGE:-false}"
 for arg in "$@"; do
   [[ "$arg" == "--clean" ]] && CLEAN=true
   [[ "$arg" == "--in-place-build" ]] && IN_PLACE_BUILD=true
   [[ "$arg" == "--debug" ]] && { DEBUG_MODE=true; IN_PLACE_BUILD=true; }
+  [[ "$arg" == "--coverage" ]] && COVERAGE=true
 done
+
+# --coverage attaches the JaCoCo agent baked into the image. Off by default: instrumentation costs
+# time on every instrumented method, which is exactly what the load test is measuring.
+#
+# includes= is not an optimisation. Without it the agent instruments all of Jenkins core, the exec
+# file grows by orders of magnitude, and the report drowns the plugin in classes nobody asked about.
+#
+# append=true because a controller may restart mid-run (E2E does this on purpose); output=file means
+# the agent writes at JVM exit, so coverage/collect.sh has to stop the containers before reading.
+if $COVERAGE; then
+  export LRR_JAVA_OPTS="-Djenkins.install.runSetupWizard=false -javaagent:/opt/jacoco/jacocoagent.jar=destfile=/var/jenkins_home/jacoco.exec,output=file,append=true,includes=org.jenkins.plugins.lockableresources.*"
+  echo "[INFO] Coverage: JaCoCo agent attached (destfile=/var/jenkins_home/jacoco.exec)"
+fi
 
 JENKINS_HOME_DIRS=(jha jhb jhc jhd)
 LEGACY_JENKINS_HOME_DIRS=(jh8081 jh8082 jh8083)
@@ -132,6 +149,20 @@ fi
 
 cp "$HPI_SRC" "$SCRIPT_DIR/docker/lockable-resources.hpi"
 echo "[INFO] Copied: $HPI_SRC -> docker/lockable-resources.hpi"
+
+# The Dockerfile always COPYs the JaCoCo agent, so it has to exist even for a run that will not use
+# it. Resolved from the local repository rather than committed: it is a build artifact like the hpi,
+# and this keeps its version tied to whatever the plugin build already pulled down.
+JACOCO_VERSION="${JACOCO_VERSION:-0.8.15}"
+if [[ ! -f "$SCRIPT_DIR/docker/jacocoagent.jar" ]]; then
+  echo "[INFO] Fetching JaCoCo agent $JACOCO_VERSION ..."
+  "$MVN" -q org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy \
+    -Dartifact="org.jacoco:org.jacoco.agent:$JACOCO_VERSION:jar:runtime" \
+    -DoutputDirectory="$SCRIPT_DIR/docker" -Dmdep.stripVersion=false >/dev/null
+  mv "$SCRIPT_DIR/docker/org.jacoco.agent-$JACOCO_VERSION-runtime.jar" \
+     "$SCRIPT_DIR/docker/jacocoagent.jar"
+  echo "[INFO] Copied: JaCoCo agent -> docker/jacocoagent.jar"
+fi
 
 # ---------------------------------------------------------------------------
 # 4. ボリューム削除（--clean 指定時のみ）
