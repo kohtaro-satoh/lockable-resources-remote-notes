@@ -28,6 +28,8 @@ Options:
                         Series: $(registry_series_list | tr '\n' ' ')
                         Names:  see --list
   --list                Print the scenario registry (lib/scenarios.tsv) and exit.
+  --coverage            Attach the JaCoCo agent to the controllers, so coverage/collect.sh can
+                        report what this suite actually drove. Slower; off by default.
   --debug               Allow uncommitted changes in the plugin and in this harness. Still
                         rebuilds and redeploys, but from the working tree as-is. The report
                         lands in reports/debug/ and is marked NOT REPRODUCIBLE.
@@ -56,6 +58,10 @@ format_command_line() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --coverage)
+      COVERAGE=true
+      shift
+      ;;
     --debug)
       DEBUG_MODE=true
       shift
@@ -141,6 +147,10 @@ if ! rlr_check_timing_drift "$PLUGIN_DIR"; then
   exit 2
 fi
 
+if [[ "${COVERAGE:-false}" == true ]]; then
+  export LRR_COVERAGE=true
+  log "Coverage: the controllers will run with the JaCoCo agent attached"
+fi
 log "Starting Jenkins controllers via start.sh --clean"
 log "Using PLUGIN_DIR=$PLUGIN_DIR"
 if [[ "$DEBUG_MODE" == true ]]; then

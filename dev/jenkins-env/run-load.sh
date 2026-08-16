@@ -62,6 +62,7 @@ apply_preset "$PRESET"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --coverage) COVERAGE=true; shift ;;
     --debug) DEBUG_MODE=true; shift ;;
     --preset) PRESET="${2:?}"; apply_preset "$PRESET"; shift 2 ;;
     --jobs-per-controller) JOBS_PER_CONTROLLER="${2:?}"; shift 2 ;;
@@ -119,6 +120,10 @@ if [[ -z "${PLUGIN_DIR:-}" ]]; then
   err "PLUGIN_DIR is required."
   err "Example: PLUGIN_DIR=../../../lockable-resources-plugin ./run-load.sh --preset stress"
   exit 2
+fi
+if [[ "${COVERAGE:-false}" == true ]]; then
+  export LRR_COVERAGE=true
+  log "Coverage: the controllers will run with the JaCoCo agent attached"
 fi
 log "Starting Jenkins controllers via start.sh --clean"
 if [[ "$DEBUG_MODE" == true ]]; then

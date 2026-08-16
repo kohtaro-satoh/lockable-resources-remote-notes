@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RemoteCatalogCache.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources.remote</a> &gt; <span class="el_source">RemoteCatalogCache.java</span></div><h1>RemoteCatalogCache.java</h1><pre class="source lang-java linenums">/*
+ * The MIT License
+ *
+ * See the &quot;LICENSE.txt&quot; file for full copyright and license information.
+ */
+package org.jenkins.plugins.lockableresources.remote;
+
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
+import hudson.Extension;
+import java.util.Collections;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import jenkins.model.Jenkins;
+import org.jenkins.plugins.lockableresources.LockableResourcesManager;
+import org.jenkins.plugins.lockableresources.RemoteConnection;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
+
+/**
+ * Short-lived cache of what other servers publish, so the page can show it without waiting on them.
+ *
+ * &lt;p&gt;Rendering never performs the HTTP call: a page render hands back whatever snapshot exists and,
+ * if it has aged past the TTL, asks for a refresh in the background. A remote that is slow or down
+ * therefore costs a stale age indicator, not a page that hangs - display is best-effort, unlike lock
+ * acquisition, which stays fail-closed.
+ *
+ * &lt;p&gt;The TTL is deliberately short. The catalog carries live state (free, locked, reserved) and
+ * whether the remote is accepting new acquires, so a minute-old copy would be shown as if current.
+ */
+@Restricted(NoExternalUse.class)
+@Extension
+<span class="fc" id="L34">public class RemoteCatalogCache {</span>
+
+<span class="fc" id="L36">    private static final Logger LOGGER = Logger.getLogger(RemoteCatalogCache.class.getName());</span>
+
+    /** How long a snapshot is served before a refresh is triggered. */
+    static final long TTL_MILLIS = 10_000L;
+
+<span class="fc" id="L41">    private final ConcurrentHashMap&lt;String, RemoteCatalog&gt; catalogs = new ConcurrentHashMap&lt;&gt;();</span>
+<span class="fc" id="L42">    private final ConcurrentHashMap&lt;String, Boolean&gt; refreshing = new ConcurrentHashMap&lt;&gt;();</span>
+
+    public static RemoteCatalogCache get() {
+<span class="fc" id="L45">        return Jenkins.get().getExtensionList(RemoteCatalogCache.class).get(0);</span>
+    }
+
+    /**
+     * The last snapshot for this server, refreshing in the background when it has gone stale.
+     *
+     * @return {@code null} when nothing has been fetched yet (a refresh has been started), or when the
+     *     connection is unknown or switched off.
+     */
+    @CheckForNull
+    public RemoteCatalog get(@NonNull String serverId) {
+        RemoteConnection remote =
+<span class="fc" id="L57">                LockableResourcesManager.get().getRemotesAsMap().get(serverId);</span>
+<span class="fc bfc" id="L58" title="All 4 branches covered.">        if (remote == null || !remote.isEnabled()) {</span>
+            // A disabled connection is not contacted at all - that is what disabling it means.
+<span class="fc" id="L60">            catalogs.remove(serverId);</span>
+<span class="fc" id="L61">            return null;</span>
+        }
+<span class="fc" id="L63">        RemoteCatalog current = catalogs.get(serverId);</span>
+<span class="fc bfc" id="L64" title="All 4 branches covered.">        if (current == null || current.isStale(TTL_MILLIS)) {</span>
+<span class="fc" id="L65">            requestRefresh(remote);</span>
+        }
+<span class="fc" id="L67">        return current;</span>
+    }
+
+    /** Fetches now, on the calling thread. Used by tests and by the background refresh. */
+    @NonNull
+    RemoteCatalog fetch(@NonNull RemoteConnection remote) {
+        RemoteCatalog fetched;
+        try {
+<span class="fc" id="L75">            String authorizationHeader = RemoteCredentials.basicAuthHeader(remote, null);</span>
+<span class="fc" id="L76">            fetched = new RemoteApiClient().listResources(remote, authorizationHeader);</span>
+<span class="fc" id="L77">        } catch (Exception ex) {</span>
+            // Keep whatever we had: an outage should age the view, not empty it.
+<span class="fc" id="L79">            RemoteCatalog previous = catalogs.get(remote.getServerId());</span>
+<span class="fc" id="L80">            LOGGER.log(Level.FINE, &quot;Could not refresh the remote catalog for {0}: {1}&quot;, new Object[] {</span>
+<span class="fc" id="L81">                remote.getServerId(), ex.getMessage()</span>
+            });
+<span class="fc" id="L83">            fetched = new RemoteCatalog(</span>
+<span class="fc" id="L84">                    remote.getServerId(),</span>
+<span class="fc bfc" id="L85" title="All 4 branches covered.">                    previous == null ? Collections.emptyList() : previous.getResources(),</span>
+<span class="pc bpc" id="L86" title="1 of 2 branches missed.">                    previous != null &amp;&amp; previous.isAcceptNewAcquires(),</span>
+<span class="fc bfc" id="L87" title="All 2 branches covered.">                    previous == null ? 0 : previous.getFetchedAt(),</span>
+<span class="pc bpc" id="L88" title="1 of 2 branches missed.">                    ex.getMessage() == null ? ex.toString() : ex.getMessage());</span>
+<span class="fc" id="L89">        }</span>
+<span class="fc" id="L90">        catalogs.put(remote.getServerId(), fetched);</span>
+<span class="fc" id="L91">        return fetched;</span>
+    }
+
+    private void requestRefresh(@NonNull RemoteConnection remote) {
+<span class="fc" id="L95">        String serverId = remote.getServerId();</span>
+<span class="pc bpc" id="L96" title="1 of 2 branches missed.">        if (refreshing.putIfAbsent(serverId, Boolean.TRUE) != null) {</span>
+<span class="nc" id="L97">            return; // one in flight is enough; page renders are frequent, remotes are not fast</span>
+        }
+<span class="fc" id="L99">        jenkins.util.Timer.get().submit(() -&gt; {</span>
+            try {
+<span class="fc" id="L101">                fetch(remote);</span>
+<span class="nc" id="L102">            } catch (Exception ex) {</span>
+<span class="nc" id="L103">                LOGGER.log(Level.FINE, &quot;Remote catalog refresh failed for &quot; + serverId, ex);</span>
+            } finally {
+<span class="fc" id="L105">                refreshing.remove(serverId);</span>
+            }
+<span class="fc" id="L107">        });</span>
+<span class="fc" id="L108">    }</span>
+
+    /** Drops every snapshot - used when the remote configuration changes, and by tests. */
+    public void invalidateAll() {
+<span class="fc" id="L112">        catalogs.clear();</span>
+<span class="fc" id="L113">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

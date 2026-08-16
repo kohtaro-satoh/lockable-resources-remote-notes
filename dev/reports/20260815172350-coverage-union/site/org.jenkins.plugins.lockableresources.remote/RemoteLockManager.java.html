@@ -1,0 +1,269 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RemoteLockManager.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources.remote</a> &gt; <span class="el_source">RemoteLockManager.java</span></div><h1>RemoteLockManager.java</h1><pre class="source lang-java linenums">/*
+ * The MIT License
+ *
+ * See the &quot;LICENSE.txt&quot; file for full copyright and license information.
+ */
+package org.jenkins.plugins.lockableresources.remote;
+
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
+import hudson.Extension;
+import hudson.model.PeriodicWork;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import jenkins.model.Jenkins;
+import org.jenkins.plugins.lockableresources.LockableResource;
+import org.jenkins.plugins.lockableresources.LockableResourcesManager;
+import org.jenkins.plugins.lockableresources.queue.LockableResourcesStruct;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
+
+/**
+ * Server-side manager for remote lock records.
+ *
+ * &lt;p&gt;Runs a 1-second tick loop (via {@link PeriodicWork}) that:
+ * &lt;ul&gt;
+ *   &lt;li&gt;Attempts to promote QUEUED records to ACQUIRED when their resource(s) become free.&lt;/li&gt;
+ *   &lt;li&gt;Marks ACQUIRED records as STALE when heartbeat times out.&lt;/li&gt;
+ *   &lt;li&gt;Cleans up terminal (SKIPPED/FAILED) records after a TTL.&lt;/li&gt;
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;STALE locks are held until an administrator explicitly releases them.
+ * In-memory state is lost on Jenkins restart; all transient remote locks are
+ * automatically freed because {@link LockableResource#remoteLockedBy} is transient.
+ */
+@Restricted(NoExternalUse.class)
+@Extension
+<span class="fc" id="L42">public class RemoteLockManager extends PeriodicWork {</span>
+
+<span class="fc" id="L44">    private static final Logger LOGGER = Logger.getLogger(RemoteLockManager.class.getName());</span>
+
+    /**
+     * Time after which an ACQUIRED record with no heartbeat is marked STALE.
+     * = max(heartbeatInterval x 6, 60) seconds.
+     */
+<span class="fc" id="L50">    static final long STALE_THRESHOLD_MS =</span>
+<span class="fc" id="L51">            TimeUnit.SECONDS.toMillis(Math.max(RemoteClientDefaults.DEFAULT_HEARTBEAT_INTERVAL_SECONDS * 6, 60));</span>
+
+    /** Terminal records (SKIPPED/FAILED) are removed from the map after this TTL. */
+<span class="fc" id="L54">    private static final long TERMINAL_TTL_MS = TimeUnit.SECONDS.toMillis(120);</span>
+
+<span class="fc" id="L56">    private final ConcurrentHashMap&lt;String, RemoteLockRecord&gt; records = new ConcurrentHashMap&lt;&gt;();</span>
+
+    // -----------------------------------------------------------------------
+    public static RemoteLockManager get() {
+<span class="fc" id="L60">        return Jenkins.get().getExtensionList(RemoteLockManager.class).get(0);</span>
+    }
+
+    // -----------------------------------------------------------------------
+    @Override
+    public long getRecurrencePeriod() {
+<span class="fc" id="L66">        return 1000L; // 1 second</span>
+    }
+
+    // -----------------------------------------------------------------------
+    @Override
+    protected void doRun() {
+        // Queue promotion is now handled by LRM.proceedNextContext() via the unified queue bridge.
+        // Only periodic stale detection and terminal-record TTL cleanup remain here.
+<span class="fc" id="L74">        maybeScanStale();</span>
+<span class="fc" id="L75">    }</span>
+
+    // -----------------------------------------------------------------------
+    /**
+     * Enqueues a new remote acquire request.
+     *
+     * &lt;p&gt;Immediately attempts to lock the resource(s). If successful the returned record
+     * has state {@link RemoteLockState#ACQUIRED}. If the resource is busy and
+     * {@code skipIfLocked} is true, state is {@link RemoteLockState#SKIPPED}.
+     * Otherwise state is {@link RemoteLockState#QUEUED} and the entry is registered in the LRM
+     * queue so it participates in unified priority dispatch with local pipeline lock() steps.
+     */
+    public RemoteLockRecord enqueue(@NonNull RemoteLockRequest lockRequest, @CheckForNull String clientId) {
+<span class="fc" id="L88">        String lockId = UUID.randomUUID().toString();</span>
+<span class="fc" id="L89">        RemoteLockRecord record = new RemoteLockRecord(lockId, lockRequest, clientId);</span>
+
+<span class="fc" id="L91">        LockableResourcesManager lrm = LockableResourcesManager.get();</span>
+<span class="fc" id="L92">        RemoteResolver resolver = new RemoteResolver(lrm);</span>
+<span class="fc" id="L93">        synchronized (LockableResourcesManager.syncResources) {</span>
+            // Admission: a selector referencing something this client can't lock (unknown/unexposed) is
+            // rejected up front (terminal; the caller maps UNKNOWN_* to HTTP 404). This avoids creating
+            // ephemeral resources and avoids queueing forever for something that will never be lockable.
+<span class="fc" id="L97">            String errorCode = resolver.validateRemoteSelectors(lockRequest);</span>
+<span class="fc bfc" id="L98" title="All 2 branches covered.">            if (errorCode != null) {</span>
+<span class="fc" id="L99">                record.markFailed(errorCode);</span>
+<span class="fc" id="L100">                records.put(lockId, record);</span>
+<span class="fc" id="L101">                LOGGER.fine(&quot;Remote acquire rejected: lockId=&quot; + lockId + &quot; errorCode=&quot; + errorCode);</span>
+<span class="fc" id="L102">                return record;</span>
+            }
+            // Whether the parameters make sense together is lock() semantics, so ask the canonical
+            // validator rather than re-implementing its rules at the REST boundary. It runs after
+            // admission on purpose: it also rejects labels that do not exist, and answering that with a
+            // 400 while an existing-but-unexposed label answers 404 would tell a client which names are
+            // real. Admission has already reduced both to a uniform 404 by the time we get here.
+            // Throws IllegalArgumentException, which the endpoint maps to 400 INVALID_REQUEST.
+<span class="fc" id="L110">            RemoteResolver.validateAsLocalStep(lockRequest, lrm.isAllowEmptyOrNullValues());</span>
+
+            // Resolve through the SAME canonical path local lock() uses (no re-implementation of lock()
+            // semantics), with the exposeLabel set as candidate filter. extra / label / quantity(0=all) /
+            // resourceSelectStrategy / property env vars all come from the canonical path. A request whose
+            // (exposed, existing) targets are merely busy stays QUEUED, exactly like local.
+<span class="fc" id="L116">            List&lt;LockableResourcesStruct&gt; structs = resolver.toRemoteStructs(lockRequest);</span>
+<span class="fc bfc" id="L117" title="All 2 branches covered.">            if (structs.isEmpty()) {</span>
+<span class="pc bpc" id="L118" title="1 of 2 branches missed.">                if (lrm.isAllowEmptyOrNullValues()) {</span>
+                    // Local lock() with nothing to lock runs the body holding nothing when the instance
+                    // allows empty values; the bridge grants the same no-op lease instead of failing.
+<span class="fc" id="L121">                    record.markAcquired(Collections.emptyList(), Collections.emptyMap());</span>
+                } else {
+                    // Unreachable: the canonical validator above rejects a target-less request in this
+                    // configuration. Kept so a future change cannot fall through to a 202 with no lease.
+<span class="nc" id="L125">                    record.markFailed(&quot;MISSING_TARGET&quot;);</span>
+                }
+            } else {
+<span class="fc" id="L128">                List&lt;LockableResource&gt; available = resolver.availableForRemote(structs, lockRequest);</span>
+<span class="pc bpc" id="L129" title="1 of 4 branches missed.">                if (available != null &amp;&amp; !available.isEmpty()) {</span>
+<span class="fc" id="L130">                    lrm.lockForRemote(available, lockId);</span>
+<span class="fc" id="L131">                    record.markAcquired(</span>
+<span class="fc" id="L132">                            LockableResourcesManager.getResourcesNames(available),</span>
+<span class="fc" id="L133">                            RemoteResolver.remoteLockEnvVars(lockRequest.getVariable(), available));</span>
+<span class="fc bfc" id="L134" title="All 2 branches covered.">                } else if (lockRequest.isSkipIfLocked()) {</span>
+<span class="fc" id="L135">                    record.markSkipped();</span>
+                } else {
+                    // Busy - register in the LRM unified queue for priority dispatch with local lock() steps.
+<span class="fc" id="L138">                    RemoteQueueEntry entry = new RemoteQueueEntry(</span>
+                            record,
+                            structs,
+<span class="fc" id="L141">                            lockRequest.getPriority(),</span>
+<span class="fc" id="L142">                            lockRequest.getTimeoutForAllocateResource(),</span>
+<span class="fc" id="L143">                            lockRequest.getTimeoutUnit());</span>
+<span class="fc" id="L144">                    lrm.queueRemote(entry);</span>
+                }
+            }
+<span class="fc" id="L147">        }</span>
+
+<span class="fc" id="L149">        records.put(lockId, record);</span>
+<span class="fc" id="L150">        LOGGER.fine(</span>
+<span class="fc" id="L151">                &quot;Remote acquire enqueued: lockId=&quot; + lockId + &quot; state=&quot; + record.getState() + &quot; clientId=&quot; + clientId);</span>
+<span class="fc" id="L152">        return record;</span>
+    }
+
+    // -----------------------------------------------------------------------
+    /**
+     * Returns the record for the given lockId, or {@code null} if not found.
+     */
+    @CheckForNull
+    public RemoteLockRecord find(String lockId) {
+<span class="fc" id="L161">        return records.get(lockId);</span>
+    }
+
+    // -----------------------------------------------------------------------
+    /**
+     * Updates the heartbeat timestamp for an ACQUIRED lock.
+     *
+     * @return {@code false} if the lockId is unknown or not in ACQUIRED state.
+     */
+    public boolean heartbeat(String lockId) {
+<span class="fc" id="L171">        RemoteLockRecord record = records.get(lockId);</span>
+<span class="fc bfc" id="L172" title="All 2 branches covered.">        if (record == null) {</span>
+<span class="fc" id="L173">            return false;</span>
+        }
+<span class="fc bfc" id="L175" title="All 2 branches covered.">        if (record.getState() != RemoteLockState.ACQUIRED) {</span>
+<span class="fc" id="L176">            return false;</span>
+        }
+<span class="fc" id="L178">        record.heartbeat();</span>
+<span class="fc" id="L179">        return true;</span>
+    }
+
+    // -----------------------------------------------------------------------
+    /**
+     * Releases a lock, freeing the underlying resource(s). Idempotent.
+     *
+     * &lt;p&gt;The record is kept as a terminal {@code FAILED}/{@code RELEASED} entry until its TTL rather
+     * than being dropped here, so a {@code GET /acquire/{lockId}} right after the release reports what
+     * happened instead of a 404 that cannot be told apart from &quot;the server restarted&quot;. The sweep in
+     * {@link #maybeScanStale()} owns removal.
+     */
+    public void release(String lockId) {
+<span class="fc" id="L192">        RemoteLockRecord record = records.get(lockId);</span>
+<span class="fc bfc" id="L193" title="All 2 branches covered.">        if (record == null) {</span>
+<span class="fc" id="L194">            return;</span>
+        }
+<span class="fc" id="L196">        LockableResourcesManager lrm = LockableResourcesManager.get();</span>
+
+        // Decide and mutate queue state atomically under syncResources so a concurrent queue
+        // promotion (proceedNextContext -&gt; proceedRemoteEntry, which checks entry.isValid() ==
+        // QUEUED) cannot acquire resources for an already-released record. Without this guard a
+        // QUEUED record released at the same instant its resources free up would leave an orphan
+        // remote lock (resource pinned, record gone from the map, unrecoverable until restart).
+<span class="fc" id="L203">        List&lt;String&gt; namesToUnlock = null;</span>
+<span class="fc" id="L204">        synchronized (LockableResourcesManager.syncResources) {</span>
+<span class="fc" id="L205">            RemoteLockState state = record.getState();</span>
+<span class="fc bfc" id="L206" title="All 4 branches covered.">            if (state == RemoteLockState.ACQUIRED || state == RemoteLockState.STALE) {</span>
+<span class="fc" id="L207">                List&lt;String&gt; names = record.getAcquiredResourceNames();</span>
+<span class="pc bpc" id="L208" title="2 of 4 branches missed.">                if (names != null &amp;&amp; !names.isEmpty()) {</span>
+<span class="fc" id="L209">                    namesToUnlock = names;</span>
+                }
+<span class="fc" id="L211">                record.markFailed(&quot;RELEASED&quot;);</span>
+<span class="fc bfc" id="L212" title="All 2 branches covered.">            } else if (state == RemoteLockState.QUEUED) {</span>
+                // Terminal-mark before unqueue so a not-yet-run promotion is excluded.
+<span class="fc" id="L214">                record.markFailed(&quot;RELEASED&quot;);</span>
+<span class="fc" id="L215">                lrm.unqueueRemote(lockId);</span>
+            } else {
+                // Already terminal - a repeated release. The first call freed whatever was held, so
+                // there is nothing left to do; the record waits out its TTL.
+<span class="fc" id="L219">                return;</span>
+            }
+<span class="fc" id="L221">        }</span>
+
+        // unlockRemoteResources() / scheduleQueueMaintenance() must run OUTSIDE syncResources
+        // (they touch the Jenkins Queue lock).
+<span class="fc bfc" id="L225" title="All 2 branches covered.">        if (namesToUnlock != null) {</span>
+            // frees resources, wakes local+remote waiters, and schedules maintenance
+<span class="fc" id="L227">            lrm.unlockRemoteResources(namesToUnlock, lockId);</span>
+        } else {
+<span class="fc" id="L229">            lrm.scheduleQueueMaintenance();</span>
+        }
+<span class="fc" id="L231">        LOGGER.fine(&quot;Remote lock released: lockId=&quot; + lockId + &quot; resources=&quot; + record.getAcquiredResourceNames());</span>
+<span class="fc" id="L232">    }</span>
+
+    // -----------------------------------------------------------------------
+    /**
+     * Marks ACQUIRED records STALE when heartbeat has been missing too long,
+     * and cleans up terminal records (SKIPPED/FAILED) after their TTL.
+     * QUEUED records are expired by the unified queue's own timeout
+     * ({@code RemoteQueueEntry} deadline = {@code timeoutForAllocateResource}), not here.
+     */
+    private void maybeScanStale() {
+<span class="fc" id="L242">        long now = System.currentTimeMillis();</span>
+<span class="fc bfc" id="L243" title="All 2 branches covered.">        for (RemoteLockRecord record : records.values()) {</span>
+<span class="fc" id="L244">            RemoteLockState state = record.getState();</span>
+<span class="fc bfc" id="L245" title="All 2 branches covered.">            if (state == RemoteLockState.ACQUIRED) {</span>
+<span class="fc bfc" id="L246" title="All 2 branches covered.">                if (now - record.getLastHeartbeatAt() &gt; STALE_THRESHOLD_MS) {</span>
+<span class="fc" id="L247">                    record.markStale();</span>
+<span class="fc" id="L248">                    LOGGER.log(</span>
+                            Level.WARNING,
+                            &quot;Remote lock STALE: lockId={0} resources={1} lastHeartbeatAge={2}ms&quot;,
+                            new Object[] {
+<span class="fc" id="L252">                                record.getLockId(), record.getAcquiredResourceNames(), now - record.getLastHeartbeatAt()</span>
+                            });
+                }
+<span class="fc bfc" id="L255" title="All 4 branches covered.">            } else if (state == RemoteLockState.SKIPPED || state == RemoteLockState.FAILED) {</span>
+                // Measure retention from when the record became terminal, NOT from enqueue: a record that
+                // times out after a long queue wait (timeoutForAllocateResource &gt; TERMINAL_TTL_MS) only
+                // becomes FAILED at the deadline, so an enqueue-based TTL would already be exceeded at that
+                // instant and the record would be evicted before a polling client can read the terminal
+                // state - surfacing a legitimate LOCK_WAIT_TIMEOUT as a 404. Terminal-time TTL keeps the
+                // FAILED/SKIPPED record observable for the full TTL regardless of how long the wait was.
+<span class="fc bfc" id="L262" title="All 2 branches covered.">                if (now - record.getTerminalAt() &gt; TERMINAL_TTL_MS) {</span>
+<span class="fc" id="L263">                    records.remove(record.getLockId());</span>
+                }
+            }
+<span class="fc" id="L266">        }</span>
+<span class="fc" id="L267">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

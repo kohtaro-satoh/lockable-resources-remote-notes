@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Merges the per-controller jacoco.exec files collected from the E2E / load run and reports against
+  the plugin's own classes and sources.
+
+  This is a report-only POM: it compiles nothing. It points build/outputDirectory and
+  build/sourceDirectory at the plugin checkout, because that is where jacoco-maven-plugin's report
+  goal looks for the bytecode it has to match the probes against. Both are overridable so a caller
+  can report against a different checkout (a worktree at another commit, say).
+
+  Everything it needs is already in the local repository after a plugin build; there is no CLI jar
+  to fetch.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>org.jenkins.plugins.lockableresources.harness</groupId>
+  <artifactId>coverage-report</artifactId>
+  <version>1</version>
+  <packaging>pom</packaging>
+  <name>Remote lock harness coverage report</name>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <jacoco.version>0.8.15</jacoco.version>
+    <!-- Filled in by collect.sh. -->
+    <lrr.plugin.classes>${basedir}/../../../../lockable-resources-plugin/target/classes</lrr.plugin.classes>
+    <lrr.plugin.sources>${basedir}/../../../../lockable-resources-plugin/src/main/java</lrr.plugin.sources>
+    <lrr.exec.dir>${basedir}/target/exec</lrr.exec.dir>
+    <lrr.report.dir>${basedir}/target/site/jacoco</lrr.report.dir>
+  </properties>
+
+  <build>
+    <outputDirectory>${lrr.plugin.classes}</outputDirectory>
+    <sourceDirectory>${lrr.plugin.sources}</sourceDirectory>
+    <plugins>
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>${jacoco.version}</version>
+        <executions>
+          <execution>
+            <id>merge-controllers</id>
+            <phase>verify</phase>
+            <goals><goal>merge</goal></goals>
+            <configuration>
+              <fileSets>
+                <fileSet>
+                  <directory>${lrr.exec.dir}</directory>
+                  <includes><include>*.exec</include></includes>
+                </fileSet>
+              </fileSets>
+              <destFile>${basedir}/target/merged.exec</destFile>
+            </configuration>
+          </execution>
+          <execution>
+            <id>report-merged</id>
+            <phase>verify</phase>
+            <goals><goal>report</goal></goals>
+            <configuration>
+              <dataFile>${basedir}/target/merged.exec</dataFile>
+              <outputDirectory>${lrr.report.dir}</outputDirectory>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

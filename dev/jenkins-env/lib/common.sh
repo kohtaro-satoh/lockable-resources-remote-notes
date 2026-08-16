@@ -835,6 +835,12 @@ trigger_and_resolve_build_url() {
   wait_for_queue_executable "$queue_url" "$queue_timeout"
 }
 
+# Scenarios restart controllers mid-run (catalog-cache-ttl stops jenkins-b to prove the cached view
+# survives). compose recreates the container from the current environment, so if LRR_JAVA_OPTS is not
+# set here the controller comes back without the agent and everything it does afterwards is invisible
+# to the report - silently, because the suite still passes.
+source "$COMMON_ROOT_DIR/lib/coverage-env.sh"
+
 docker_compose() {
   docker compose -f "$COMMON_ROOT_DIR/docker-compose.yml" "$@"
 }

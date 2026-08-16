@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Constants.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources.util</a> &gt; <span class="el_source">Constants.java</span></div><h1>Constants.java</h1><pre class="source lang-java linenums">package org.jenkins.plugins.lockableresources.util;
+
+<span class="nc" id="L3">public class Constants {</span>
+    /// Enable mirror nodes to lockable-resources
+    public static final String SYSTEM_PROPERTY_ENABLE_NODE_MIRROR =
+            &quot;org.jenkins.plugins.lockableresources.ENABLE_NODE_MIRROR&quot;;
+    /// Disable saving lockable resources states, properties ... into local file system.
+    /// This option makes the plugin much faster (everything is in cache) but
+    /// **Keep in mind, that you will lost all your manual changed properties**
+    /// The best way is to use it with JCaC plugin.
+    public static final String SYSTEM_PROPERTY_DISABLE_SAVE = &quot;org.jenkins.plugins.lockableresources.DISABLE_SAVE&quot;;
+    /// Enable to print lock causes. Keep in mind, that the log output may grove depends on count of
+    /// blocked resources.
+    public static final String SYSTEM_PROPERTY_PRINT_BLOCKED_RESOURCE =
+            &quot;org.jenkins.plugins.lockableresources.PRINT_BLOCKED_RESOURCE&quot;;
+    public static final String SYSTEM_PROPERTY_PRINT_QUEUE_INFO =
+            &quot;org.jenkins.plugins.lockableresources.PRINT_QUEUE_INFO&quot;;
+    /// Enable asynchronous save to reduce syncResources lock hold time.
+    public static final String SYSTEM_PROPERTY_ASYNC_SAVE = &quot;org.jenkins.plugins.lockableresources.ASYNC_SAVE&quot;;
+    /// Coalesce window (ms) for async saves — rapid state changes within this window are batched.
+    public static final String SYSTEM_PROPERTY_SAVE_COALESCE_MS =
+            &quot;org.jenkins.plugins.lockableresources.SAVE_COALESCE_MS&quot;;
+    /// TTL (ms) for Groovy script evaluation result cache per resource.
+    public static final String SYSTEM_PROPERTY_SCRIPT_CACHE_TTL_MS =
+            &quot;org.jenkins.plugins.lockableresources.SCRIPT_CACHE_TTL_MS&quot;;
+    /// TTL (ms) for label expression evaluation result cache per resource.
+    public static final String SYSTEM_PROPERTY_LABEL_CACHE_TTL_MS =
+            &quot;org.jenkins.plugins.lockableresources.LABEL_CACHE_TTL_MS&quot;;
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

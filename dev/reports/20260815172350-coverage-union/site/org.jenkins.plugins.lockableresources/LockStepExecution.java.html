@@ -1,0 +1,462 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LockStepExecution.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Remote lock harness coverage report</a> &gt; <a href="index.source.html" class="el_package">org.jenkins.plugins.lockableresources</a> &gt; <span class="el_source">LockStepExecution.java</span></div><h1>LockStepExecution.java</h1><pre class="source lang-java linenums">package org.jenkins.plugins.lockableresources;
+
+import edu.umd.cs.findbugs.annotations.NonNull;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import hudson.EnvVars;
+import hudson.model.Run;
+import hudson.model.TaskListener;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import org.jenkins.plugins.lockableresources.actions.LockedResourcesBuildAction;
+import org.jenkins.plugins.lockableresources.queue.LockableResourcesStruct;
+import org.jenkins.plugins.lockableresources.remote.RemoteLockRouting;
+import org.jenkins.plugins.lockableresources.remote.RemoteLockSession;
+import org.jenkinsci.plugins.workflow.graph.FlowNode;
+import org.jenkinsci.plugins.workflow.steps.AbstractStepExecutionImpl;
+import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
+import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
+import org.jenkinsci.plugins.workflow.steps.EnvironmentExpander;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
+import org.jenkinsci.plugins.workflow.support.actions.PauseAction;
+
+public class LockStepExecution extends AbstractStepExecutionImpl implements RemoteLockSession.Host {
+
+    private static final long serialVersionUID = 1391734561272059623L;
+
+<span class="fc" id="L36">    private static final Logger LOGGER = Logger.getLogger(LockStepExecution.class.getName());</span>
+
+    private final LockStep step;
+
+    /** Non-null once a remote {@code lock()} flow has started; owns the acquire/poll/heartbeat/release machine. */
+    private RemoteLockSession remoteSession;
+
+    public LockStepExecution(LockStep step, StepContext context) {
+<span class="fc" id="L44">        super(context);</span>
+<span class="fc" id="L45">        this.step = step;</span>
+<span class="fc" id="L46">    }</span>
+
+    @Override
+    public boolean start() throws Exception {
+        // normally it might raise an exception, but we check it in the function .validate()
+        // therefore we can skip the try-catch here.
+<span class="fc" id="L52">        ResourceSelectStrategy resourceSelectStrategy =</span>
+<span class="fc" id="L53">                ResourceSelectStrategy.valueOf(step.resourceSelectStrategy.toUpperCase(Locale.ENGLISH));</span>
+
+<span class="fc" id="L55">        PrintStream logger = getContext().get(TaskListener.class).getLogger();</span>
+
+<span class="fc" id="L57">        Run&lt;?, ?&gt; run = getContext().get(Run.class);</span>
+
+<span class="fc" id="L59">        List&lt;LockableResourcesStruct&gt; resourceHolderList = new ArrayList&lt;&gt;();</span>
+
+        List&lt;LockableResource&gt; available;
+<span class="fc" id="L62">        LinkedHashMap&lt;String, List&lt;LockableResourceProperty&gt;&gt; lockedResources = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L63">        LockableResourcesManager lrm = LockableResourcesManager.get();</span>
+
+<span class="fc bfc" id="L65" title="All 2 branches covered.">        if (RemoteLockRouting.isRemoteRequest(step, lrm)) {</span>
+<span class="fc" id="L66">            remoteSession = new RemoteLockSession();</span>
+<span class="fc" id="L67">            return remoteSession.start(this);</span>
+        }
+<span class="fc" id="L69">        step.validate(lrm.isAllowEmptyOrNullValues());</span>
+
+<span class="fc" id="L71">        synchronized (LockableResourcesManager.syncResources) {</span>
+<span class="fc" id="L72">            LockableResourcesManager.printLogs(&quot;Trying to acquire lock on [&quot; + step + &quot;]&quot;, Level.FINE, LOGGER, logger);</span>
+
+<span class="fc" id="L74">            getContext().get(FlowNode.class).addAction(new PauseAction(&quot;Lock&quot;));</span>
+
+<span class="fc bfc" id="L76" title="All 4 branches covered.">            if (!lrm.isAllowEmptyOrNullValues() || acquireLock()) {</span>
+<span class="fc" id="L77">                List&lt;String&gt; resourceNames = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L78" title="All 2 branches covered.">                for (LockStepResource resource : step.getResources()) {</span>
+<span class="fc" id="L79">                    List&lt;String&gt; resources = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L80" title="All 2 branches covered.">                    if (resource.resource != null) {</span>
+<span class="fc bfc" id="L81" title="All 2 branches covered.">                        if (lrm.createResource(resource.resource)) {</span>
+<span class="fc" id="L82">                            LockableResourcesManager.printLogs(</span>
+                                    &quot;Resource [&quot; + resource.resource + &quot;] did not exist. Created.&quot;,
+                                    Level.FINE,
+                                    LOGGER,
+                                    logger);
+                        }
+<span class="fc" id="L88">                        resources.add(resource.resource);</span>
+<span class="fc" id="L89">                        resourceNames.addAll(resources);</span>
+                    } else {
+<span class="fc" id="L91">                        resourceNames.add(&quot;N/A&quot;);</span>
+                    }
+<span class="fc" id="L93">                    resourceHolderList.add(new LockableResourcesStruct(resources, resource.label, resource.quantity));</span>
+<span class="fc" id="L94">                }</span>
+<span class="fc" id="L95">                LockedResourcesBuildAction.addLog(run, resourceNames, &quot;try&quot;, step.toString());</span>
+                // determine if there are enough resources available to proceed
+<span class="fc" id="L97">                available = lrm.getAvailableResources(resourceHolderList, logger, resourceSelectStrategy);</span>
+<span class="pc bpc" id="L98" title="1 of 4 branches missed.">                if (available == null || available.isEmpty()) {</span>
+<span class="fc" id="L99">                    LOGGER.fine(&quot;No available resources: &quot; + available);</span>
+<span class="fc" id="L100">                    onLockFailed(logger, resourceHolderList);</span>
+<span class="fc" id="L101">                    return false;</span>
+                }
+
+<span class="pc bpc" id="L104" title="1 of 2 branches missed.">                if (!lrm.lock(available, run, step.reason)) {</span>
+                    // this here is very defensive code, and you will probably never hit it. (hopefully)
+<span class="nc" id="L106">                    LOGGER.warning(&quot;Internal program error: Can not lock resources: &quot; + available);</span>
+<span class="nc" id="L107">                    onLockFailed(logger, resourceHolderList);</span>
+<span class="nc" id="L108">                    return true;</span>
+                }
+
+                // since LockableResource contains transient variables, they cannot be correctly serialized
+                // hence we use their unique resource names and properties
+<span class="fc bfc" id="L113" title="All 2 branches covered.">                for (LockableResource resource : available) {</span>
+<span class="fc" id="L114">                    lockedResources.put(resource.getName(), resource.getProperties());</span>
+<span class="fc" id="L115">                }</span>
+            }
+
+<span class="fc" id="L118">            LockStepExecution.proceed(lockedResources, getContext(), step.toString(), step.variable);</span>
+<span class="fc" id="L119">        }</span>
+
+<span class="fc" id="L121">        return false;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    // RemoteLockSession.Host - the remote acquire/poll/heartbeat/release machine lives in RemoteLockSession;
+    // these are the thin step-side hooks it calls back into (expose the step context, run the lock body).
+
+    @Override
+    public StepContext context() {
+<span class="fc" id="L130">        return getContext();</span>
+    }
+
+    @Override
+    public LockStep step() {
+<span class="fc" id="L135">        return step;</span>
+    }
+
+    @Override
+    @SuppressFBWarnings(
+            value = &quot;REC_CATCH_EXCEPTION&quot;,
+            justification = &quot;Fail-closed: any failure while starting the body must fail the session.&quot;)
+    public void runBody(
+            String displayTarget,
+            @edu.umd.cs.findbugs.annotations.CheckForNull Map&lt;String, String&gt; lockEnvVars,
+            String lockId) {
+        try {
+<span class="fc" id="L147">            Run&lt;?, ?&gt; build = getContext().get(Run.class);</span>
+<span class="fc" id="L148">            FlowNode node = getContext().get(FlowNode.class);</span>
+<span class="fc" id="L149">            PrintStream logger = getContext().get(TaskListener.class).getLogger();</span>
+<span class="fc" id="L150">            LockableResourcesManager.printLogs(</span>
+                    &quot;Remote lock acquired on [&quot;
+                            + step
+                            + &quot;] (serverId=&quot;
+<span class="fc" id="L154">                            + remoteSession.getServerId()</span>
+                            + &quot;, lockId=&quot;
+                            + lockId
+                            + &quot;)&quot;,
+                    Level.FINE,
+                    LOGGER,
+                    logger);
+<span class="fc" id="L161">            LockedResourcesBuildAction.addLog(</span>
+<span class="fc" id="L162">                    build, Collections.singletonList(displayTarget), &quot;acquired&quot;, step.toString());</span>
+<span class="fc" id="L163">            PauseAction.endCurrentPause(node);</span>
+
+<span class="fc" id="L165">            BodyInvoker bodyInvoker = getContext().newBodyInvoker().withCallback(new RemoteCallback(displayTarget));</span>
+            // The bridge metadata (X_SERVER_ID / X_LOCK_ID) does not depend on what the server returned:
+            // gating it on a non-empty lockEnvVars dropped it whenever the response carried none.
+<span class="fc" id="L168">            Map&lt;String, String&gt; envWithRemoteMetadata = withRemoteMetadata(</span>
+<span class="fc bfc" id="L169" title="All 2 branches covered.">                    lockEnvVars == null ? Collections.emptyMap() : lockEnvVars, step.variable, remoteSession, lockId);</span>
+<span class="fc bfc" id="L170" title="All 2 branches covered.">            if (!envWithRemoteMetadata.isEmpty()) {</span>
+<span class="fc" id="L171">                bodyInvoker.withContext(EnvironmentExpander.merge(</span>
+<span class="fc" id="L172">                        getContext().get(EnvironmentExpander.class), new EnvVarsExpander(envWithRemoteMetadata)));</span>
+            }
+<span class="fc" id="L174">            bodyInvoker.start();</span>
+<span class="nc" id="L175">        } catch (Exception ex) {</span>
+<span class="nc" id="L176">            remoteSession.fail(this, ex);</span>
+<span class="fc" id="L177">        }</span>
+<span class="fc" id="L178">    }</span>
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Checks if a lock can be acquired based on the step's properties: label, resource, and extra.
+     * To acquire a lock, at least one of these properties must be non-null and non-empty.
+     */
+    private boolean acquireLock() {
+<span class="fc bfc" id="L186" title="All 2 branches covered.">        if (step.label != null) {</span>
+<span class="fc" id="L187">            return true;</span>
+        }
+<span class="fc bfc" id="L189" title="All 2 branches covered.">        if (step.resource != null) {</span>
+<span class="fc" id="L190">            return true;</span>
+        }
+<span class="fc bfc" id="L192" title="All 4 branches covered.">        if (step.extra != null &amp;&amp; !step.extra.isEmpty()) {</span>
+<span class="fc" id="L193">            return true;</span>
+        }
+<span class="fc" id="L195">        LOGGER.warning(&quot;No lock will be acquired. Either the label, resource or extra is null or empty.&quot;);</span>
+<span class="fc" id="L196">        LOGGER.warning(&quot;Step: &quot; + step);</span>
+<span class="fc" id="L197">        LOGGER.warning(&quot;Label: &quot; + step.label);</span>
+<span class="fc" id="L198">        LOGGER.warning(&quot;Resource: &quot; + step.resource);</span>
+<span class="fc" id="L199">        LOGGER.warning(&quot;Extra: &quot; + step.extra);</span>
+<span class="fc" id="L200">        return false;</span>
+    }
+
+    // ---------------------------------------------------------------------------
+    /**
+     * Executed when the lock() function fails. No available resources, or we failed to lock available
+     * resources if the resource is known, we could output the active/blocking job/build
+     */
+    private void onLockFailed(PrintStream logger, List&lt;LockableResourcesStruct&gt; resourceHolderList) {
+
+<span class="fc bfc" id="L210" title="All 2 branches covered.">        if (step.skipIfLocked) {</span>
+<span class="fc" id="L211">            this.printBlockCause(logger, resourceHolderList);</span>
+<span class="fc" id="L212">            LockableResourcesManager.printLogs(</span>
+                    &quot;[&quot; + step + &quot;] is not free, skipping execution ...&quot;, Level.FINE, LOGGER, logger);
+<span class="fc" id="L214">            getContext().onSuccess(null);</span>
+        } else {
+<span class="fc" id="L216">            this.printBlockCause(logger, resourceHolderList);</span>
+<span class="fc" id="L217">            String waitMsg = &quot;[&quot; + step + &quot;] is not free, waiting for execution ...&quot;;</span>
+<span class="fc bfc" id="L218" title="All 2 branches covered.">            if (step.timeoutForAllocateResource &gt; 0) {</span>
+<span class="fc" id="L219">                waitMsg += &quot; (timeout: &quot; + step.timeoutForAllocateResource + &quot; &quot;</span>
+<span class="fc" id="L220">                        + step.timeoutUnit.toLowerCase(java.util.Locale.ENGLISH) + &quot;)&quot;;</span>
+            }
+<span class="fc" id="L222">            LockableResourcesManager.printLogs(waitMsg, Level.FINE, LOGGER, logger);</span>
+<span class="fc" id="L223">            LockableResourcesManager lrm = LockableResourcesManager.get();</span>
+<span class="fc" id="L224">            lrm.queueContext(</span>
+<span class="fc" id="L225">                    getContext(),</span>
+                    resourceHolderList,
+<span class="fc" id="L227">                    step.toString(),</span>
+                    step.variable,
+                    step.inversePrecedence,
+                    step.priority,
+                    step.reason,
+                    step.timeoutForAllocateResource,
+                    step.timeoutUnit);
+        }
+<span class="fc" id="L235">    }</span>
+
+    private void printBlockCause(PrintStream logger, List&lt;LockableResourcesStruct&gt; resourceHolderList) {
+<span class="fc" id="L238">        LockableResourcesManager lrm = LockableResourcesManager.get();</span>
+<span class="fc bfc" id="L239" title="All 2 branches covered.">        LockableResource resource = this.step.resource != null ? lrm.fromName(this.step.resource) : null;</span>
+
+<span class="fc bfc" id="L241" title="All 2 branches covered.">        if (resource != null) {</span>
+<span class="fc" id="L242">            final String logMessage = resource.getLockCauseDetail();</span>
+<span class="pc bpc" id="L243" title="2 of 4 branches missed.">            if (logMessage != null &amp;&amp; !logMessage.isEmpty())</span>
+<span class="fc" id="L244">                LockableResourcesManager.printLogs(logMessage, Level.FINE, LOGGER, logger);</span>
+<span class="fc" id="L245">        } else {</span>
+            // looks like ordered by label
+<span class="fc" id="L247">            lrm.getAvailableResources(resourceHolderList, logger, null);</span>
+        }
+<span class="fc" id="L249">    }</span>
+
+    // ---------------------------------------------------------------------------
+    @SuppressFBWarnings(value = &quot;REC_CATCH_EXCEPTION&quot;, justification = &quot;not sure which exceptions might be catch.&quot;)
+    public static void proceed(
+            final LinkedHashMap&lt;String, List&lt;LockableResourceProperty&gt;&gt; lockedResources,
+            StepContext context,
+            String resourceDescription,
+            final String variable) {
+        Run&lt;?, ?&gt; build;
+        FlowNode node;
+        PrintStream logger;
+        try {
+<span class="fc" id="L262">            build = context.get(Run.class);</span>
+<span class="fc" id="L263">            node = context.get(FlowNode.class);</span>
+<span class="fc" id="L264">            logger = context.get(TaskListener.class).getLogger();</span>
+<span class="fc" id="L265">            LockableResourcesManager.printLogs(</span>
+                    &quot;Lock acquired on [&quot; + resourceDescription + &quot;]&quot;, Level.FINE, LOGGER, logger);
+<span class="nc" id="L267">        } catch (Exception e) {</span>
+<span class="nc" id="L268">            context.onFailure(e);</span>
+<span class="nc" id="L269">            return;</span>
+<span class="fc" id="L270">        }</span>
+
+        try {
+<span class="fc" id="L273">            List&lt;String&gt; resourceNames = new ArrayList&lt;&gt;(lockedResources.keySet());</span>
+<span class="fc" id="L274">            LockedResourcesBuildAction.addLog(build, resourceNames, &quot;acquired&quot;, resourceDescription);</span>
+<span class="fc" id="L275">            PauseAction.endCurrentPause(node);</span>
+<span class="fc" id="L276">            BodyInvoker bodyInvoker =</span>
+<span class="fc" id="L277">                    context.newBodyInvoker().withCallback(new Callback(resourceNames, resourceDescription));</span>
+<span class="pc bpc" id="L278" title="1 of 4 branches missed.">            if (variable != null &amp;&amp; !variable.isEmpty()) {</span>
+                // set the variable for the duration of the block
+<span class="fc" id="L280">                bodyInvoker.withContext(EnvironmentExpander.merge(</span>
+<span class="fc" id="L281">                        context.get(EnvironmentExpander.class), new EnvironmentExpander() {</span>
+                            private static final long serialVersionUID = -3431466225193397896L;
+
+                            @Override
+                            public void expand(@NonNull EnvVars env) {
+<span class="fc" id="L286">                                Map&lt;String, String&gt; variables = buildLockEnvVars(variable, lockedResources);</span>
+<span class="pc bpc" id="L287" title="1 of 2 branches missed.">                                if (variables == null) {</span>
+<span class="nc" id="L288">                                    return;</span>
+                                }
+<span class="fc" id="L290">                                LOGGER.finest(&quot;Setting &quot;</span>
+<span class="fc" id="L291">                                        + variables.entrySet().stream()</span>
+<span class="fc" id="L292">                                                .map(e -&gt; e.getKey() + &quot;=&quot; + e.getValue())</span>
+<span class="fc" id="L293">                                                .collect(Collectors.joining(&quot;, &quot;))</span>
+                                        + &quot; for the duration of the block&quot;);
+<span class="fc" id="L295">                                env.overrideAll(variables);</span>
+<span class="fc" id="L296">                            }</span>
+                        }));
+            }
+<span class="fc" id="L299">            bodyInvoker.start();</span>
+<span class="nc" id="L300">        } catch (IOException | InterruptedException e) {</span>
+<span class="nc" id="L301">            LOGGER.warning(&quot;proceed done with failure &quot; + resourceDescription);</span>
+<span class="nc" id="L302">            throw new RuntimeException(e);</span>
+<span class="fc" id="L303">        }</span>
+<span class="fc" id="L304">    }</span>
+
+    /**
+     * Builds the {@code lockEnvVars} map injected for the duration of a {@code lock()} block, following
+     * local semantics exactly: {@code variable=&quot;X&quot;} with locked resources {@code r1, r2} yields
+     * {@code X=&quot;r1,r2&quot;}, {@code X0=&quot;r1&quot;}, {@code X0_&lt;prop&gt;=&lt;value&gt;}, {@code X1=&quot;r2&quot;}, ... Property env vars
+     * are included. Returns {@code null} when {@code variable} is null/empty.
+     *
+     * &lt;p&gt;Shared by the local flow ({@link #proceed}) and the remote bridge so the two never drift. All
+     * inputs (resource names and property name/value strings) are serializable, so the remote server can
+     * generate the same map and bridge it to the client.
+     */
+    @edu.umd.cs.findbugs.annotations.CheckForNull
+    public static Map&lt;String, String&gt; buildLockEnvVars(
+            @edu.umd.cs.findbugs.annotations.CheckForNull String variable,
+            @NonNull LinkedHashMap&lt;String, List&lt;LockableResourceProperty&gt;&gt; lockedResources) {
+<span class="fc bfc" id="L320" title="All 4 branches covered.">        if (variable == null || variable.isEmpty()) {</span>
+<span class="fc" id="L321">            return null;</span>
+        }
+<span class="fc" id="L323">        LinkedHashMap&lt;String, String&gt; variables = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L324">        variables.put(variable, String.join(&quot;,&quot;, lockedResources.keySet()));</span>
+<span class="fc" id="L325">        int index = 0;</span>
+<span class="fc bfc" id="L326" title="All 2 branches covered.">        for (Entry&lt;String, List&lt;LockableResourceProperty&gt;&gt; lockResourceEntry : lockedResources.entrySet()) {</span>
+<span class="fc" id="L327">            String lockEnvName = variable + index;</span>
+<span class="fc" id="L328">            variables.put(lockEnvName, lockResourceEntry.getKey());</span>
+<span class="fc bfc" id="L329" title="All 2 branches covered.">            for (LockableResourceProperty lockProperty : lockResourceEntry.getValue()) {</span>
+<span class="fc" id="L330">                variables.put(lockEnvName + &quot;_&quot; + lockProperty.getName(), lockProperty.getValue());</span>
+<span class="fc" id="L331">            }</span>
+<span class="fc" id="L332">            ++index;</span>
+<span class="fc" id="L333">        }</span>
+<span class="fc" id="L334">        return variables;</span>
+    }
+
+    /**
+     * Adds remote metadata env vars for remote lock blocks while preserving local env semantics.
+     * For variable &quot;X&quot; this appends: X_SERVER_ID and X_LOCK_ID.
+     */
+    @NonNull
+    private static Map&lt;String, String&gt; withRemoteMetadata(
+            @NonNull Map&lt;String, String&gt; lockEnvVars,
+            @edu.umd.cs.findbugs.annotations.CheckForNull String variable,
+            @edu.umd.cs.findbugs.annotations.CheckForNull RemoteLockSession remoteSession,
+            @NonNull String lockId) {
+<span class="fc" id="L347">        LinkedHashMap&lt;String, String&gt; merged = new LinkedHashMap&lt;&gt;(lockEnvVars);</span>
+<span class="pc bpc" id="L348" title="2 of 6 branches missed.">        if (variable == null || variable.isEmpty() || remoteSession == null) {</span>
+<span class="fc" id="L349">            return merged;</span>
+        }
+
+<span class="fc" id="L352">        String serverId = remoteSession.getServerId();</span>
+<span class="pc bpc" id="L353" title="2 of 4 branches missed.">        if (serverId != null &amp;&amp; !serverId.isEmpty()) {</span>
+<span class="fc" id="L354">            merged.put(variable + &quot;_SERVER_ID&quot;, serverId);</span>
+        }
+<span class="fc" id="L356">        merged.put(variable + &quot;_LOCK_ID&quot;, lockId);</span>
+<span class="fc" id="L357">        return merged;</span>
+    }
+
+    /** Serializable {@link EnvironmentExpander} that injects a precomputed env-var map (named/static to avoid capturing the step). */
+    private static final class EnvVarsExpander extends EnvironmentExpander {
+
+        private static final long serialVersionUID = -6921365277116143418L;
+        private final Map&lt;String, String&gt; envVars;
+
+<span class="fc" id="L366">        EnvVarsExpander(Map&lt;String, String&gt; envVars) {</span>
+<span class="fc" id="L367">            this.envVars = envVars;</span>
+<span class="fc" id="L368">        }</span>
+
+        @Override
+        public void expand(@NonNull EnvVars env) {
+<span class="fc" id="L372">            env.overrideAll(envVars);</span>
+<span class="fc" id="L373">        }</span>
+    }
+
+    private static final class Callback extends BodyExecutionCallback.TailCall {
+
+        private static final long serialVersionUID = -2024890670461847666L;
+        private final List&lt;String&gt; resourceNames;
+        private final String resourceDescription;
+
+<span class="fc" id="L382">        Callback(List&lt;String&gt; resourceNames, String resourceDescription) {</span>
+<span class="fc" id="L383">            this.resourceNames = resourceNames;</span>
+<span class="fc" id="L384">            this.resourceDescription = resourceDescription;</span>
+<span class="fc" id="L385">        }</span>
+
+        @Override
+        protected void finished(StepContext context) throws Exception {
+<span class="fc" id="L389">            Run&lt;?, ?&gt; build = context.get(Run.class);</span>
+<span class="fc" id="L390">            LockedResourcesBuildAction.addLog(build, this.resourceNames, &quot;released&quot;, this.resourceDescription);</span>
+<span class="fc" id="L391">            LockableResourcesManager.get().unlockNames(this.resourceNames, build);</span>
+<span class="fc" id="L392">            LockableResourcesManager.printLogs(</span>
+                    &quot;Lock released on resource [&quot; + this.resourceDescription + &quot;]&quot;,
+                    Level.FINE,
+                    LOGGER,
+<span class="fc" id="L396">                    context.get(TaskListener.class).getLogger());</span>
+<span class="fc" id="L397">        }</span>
+    }
+
+    @SuppressFBWarnings(
+            value = {&quot;REC_CATCH_EXCEPTION&quot;, &quot;SE_INNER_CLASS&quot;},
+            justification = &quot;Best-effort release logging; the callback is serialized as part of the step execution.&quot;)
+    private final class RemoteCallback extends BodyExecutionCallback.TailCall {
+
+        private static final long serialVersionUID = -6771337682719425678L;
+
+        private final String remoteResource;
+
+<span class="fc" id="L409">        private RemoteCallback(String remoteResource) {</span>
+<span class="fc" id="L410">            this.remoteResource = remoteResource;</span>
+<span class="fc" id="L411">        }</span>
+
+        @Override
+        protected void finished(StepContext context) {
+<span class="fc" id="L415">            remoteSession.onBodyFinished(LockStepExecution.this);</span>
+
+            Run&lt;?, ?&gt; build;
+            try {
+<span class="fc" id="L419">                build = context.get(Run.class);</span>
+<span class="fc" id="L420">                LockedResourcesBuildAction.addLog(</span>
+<span class="fc" id="L421">                        build, Collections.singletonList(remoteResource), &quot;released&quot;, step.toString());</span>
+<span class="fc" id="L422">                LockableResourcesManager.printLogs(</span>
+                        &quot;Remote lock released on [&quot;
+                                + step
+                                + &quot;] (serverId=&quot;
+<span class="fc" id="L426">                                + remoteSession.getServerId()</span>
+                                + &quot;, lockId=&quot;
+<span class="fc" id="L428">                                + remoteSession.getLockId()</span>
+                                + &quot;)&quot;,
+                        Level.FINE,
+                        LOGGER,
+<span class="fc" id="L432">                        context.get(TaskListener.class).getLogger());</span>
+<span class="nc" id="L433">            } catch (Exception ex) {</span>
+<span class="nc" id="L434">                LOGGER.log(Level.WARNING, &quot;Failed to write remote release log&quot;, ex);</span>
+<span class="fc" id="L435">            }</span>
+<span class="fc" id="L436">        }</span>
+    }
+
+    @Override
+    public void stop(@NonNull Throwable cause) {
+<span class="fc bfc" id="L441" title="All 2 branches covered.">        if (remoteSession != null) {</span>
+<span class="fc" id="L442">            remoteSession.stop(this, cause);</span>
+<span class="fc" id="L443">            return;</span>
+        }
+
+<span class="fc" id="L446">        boolean cleaned = LockableResourcesManager.get().unqueueContext(getContext());</span>
+<span class="pc bpc" id="L447" title="1 of 2 branches missed.">        if (!cleaned) {</span>
+<span class="nc" id="L448">            LOGGER.log(</span>
+                    Level.WARNING,
+                    &quot;Cannot remove context from lockable resource waiting list. The context is not in the waiting list.&quot;);
+        }
+<span class="fc" id="L452">        getContext().onFailure(cause);</span>
+<span class="fc" id="L453">    }</span>
+
+    @Override
+    public void onResume() {
+<span class="fc bfc" id="L457" title="All 2 branches covered.">        if (remoteSession != null) {</span>
+<span class="fc" id="L458">            remoteSession.onResume(this);</span>
+        }
+<span class="fc" id="L460">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

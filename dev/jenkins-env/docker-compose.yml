@@ -3,6 +3,13 @@ x-jenkins-common: &jenkins-common
     context: ./docker
     dockerfile: Dockerfile
   restart: unless-stopped
+  # The JaCoCo agent writes its exec file from a JVM shutdown hook. Docker's default 10s SIGTERM
+  # window is not always enough for a Jenkins that has been running a suite, and a SIGKILL loses
+  # everything that JVM recorded. Costs nothing when coverage is off: Jenkins still exits when done.
+  stop_grace_period: 120s
+  environment:
+    # start.sh sets this; the default reproduces the Dockerfile's own value.
+    JAVA_OPTS: ${LRR_JAVA_OPTS:--Djenkins.install.runSetupWizard=false}
   healthcheck:
     # /jenkins/ プレフィックスでアクセス（コンテナ内ポートは 8080）
     test: ["CMD", "curl", "-fsS", "http://localhost:8080/jenkins/login"]

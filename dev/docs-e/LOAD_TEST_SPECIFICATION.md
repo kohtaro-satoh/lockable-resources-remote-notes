@@ -406,7 +406,7 @@ Under hold-60s / 200-way exhaustion, a failing remote acquire split into **2 pat
 `t=timeoutForAllocateResource`, so when `timeoutForAllocateResource > 120s` it is already past the enqueue-based TTL
 the instant it is created and is evicted on the next sweep; the next poll then 404s. The A/B variance is only the
 sweep-interval gap between markFailed and removal — **the dominant cause is a deterministic bug, not load-dependent**.
-Details, fix, and E2E detectability: `dev/docs-j/ph1-ms1/LRR_ISSUE_P1_M1H_queued_expiry_poll_404.md`.
+Details, fix, and E2E detectability: `LRR_ISSUE_P1_M1H_queued_expiry_poll_404.md` (development branch only).
 
 **Assessment:** not a `break` (mutual exclusion holds, no deadlock, body not executed) — but a legitimate timeout is
 mislabeled as a 404 communication failure. **The primary fix is to measure the TTL from the terminal-transition

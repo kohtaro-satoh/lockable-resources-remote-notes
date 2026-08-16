@@ -8,8 +8,8 @@
 > **前提コミット:** #1055 は **2026-08-04 に `jenkinsci:master` へマージ済み**（マージコミット `018e913`、
 > merged by mPokornyETM）。本書の実装側記述は `upstream/master` = `011c6a3`（`018e913` を含む）で確認済み
 > **正本仕様:** issue #1025 本文の "Configuration surface" 〜 "Phase 1 scope"（authoritative）
-> **関連:** `../ph1-ms1/LRR_DESIGN_P1_M1.md`（M1 設計。§4 に本書が埋める API が「M3 以降」として予告済み）、
-> `../ph1-ms1/LRR_REVIEW_UPSTREAM_FOLLOWUP_UX.md` §13.3（やり残しの一覧と行き先）
+> **関連:** [M1 設計書](https://github.com/kohtaro-satoh/lockable-resources-remote-notes/blob/docs/remote-lr-pull-1055/dev/docs-j/LRR_DESIGN_P1_M1.md)（M1 設計。§4 に本書が埋める API が「M3 以降」として予告済み）、
+> `LRR_REVIEW_UPSTREAM_FOLLOWUP_UX.md`（開発ブランチのみ） §13.3（やり残しの一覧と行き先）
 
 ---
 
@@ -200,7 +200,7 @@ issue #1025 本文末尾の Phases 節にある `- [ ] Phase 1` は、**#1055 �
 ### 3.2 `GET /lease/{lockId}` は追加しない（2026-08-05 決定）
 
 初版では「issue 本文に載っている未実装分」として追加対象にしていたが、**これは誤りだった**。
-M1 設計書 `../ph1-ms1/LRR_DESIGN_P1_M1.md` の対象外表に
+M1 設計書 [M1 設計書](https://github.com/kohtaro-satoh/lockable-resources-remote-notes/blob/docs/remote-lr-pull-1055/dev/docs-j/LRR_DESIGN_P1_M1.md) の対象外表に
 「`GET /lease/{lockId}`（診断エンドポイント） — **M1 後の拡張候補**」と既に記録されている。
 
 追加しない理由:
@@ -466,7 +466,7 @@ delegated mode ではページ上部に常時バッジを出す:
 
 ## 6. M1 やり残しの取り込み
 
-`../ph1-ms1/LRR_REVIEW_UPSTREAM_FOLLOWUP_UX.md` §13.3 で「Phase 2 PR に相乗り」と決めたものを含む。
+`LRR_REVIEW_UPSTREAM_FOLLOWUP_UX.md`（開発ブランチのみ） §13.3 で「Phase 2 PR に相乗り」と決めたものを含む。
 
 | # | 項目 | 出典 | 対応 |
 |---|---|---|---|
