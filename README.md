@@ -57,8 +57,7 @@ Design for the PR that will be branched off `master` once #1055 lands. It merges
 Phase 1 M2 and M3 (they are inseparable: M2's remaining part is the LR page mode switch, which needs
 M3's `GET /resources`) and absorbs the M1 leftovers.
 
-- [dev/docs-j/ph1-ms2/design_01.md](dev/docs-j/ph1-ms2/design_01.md) (Japanese; the English mirror
-  follows once the open questions in its §10 are settled)
+- [design_01](dev/docs-e/ph1-ms2/design_01.md) ([j](dev/docs-j/ph1-ms2/design_01.md))
 
 Per-cycle result summaries: [LRR_RESULT_P1_M1C](dev/docs-e/ph1-ms1/LRR_RESULT_P1_M1C.md) ([j](dev/docs-j/ph1-ms1/LRR_RESULT_P1_M1C.md)),
 [LRR_RESULT_P1_M1D](dev/docs-e/ph1-ms1/LRR_RESULT_P1_M1D.md) ([j](dev/docs-j/ph1-ms1/LRR_RESULT_P1_M1D.md)),
@@ -72,7 +71,7 @@ E2E test specification (unified across milestones; each test item is tagged
 P1M1 / P1M1A / P1M1B / Boundary) + the latest run report:
 
 - [E2E_TEST_SPECIFICATION](dev/docs-e/E2E_TEST_SPECIFICATION.md) ([j](dev/docs-j/E2E_TEST_SPECIFICATION.md))
-- [BOUNDARY_COVERAGE_ANALYSIS](dev/docs-j/BOUNDARY_COVERAGE_ANALYSIS.md) — what the suite covers on the
+- [BOUNDARY_COVERAGE_ANALYSIS](dev/docs-e/BOUNDARY_COVERAGE_ANALYSIS.md) ([j](dev/docs-j/BOUNDARY_COVERAGE_ANALYSIS.md)) — what the suite covers on the
   data / time / scale axes, what it does not, and the findings that came out of closing the gaps.
   This is how the A6 defect (a queued remote request never timing out on its own deadline) was found
 - latest run (plugin `bdca858`): [20260814195206-e2e-test.md](dev/reports/20260814195206-e2e-test.md) —
