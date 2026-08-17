@@ -19,9 +19,10 @@ verified. Background that predates it is linked rather than repeated:
 
 ## Design
 
-- [design_01.md](dev/docs-j/ph1-ms2/design_01.md) (Japanese) — the design this PR implements: the
-  client-side view of remote locks, resource discovery, and the operational switches. The English
-  mirror follows once its §10 open questions are settled.
+- [design_01](dev/docs-e/ph1-ms2/design_01.md) ([j](dev/docs-j/ph1-ms2/design_01.md)) — the design
+  this PR implements: the client-side view of remote locks, resource discovery, and the operational
+  switches. Every decision is recorded with its reasoning, including the ones that reversed an
+  earlier decision.
 
 ## Verification
 
@@ -72,9 +73,9 @@ PR's fixes were sitting in.
   scenarios, each tagged with the axis it covers
 - [Load](dev/docs-e/LOAD_TEST_SPECIFICATION.md) ([j](dev/docs-j/LOAD_TEST_SPECIFICATION.md)) — the
   separate suite that drives the remote lock at production scale
-- [BOUNDARY_COVERAGE_ANALYSIS](dev/docs-j/BOUNDARY_COVERAGE_ANALYSIS.md) (Japanese) — what the E2E
-  suite covers on the data / time / scale axes and what it does not. This is how the allocate-timeout
-  defect was found
+- [BOUNDARY_COVERAGE_ANALYSIS](dev/docs-e/BOUNDARY_COVERAGE_ANALYSIS.md)
+  ([j](dev/docs-j/BOUNDARY_COVERAGE_ANALYSIS.md)) — what the E2E suite covers on the data / time /
+  scale axes and what it does not. This is how the allocate-timeout defect was found
 
 ## Test environment
 
