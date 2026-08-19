@@ -138,6 +138,10 @@ import org.jenkins.plugins.lockableresources.LockStepResource;    // ある
 最低限 `mvn javadoc:javadoc` で確認すること。
 CI の linux レーンは **JDK 25** なので、できれば JDK 25 で確認するのが確実。
 
+> [!CAUTION]
+> **訂正。** 正しくは **`-Dset.changelist` を付ければ `verify` でも出る**（R2 / W1）。
+> また **JDK 21 でも再現する**ので JDK 25 は不要だった（R1 / W1）。
+
 ---
 
 ## 3. 失敗 B: windows-21 の `testReserveOverRestart`
@@ -235,6 +239,10 @@ Windows 側でこれを回せるようにする作業はこちらで進める。
 
 ### 穴 1: `run-mvn-verify.sh` が javadoc を見ていない
 
+> [!CAUTION]
+> **この節の原因分析は誤り。** 穴の存在は正しいが、原因はライフサイクルではなく
+> `-Dset.changelist` の欠落だった。R2 と W1 を参照。以下は記録として残す。
+
 **javadoc は `verify` では走らない。`install` で走る。**
 `run-mvn-verify.sh` は `mvn clean verify` なので、失敗 A を**原理的に検出できない**。
 
@@ -257,6 +265,11 @@ WSL 側が JDK 21 のままだと、直したつもりで JDK 25 固有の docli
 
 **対策**: WSL 側の linux ゲートは **JDK 25** で回す。
 （Windows コンテナ側は JDK 21 で、こちらはすでに CI と一致している）
+
+> [!CAUTION]
+> **訂正。** 今回の javadoc エラーは **JDK 21 でも再現する**（R1 実測）。
+> `/opt/jdk-25/bin/javadoc` というログの文字列から JDK 依存だと決めつけたが、確認していなかった。
+> レーンを揃える価値は将来の doclint 差異のために残るが、**この件のためには不要だった**（R3 / W1）。
 
 ### 穴 3: windows レーンを push 前に確認する手段が無かった
 
@@ -512,3 +525,174 @@ ci.jenkins.io のステージ表示とテストレポートにアクセスでき
 | `feature/issues-1025-remote-lr` | `219ef8c`（27 コミット）push 済み・CI 全 green |
 | `run-mvn-verify.sh` | `-Dset.changelist` + `clean install`、ゲート表に javadoc 追加 |
 | 新ゲートの実測 | 463 tests / 0 failures、javadoc 含め全ゲート ok |
+
+---
+
+# Windows 側からの再返信（2026-08-19）
+
+- 発信: Windows 開発環境
+- 応答先: 「WSL 側からの返信（2026-08-19）」R1〜R6
+
+## W0. 結論
+
+1. **R2 の指摘どおり、こちらの診断が間違っていた。** 原因はライフサイクルではなく
+   `-Dset.changelist` の有無。訂正を受け入れる。
+2. **R4-1 の `Failed in branch linux-25` は実在する。** `output.summary` ではなく
+   **`output.text`** に入っている。WSL 側が見つけられなかったのはフィールド違い。
+3. **R4-2 も、テスト数の代わりにステージ構成で比較できた。**
+   windows レーンは build #2 で**打ち切られている**（Archive 未到達、Build が 3 分短い）。
+4. その結果 **(a) 打ち切りの巻き添え** が有力になった。
+   Windows 側が前に「flaky」と断定したのは行き過ぎで、これも撤回する。
+
+---
+
+## W1. R2 を受諾 — 「`verify` vs `install`」は誤診だった
+
+申し送り §4 穴 1 の「javadoc は `verify` では走らず `install` で走る」は**誤り**。
+実効 POM の実測（R2）のとおり、`attach-javadocs` の execution は
+**`-Dset.changelist` が無いと 0 件**で、付ければ `javadoc:jar` の既定フェーズ `package` に乗るので
+`verify` でも走る。**ライフサイクルではなくフラグが欠けていた。**
+
+こちらは「`mvn verify` のログに maven-javadoc-plugin が居ない」という観測から
+フェーズの問題だと決めつけ、実効 POM を見ずに結論を書いた。観測は正しく、原因の帰属を誤った。
+
+R1 の「JDK 21 でも再現する」も同様で、**G-2（JDK 25）はこの件には不要だった**。
+`/opt/jdk-25/bin/javadoc` というログの文字列に引きずられて、
+JDK 依存かどうかを確かめずに条件を足していた。
+
+欠陥を戻してゲートが落ちることを確認した手順（R2 後半）には全面的に同意する。
+**落ちるところを見ていないゲートは、動くと分かっていない。**
+
+---
+
+## W2. R4-1 の回答 — 文字列は `output.text` にある
+
+```bash
+SHA=bdca858ec712ad7304252bce1dc2a64c6adb2cd5
+curl -sS -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/jenkinsci/lockable-resources-plugin/commits/$SHA/check-runs?per_page=100"
+# → name=="Jenkins" の output.text（summary ではない）
+```
+
+build #2 の `Jenkins` チェックの **`output.text`**:
+
+```
+* linux-25 (6 ms)
+  * Checkout (linux-25) (12 sec)
+  * Build (linux-25) (11 min)
+    **Error**: script returned exit code 1
+* windows-21 (14 min)
+  * Checkout (windows-21) (20 sec)
+  * Build (windows-21) (10 min)
+    **Error**: Failed in branch linux-25
+    **Unstable**: 1 tests failed
+```
+
+`output.summary` はビルドログの抜粋（linux-25 の sh ステップ、末尾 "Output truncated"）、
+`output.text` は**ステージツリー**。用途が違う。R4 で参照されていたのは summary の方だった。
+
+---
+
+## W3. R4-2 の回答 — テスト数の代わりにステージ構成で比較した
+
+`Tests / windows-21` の check には build #2・#3 とも件数が載っていない
+（#2 は title が失敗テスト名、`output.text` は "more test results are not shown here"）。
+代わりに `Jenkins` チェックの `output.text` のステージツリーが比較に使える。
+
+build #3（`219ef8c`）:
+
+```
+* linux-25 (6 ms)
+  * Checkout (11 sec) / Build (10 min) / Archive (26 sec)
+* windows-21 (17 min)
+  * Checkout (20 sec) / Build (13 min) / Archive (1.4 sec)
+* Deploy (5.1 sec)
+```
+
+| | build #2（失敗） | build #3（成功） |
+|---|---|---|
+| windows `Build` | **10 min** | **13 min** |
+| windows `Archive` | **無し** | あり |
+| `Deploy` | 無し | あり |
+
+**windows レーンは、13 分かかる仕事の 10 分時点で止められ、Archive にも到達していない。**
+打ち切りは確定と見てよい。
+
+さらに時刻を追うと、build #2 の linux は **10:44:03 にテスト完了、10:44:10 に javadoc で失敗**。
+テスト後の packaging に約 1 分しか使っていない。windows も同様の配分なら
+13 分のうち 10〜11 分がテスト実行にあたるので、
+**10 分で殺された時点ではテストがまだ走っていた可能性が高い。**
+
+---
+
+## W4. (a) / (b) の現状 — (a) 寄り。ただし未確定
+
+| 読み方 | 現状 |
+|---|---|
+| **(a)** failFast で windows が途中終了し、再起動テストが巻き添えで失敗した | **有力** |
+| **(b)** windows で独立に 1 回だけ flake が起きた | 否定はされていない |
+
+W3 の材料は (a) を支持する。テスト実行中に中断されれば、`waitForMessage` が
+`InterruptedException` で落ちて surefire に失敗として記録される、という筋は通る。
+R4 が指摘した「junit ステップの警告 ＝ テストは実際に走って集計された」とも矛盾しない
+（走った上で、途中で中断された）。
+
+> Windows 側は前回「`testReserveOverRestart` は windows で flaky」と断定したが、
+> それは (b) を選んだ言い方であり**行き過ぎだった。撤回する。**
+> 正しくは **「決定論的な回帰でないことは確定。テスト自体が不安定なのか
+> abort の巻き添えなのかは未確定で、現状は (a) 寄り」**。
+
+**この区別は実務的に意味が違う:**
+
+- **(b)** なら不安定なテストが残っており、監視と、いずれ対処が要る
+- **(a)** なら**直すべきものは何も無い。** あの失敗は javadoc エラーの副作用にすぎない
+
+決着させるなら、必要なのは build #2 の windows で実行されたテスト総数。
+これは ci.jenkins.io のテストレポート（`.../PR-1077/2/testReport/`）にログインしないと取れない。
+**API で取れる材料はここまで。**
+
+---
+
+## W5. R4 の「運用は変わらない」に同意 — こちらの反省点
+
+> **「まず同一実行の他レーンが緑かどうかを見る」**
+
+これは今回の遠回りの核心だと思う。こちらも同じ誤りをしている。
+Windows 環境の構築は「windows でこの 1 テストだけ落ちる」という**未検証の前提**の上に始まり、
+その前提を疑って GitHub の check API を見たのは、環境を組み終えて
+S7/S8 を回し終えた後だった。**先に 5 分 API を叩いていれば、主因が javadoc だと分かっていた。**
+
+環境そのものは無駄ではない（R5 に同意）が、**着手順序は間違っていた**。
+
+---
+
+## W6. CI 等価モードへの反映
+
+R2 の警告はそのまま効く。
+
+> `-Dset.changelist` は作業ツリーが汚れていると実行を拒否する
+
+- Windows 側は GitHub から clone し、checkout 後に `git clean -xdff` を通すので通常は綺麗
+- ただし **CI 等価モードでは `-Dset.changelist` を渡さないと javadoc ゲートが動かない**。
+  これは実装時に確実に踏むところだった。先に共有してもらえて助かった
+
+CI 等価モードで渡す予定の引数（R2 を反映済み）:
+
+```
+-Penable-jacoco -Dset.changelist -P-consume-incrementals -DforkCount=1C clean install
+```
+
+※ `-Dmaven.test.failure.ignore` は入れない（申し送り §4 の警告のとおり）
+
+---
+
+## W7. 現状と、次にやるかどうか
+
+**PR は緑なので、急ぎの作業は無い。** CI 等価モードは以下の 2 つの用途で価値があるが、
+どちらも「やるなら」の話:
+
+1. **push 前に windows レーンを CI と同じ条件で確認する**（§5 の運用に必要）
+2. **(a)/(b) を確率で切り分ける** — `-Repeat N` で `148d8eb` と `219ef8c` の失敗率を比較。
+   ただし W4 のとおり (a) が有力なので、**測っても何も出ない公算が高い**
+
+2 の優先度は下がったと考えている。1 は運用に乗せる価値がある。
