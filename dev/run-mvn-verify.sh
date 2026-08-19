@@ -3,19 +3,29 @@
 # run-mvn-verify.sh - CI-equivalent local check before pushing.
 #
 # ci.jenkins.io runs buildPlugin() (jenkins-infra/pipeline-library), which drives
-# `mvn clean verify` with the plugin parent POM's quality gates:
+# `mvn clean install` with the plugin parent POM's quality gates:
 #   - spotless:check        (code formatting)
 #   - spotbugs:check        (effort=Max, threshold=Low -> even Low findings fail)
 #   - checkstyle / pmd / cpd
+#   - javadoc:jar           (attach-javadocs; an unresolvable {@link} fails the build)
 #   - the full test suite
 # `mvn test` (used by stabilize-build.sh) stops at the test phase and skips all of
-# the above gates, so they were only caught on CI. This script runs `mvn clean verify`
+# the above gates, so they were only caught on CI. This script runs the same lifecycle
 # locally so they are caught before push.
+#
+# It says `install` and not `verify` for one reason: maven-javadoc-plugin does not run
+# in the verify lifecycle. PR #1077 was red on CI at javadoc:jar while this script
+# reported BUILD SUCCESS on the very same commit, because the goal it failed on was
+# never invoked here. A gate that cannot see a failure is not a gate.
+#
+# CI's own flags are deliberately NOT all copied. In particular -Dmaven.test.failure.ignore
+# is there so a separate junit step can tally failures; adding it locally would let a
+# failing test walk straight through this script.
 #
 # Builds the working tree IN-PLACE (no worktree, no lock): the VS Code Java extension
 # (jdt.ls) is disabled, so the old target/ contention workaround is unnecessary.
 #
-# Note: `mvn verify` stops at the first failing gate; fix it and re-run to reach the next.
+# Note: the build stops at the first failing gate; fix it and re-run to reach the next.
 #
 # Usage: ./run-mvn-verify.sh [--skip-tests] [--debug]
 #   --skip-tests   add -DskipTests (fast: static gates + compile only, no test run)
@@ -74,7 +84,7 @@ TS="$(date +%Y%m%d%H%M%S)"
 REPORT_MD="${REPORTS_DIR}/${TS}-mvn-verify.md"
 RAW_LOG="$(mktemp -t lrr-verify-XXXXXX.log)"
 
-MVN_ARGS=(-B -ntp -Dstyle.color=never clean verify)
+MVN_ARGS=(-B -ntp -Dstyle.color=never clean install)
 if [[ "$SKIP_TESTS" == "true" ]]; then
     MVN_ARGS+=(-DskipTests)
 fi
@@ -139,10 +149,13 @@ SPOTLESS="$(gate_status 'spotless-maven-plugin')"
 SPOTBUGS="$(gate_status 'spotbugs-maven-plugin')"
 CHECKSTYLE="$(gate_status 'maven-checkstyle-plugin')"
 PMD="$(gate_status 'maven-pmd-plugin')"
+# On the table because its absence is what let PR #1077 reach CI red while this script
+# reported success: javadoc:jar was never invoked, so nothing here could report on it.
+JAVADOC="$(gate_status 'maven-javadoc-plugin')"
 
 # Write the markdown report.
 {
-    echo "# mvn verify report (${TS})"
+    echo "# mvn install report (${TS})"
     echo ""
     if $DEBUG_MODE; then
         echo "> **NOT REPRODUCIBLE** - run with --debug, which allows uncommitted changes."
@@ -163,9 +176,10 @@ PMD="$(gate_status 'maven-pmd-plugin')"
     echo "| spotbugs:check (effort=Max, threshold=Low) | ${SPOTBUGS} |"
     echo "| checkstyle:check | ${CHECKSTYLE} |"
     echo "| pmd:check | ${PMD} |"
+    echo "| javadoc:jar (attach-javadocs) | ${JAVADOC} |"
     echo "| tests | ${TESTS_LINE} |"
     echo ""
-    echo "> A gate shows \`ok\` when it did not fail the build. \`mvn verify\` stops at the"
+    echo "> A gate shows \`ok\` when it did not fail the build. The build stops at the"
     echo "> first failing gate, so gates after the failing one may simply not have run yet."
     echo ""
     if [[ $RC -ne 0 ]]; then
@@ -196,10 +210,10 @@ rm -f "$RAW_LOG"
 echo ""
 echo "============================================"
 if [[ $RC -eq 0 ]]; then
-    log_success "mvn verify: BUILD SUCCESS"
+    log_success "mvn install: BUILD SUCCESS"
 else
-    log_error "mvn verify: BUILD FAILURE (exit ${RC})"
-    log_info "Gates - spotless:${SPOTLESS} spotbugs:${SPOTBUGS} checkstyle:${CHECKSTYLE} pmd:${PMD}"
+    log_error "mvn install: BUILD FAILURE (exit ${RC})"
+    log_info "Gates - spotless:${SPOTLESS} spotbugs:${SPOTBUGS} checkstyle:${CHECKSTYLE} pmd:${PMD} javadoc:${JAVADOC}"
 fi
 echo "============================================"
 log_info "Duration: $(printf '%d:%02d' $((DUR / 60)) $((DUR % 60)))"
