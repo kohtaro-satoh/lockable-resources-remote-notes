@@ -20,6 +20,22 @@
 > 先の申し送りにあった「windows-21 でこの 1 テストだけ落ちて、他は全部通る」は事実と異なる。
 > linux-25 も落ちている（テストではなくビルドが）。
 
+> [!WARNING]
+> **javadoc を直しても PR は緑にならない。** 失敗 B が残るため。
+>
+> | check | 現在 | A 修正後 |
+> |---|---|---|
+> | `Tests / linux-25` | success | success |
+> | `Tests / windows-21` | **failure** | **failure のまま** |
+> | `Jenkins` | failure | 非 success のまま |
+> | `continuous-integration/jenkins` | error "cannot be built" | "cannot be built" は消えるが非 success |
+>
+> `Tests / windows-21` の check は title が `...testReserveOverRestart failed` そのもので、
+> テストが 1 件でも落ちている限り赤のまま。javadoc の修正はここに一切効かない。
+> **緑にするには A と B の両方が要る**が、B は原因不明のまま直してはいけない（§3・§6 B-1）。
+>
+> ただし A を出すこと自体に B の調査価値がある。§3「観測は 1 回きり」を参照。
+
 ---
 
 ## 1. 根拠（GitHub check API から実測）
@@ -142,6 +158,38 @@ Windows コンテナ（Windows Server 2022 / JDK 21 / Maven 3.9.9 / 6 CPU / 8 GB
 `testReserveOverRestart` 単体の所要時間は 5.531s → 4.893s で、異常の兆候もなし。
 レポートは `dev/reports/20260819155805-windows-unittest{.md,/}` と
 `dev/reports/20260819160127-windows-unittest{.md,/}`。
+
+### 観測は 1 回きり — 回帰か flaky かまだ決まっていない
+
+```bash
+curl -sS -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/jenkinsci/lockable-resources-plugin/commits/$SHA/check-suites"
+# → ci-jenkins-io の check-suite は 1 件だけ（PR-1077 build #2）
+```
+
+**`bdca858` はまだ 1 回しかビルドされていない。** つまり windows のテスト失敗は**観測 1 回きり**。
+前回の申し送りが挙げていた証拠（PR #1055 は success、master 直近 3 コミットは success、
+ブランチだけ FAIL）も、成功複数 対 失敗 1 回であり、**回帰とも低確率の flaky とも読める**。
+Windows コンテナで両リビジョンとも pass した事実は、後者の可能性を少し押し上げている。
+
+さらにその実行では、windows レーンは failFast で打ち切られている:
+
+```
+* windows-21 (14 min)
+  * Build (windows-21) (10 min)
+    **Error**: Failed in branch linux-25
+    **Unstable**: 1 tests failed
+```
+
+`Failed in branch linux-25` が付いているので、**windows レーンは完走していない可能性がある**。
+
+したがって:
+
+- **A（javadoc）を直す → 新しいコミット → 新しい CI 実行 → 同じテストコードに対する 2 つ目のデータ点**
+- そこで通れば flaky、また落ちれば本物の回帰
+- A の修正が linux を通すことで、windows レーンも打ち切られずに完走するようになる
+
+**修正 A を出すこと自体が、B の切り分け実験を兼ねる。** 追加コストなしで、いま持っていない証拠が手に入る。
 
 ### 再現しなかった理由の見立て
 
@@ -266,6 +314,10 @@ scratch ブランチを挟めば PR の履歴は汚れない。
       ※ `-Dmaven.test.failure.ignore` は入れない
 - [ ] **G-2.** linux ゲートの JDK を **25** に（§4 穴 2）
 - [ ] **B-1.** 失敗 B はまだ直さない。**スタックトレースを見る前に修正に着手しない**方針は維持
+- [ ] **B-2.** A-1 を push したら、**その CI 実行の windows-21 の結果を必ず確認する**。
+      これが `testReserveOverRestart` の **2 つ目のデータ点**になる（§3「観測は 1 回きり」）。
+      通った / また落ちた のどちらでも、結果をこのリポジトリに書き戻して Windows 側と共有してほしい。
+      落ちた場合は ci.jenkins.io にログインできる人にスタックトレースを取ってもらうのが最短
 
 ## 7. Windows 側でこれから進めること
 
