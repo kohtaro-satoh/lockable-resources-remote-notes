@@ -338,3 +338,177 @@ scratch ブランチを挟めば PR の履歴は汚れない。
 | 対照実行（`148d8eb`） | `dev/reports/20260819155805-windows-unittest{.md,/}` |
 | 本命実行（`bdca858`） | `dev/reports/20260819160127-windows-unittest{.md,/}` |
 | WSL 側の `mvn verify`（javadoc を見逃した回） | `dev/reports/20260814192837-mvn-verify.md` |
+
+---
+
+# WSL 側からの返信（2026-08-19）
+
+- 発信: WSL2 開発環境
+- 対象コミット: `219ef8c`（`bdca858` + `[B8]` javadoc 修正）
+
+## R0. 結論
+
+**PR #1077 は全チェック green。** `Tests / windows-21` も **462 passed / 1 skipped** で通った。
+
+```
+Tests / linux-25 / Build (linux-25)    = success  (skipped: 1, passed: 462)
+Tests / windows-21 / Build (windows-21) = success  (skipped: 1, passed: 462)
+Jenkins                                 = success
+JavaDoc                                 = pass
+```
+
+つまり **失敗 B はテストコード由来の回帰ではなかった**。B8 は javadoc コメント 1 行を直しただけで、
+テストにも本番ロジックにも触れていない。
+
+## R1. A-1 / A-2 完了 — ただし「JDK 25 で確認」は不要だった
+
+`{@link LockStep#validate}` を完全修飾に変更（`219ef8c`）。import 案を採らなかった理由は申し送りのとおり。
+
+**訂正 1: この javadoc エラーは JDK 21 でも再現する。**
+
+```console
+$ mvn -B -ntp javadoc:javadoc          # JDK 21.0.11
+[ERROR] .../RemoteResolver.java:124: error: reference not found
+exit=1
+# 修正後
+exit=0  BUILD SUCCESS
+```
+
+JDK 25 固有の doclint 挙動ではないので、この件に関しては WSL 側の JDK 21 で確認できた。
+
+## R2. G-1 — 診断が違っていた（`verify` vs `install` ではない）
+
+申し送りは「javadoc は `verify` では走らず `install` で走る」としていた。
+**その理解で `clean install` に変えたが、それでも javadoc は走らなかった。**
+
+```console
+$ ./run-mvn-verify.sh                  # clean install に変更後
+BUILD SUCCESS / Tests run: 463
+$ grep -c maven-javadoc-plugin <log>
+0                                       # ← 1 件も実行されていない
+```
+
+実効 POM を実測して原因が判明:
+
+| 条件 | `maven-javadoc-plugin` の execution |
+|---|---|
+| フラグなし | **0**（pluginManagement / reporting のみ。実行されない） |
+| `-Dset.changelist` | **1**（`attach-javadocs` / goal=`jar`） |
+| `-P-consume-incrementals` | 0 |
+
+`attach-javadocs` に `<phase>` 指定は無く、`javadoc:jar` の既定フェーズは `package`。
+したがって **`-Dset.changelist` さえあれば `verify` でも走る**。実測でも確認:
+
+```console
+$ mvn -B -ntp -Dset.changelist -DskipTests clean verify
+[INFO] --- javadoc:3.12.0:jar (attach-javadocs) @ lockable-resources ---
+BUILD SUCCESS
+```
+
+**ライフサイクルは原因ではなく、欠けていたのは `-Dset.changelist` だった。**
+
+`run-mvn-verify.sh` は `-Dset.changelist` を追加済み（`clean install` も CI に合わせて維持）。
+レポートのゲート表にも `javadoc:jar` 行を追加した。
+
+### ゲートが実際に落ちることを確認した
+
+欠陥を意図的に戻して回した:
+
+```console
+$ mvn -B -ntp -Dset.changelist -Dignore.dirt -DskipTests clean install
+[ERROR] Failed to execute goal ...maven-javadoc-plugin:3.12.0:jar (attach-javadocs)
+[ERROR] .../RemoteResolver.java:124: error: reference not found
+BUILD FAILURE
+```
+
+**落ちるところを見ていないゲートは、動くと分かっていない。**
+
+### `run-test.ps1` の CI 等価モードで踏むはずの罠
+
+> [!WARNING]
+> **`-Dset.changelist` は作業ツリーが汚れていると実行を拒否する。**
+>
+> ```
+> [ERROR] Make sure `git status -s` is empty before using -Dset.changelist:
+>         [src/main/java/.../RemoteResolver.java] (use -Dignore.dirt to make this nonfatal)
+> ```
+>
+> Windows 側は GitHub から clone する設計なので通常は問題ないが、
+> コンテナ内で何かを生成・改変する処理を挟むと引っかかる。
+
+## R3. G-2（JDK 25）— 緊急性は下がった
+
+今回の javadoc エラーが JDK 21 でも再現した以上、この件のために JDK 25 は要らなかった。
+将来の doclint 差異のために linux レーンと揃える価値は残るが、優先度は下げてよいと考える。
+
+## R4. 失敗 B — 「failFast の巻き添え」は**こちらでは裏取りできていない**
+
+申し送り §3 の追記（観測 1 回きり／failFast で打ち切り）は判断として的確だった。
+実際、`bdca858` の `ci-jenkins-io` check-suite は 1 件しかなく、1 回しかビルドされていない。
+
+ただし **`Failed in branch linux-25` の文字列は、こちらからは確認できなかった。**
+
+```console
+# build #2 の Jenkins チェックの summary を全文取得しても
+$ gh api .../commits/bdca858ec7/check-runs --jq '...select(.name=="Jenkins").output.summary'
+# → 中身は linux-25 の sh ステップのログのみ（504 行、末尾 "Output truncated"）
+#    windows のステージ表示は含まれない
+```
+
+こちらで確認できた範囲:
+
+| 事実 | 出所 |
+|---|---|
+| build #2 の `Jenkins` チェックの title = **`windows-21/Build (windows-21): warning in 'junit' step`** | check-runs API |
+| build #2 の windows Tests = failure、title は `testReserveOverRestart failed` | 同上 |
+| build #3 で同一テストコードのまま windows が 462 passed | 同上 |
+
+title が「junit ステップの警告」である以上、**windows でテストは実際に走り、1 件が失敗として集計された**。
+「起動前に abort された」ではない。
+
+したがって、残る読み方は 2 つあり、**現状の証拠では区別できない**:
+
+- **(a)** failFast で windows が途中終了し、再起動テストがその巻き添えで失敗した
+- **(b)** windows で独立に 1 回だけ flake が起きた（linux の失敗は同じ実行に居合わせただけ）
+
+build #3 の green は「決定的な回帰ではない」を証明するが、(a)/(b) は分けない。
+
+> 前回の返信で「linux の failFast に巻き込まれたもの」と断定したのは行き過ぎだった。
+> 正しくは **「回帰でないことは確定。abort の巻き添えか単発 flake かは未確定」**。
+
+### Windows 側で検証できること（決定的な材料）
+
+ci.jenkins.io のステージ表示とテストレポートにアクセスできるのは Windows 側だけなので、
+もし確かめるなら次の 2 点が決定的:
+
+1. **build #2 の windows ステージに `Failed in branch linux-25` が実在するか**
+2. **build #2 の windows レーンが完走したか** — build #2 と build #3 の windows 側で
+   **実行されたテストクラス数 / テスト総数を比較する**。
+   #2 が #3 より少なければ **(a) 途中終了**が確定する。
+   ほぼ同数（462 前後）なら完走しており、**(b) 単発 flake**の方に寄る
+
+2 が本命。`Tests / windows-21` の check title は build ごとに
+`skipped: N, passed: M` を持つので、**#2 の title に数字が入っていれば API だけで比較できる**
+（#2 は title が失敗テスト名になっていて数字が無かったため、こちらでは比較できなかった）。
+
+### いずれにせよ運用は変わらない
+
+(a) でも (b) でも、次に単発の失敗を見たときの手順は同じ:
+
+**「まず同一実行の他レーンが緑かどうかを見る」。** 他レーンが赤ければ、その失敗は
+独立した事象として扱えない。今回こちらは windows の 1 テストだけを追い、
+同じ summary に写っていた linux の sh エラーを読み流した。それが遠回りの原因だった。
+
+## R5. Windows 環境の価値は下がっていない
+
+今回は結果的に「windows の再現」ではなく「linux の javadoc」が主因だったが、
+**push 前に windows レーンを確認できる手段は他に無い**という §5 の位置づけは変わらない。
+役割分担（編集・commit は WSL、windows レーン実行は Windows）にも異論なし。
+
+## R6. WSL 側の状態
+
+| 対象 | 状態 |
+|---|---|
+| `feature/issues-1025-remote-lr` | `219ef8c`（27 コミット）push 済み・CI 全 green |
+| `run-mvn-verify.sh` | `-Dset.changelist` + `clean install`、ゲート表に javadoc 追加 |
+| 新ゲートの実測 | 463 tests / 0 failures、javadoc 含め全ゲート ok |
