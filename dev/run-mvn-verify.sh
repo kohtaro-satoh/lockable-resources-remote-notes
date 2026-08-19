@@ -13,10 +13,14 @@
 # the above gates, so they were only caught on CI. This script runs the same lifecycle
 # locally so they are caught before push.
 #
-# It says `install` and not `verify` for one reason: maven-javadoc-plugin does not run
-# in the verify lifecycle. PR #1077 was red on CI at javadoc:jar while this script
-# reported BUILD SUCCESS on the very same commit, because the goal it failed on was
-# never invoked here. A gate that cannot see a failure is not a gate.
+# `-Dset.changelist` is not cosmetic. Without it the parent POM leaves
+# maven-javadoc-plugin with no execution at all, so attach-javadocs never runs and
+# javadoc errors are invisible. PR #1077 was red on CI at javadoc:jar while this script
+# reported BUILD SUCCESS on the very same commit, for exactly that reason.
+#
+# Measured, because the first guess was wrong: the missing piece is the flag, not the
+# lifecycle. attach-javadocs binds to `package`, so `verify` runs it too - once the flag
+# is there. `install` is used anyway to match what CI actually drives.
 #
 # CI's own flags are deliberately NOT all copied. In particular -Dmaven.test.failure.ignore
 # is there so a separate junit step can tally failures; adding it locally would let a
@@ -84,7 +88,7 @@ TS="$(date +%Y%m%d%H%M%S)"
 REPORT_MD="${REPORTS_DIR}/${TS}-mvn-verify.md"
 RAW_LOG="$(mktemp -t lrr-verify-XXXXXX.log)"
 
-MVN_ARGS=(-B -ntp -Dstyle.color=never clean install)
+MVN_ARGS=(-B -ntp -Dstyle.color=never -Dset.changelist clean install)
 if [[ "$SKIP_TESTS" == "true" ]]; then
     MVN_ARGS+=(-DskipTests)
 fi
