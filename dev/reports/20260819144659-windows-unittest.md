@@ -1,0 +1,389 @@
+# Windows container unit test report (20260819144659)
+
+- Result: **PASS** (exit 0)
+- Duration: 1m27s
+- Revision requested: `148d8eb`
+- Revision tested: `148d8ebc6d9453403cfbd810d45623352979071a 2026-08-12 08:25:47 +0000 Annotate remote acquire status endpoint with GET (#1076)`
+- Test pattern: `LockableResourceTest`  (repeat 1)
+- Image: `lrr-win-test:ltsc2022-jdk21` (`3f7c2a589530`), hyperv isolation, memory 8g, cpus 6
+- Harness (notes): `bd60a84 + local changes`
+- Raw artifacts: `20260819144659-windows-unittest/`
+
+## Runs
+
+| Run | Verdict | Tests | Failures | Errors | Skipped |
+|---|---|---|---|---|---|
+| run-1 | PASS | 12 | 0 | 0 | 0 |
+
+## Logs
+
+<details><summary>mvn log (run-1)</summary>
+
+
+```
+[INFO] Scanning for projects...
+[INFO] Artifact org.jenkins-ci.tools:maven-hpi-plugin:pom:3.1814.v77d15159f9b_d is present in the local repository, but cached from a remote repository ID that is unavailable in current build context, verifying that is downloadable from [incrementals (https://repo.jenkins-ci.org/incrementals/, default, releases), central (https://repo.maven.apache.org/maven2, default, releases)]
+[INFO] Artifact org.jenkins-ci.tools:maven-hpi-plugin:pom:3.1814.v77d15159f9b_d is present in the local repository, but cached from a remote repository ID that is unavailable in current build context, verifying that is downloadable from [incrementals (https://repo.jenkins-ci.org/incrementals/, default, releases), central (https://repo.maven.apache.org/maven2, default, releases)]
+[WARNING] The POM for org.jenkins-ci.tools:maven-hpi-plugin:jar:3.1814.v77d15159f9b_d is missing, no dependency information available
+[INFO] Artifact org.jenkins-ci.tools:maven-hpi-plugin:jar:3.1814.v77d15159f9b_d is present in the local repository, but cached from a remote repository ID that is unavailable in current build context, verifying that is downloadable from [incrementals (https://repo.jenkins-ci.org/incrementals/, default, releases), central (https://repo.maven.apache.org/maven2, default, releases)]
+[INFO] Artifact org.jenkins-ci.tools:maven-hpi-plugin:jar:3.1814.v77d15159f9b_d is present in the local repository, but cached from a remote repository ID that is unavailable in current build context, verifying that is downloadable from [incrementals (https://repo.jenkins-ci.org/incrementals/, default, releases), central (https://repo.maven.apache.org/maven2, default, releases)]
+[WARNING] Failed to build parent project for org.6wind.jenkins:lockable-resources:hpi:999999-SNAPSHOT
+[INFO] 
+[INFO] ----------------< org.6wind.jenkins:lockable-resources >----------------
+[INFO] Building Lockable Resources plugin 999999-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ hpi ]---------------------------------
+[INFO] 
+[INFO] --- hpi:3.1814.v77d15159f9b_d:validate (default-validate) @ lockable-resources ---
+[INFO] Created marker file C:\src\lrp\target\java-level\17
+[INFO] 
+[INFO] --- hpi:3.1814.v77d15159f9b_d:validate-hpi (default-validate-hpi) @ lockable-resources ---
+[INFO] 
+[INFO] --- enforcer:3.6.3:enforce (display-info) @ lockable-resources ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.version.RequireMavenVersion passed
+[INFO] Rule 1: org.apache.maven.enforcer.rules.version.RequireJavaVersion passed
+[INFO] Rule 2: org.apache.maven.enforcer.rules.version.RequireJavaVersion passed
+[INFO] Rule 3: org.apache.maven.enforcer.rules.RequirePluginVersions passed
+[INFO] Rule 4: org.codehaus.mojo.extraenforcer.dependencies.EnforceBytecodeVersion passed
+[INFO] Rule 5: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] Rule 6: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] Ignoring requireUpperBoundDeps in org.ow2.asm:asm
+[INFO] Rule 7: org.apache.maven.enforcer.rules.dependency.RequireUpperBoundDeps passed
+[INFO] banObsoleteDependencyOverrides skipped
+[INFO] Rule 8: io.jenkins.tools.maven.jenkins_enforcer_rules.BanObsoleteDependencyOverrides passed
+[INFO] 
+[INFO] --- enforcer:3.6.3:enforce (no-snapshots-in-release) @ lockable-resources ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.RequireReleaseDeps passed
+[INFO] 
+[INFO] --- localizer:1.31:generate (default) @ lockable-resources ---
+[INFO] 
+[INFO] --- enforcer:3.6.3:enforce (check-junit-imports) @ lockable-resources ---
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.RestrictImports passed
+[INFO] 
+[INFO] --- enforcer:3.6.3:enforce (check-commons-lang-imports) @ lockable-resources ---
+[INFO] Skipping Rule Enforcement.
+[INFO] 
+[INFO] --- enforcer:3.6.3:enforce (check-deprecated-stapler-imports) @ lockable-resources ---
+[INFO] Skipping Rule Enforcement.
+[INFO] 
+[INFO] --- resources:3.5.0:resources (default-resources) @ lockable-resources ---
+[INFO] Copying 117 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ lockable-resources ---
+[INFO] Generating flattened POM of project org.6wind.jenkins:lockable-resources:hpi:999999-SNAPSHOT...
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ lockable-resources ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 45 source files with javac [debug parameters release 17] to target\classes
+[WARNING] unknown enum constant javax.annotation.meta.When.MAYBE
+  reason: class file for javax.annotation.meta.When not found
+[WARNING] unknown enum constant javax.annotation.meta.When.ALWAYS
+[WARNING] unknown enum constant javax.annotation.meta.When.UNKNOWN
+[INFO] org.jenkins.plugins.lockableresources.queue.Utils.MatrixImpl indexed under org.jenkinsci.plugins.variant.OptionalExtension
+[INFO] org.jenkins.plugins.lockableresources.LockStep.DescriptorImpl indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.LockStepResource.DescriptorImpl indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.LockableResource.DescriptorImpl indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.LockableResourceProperty.DescriptorImpl indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.LockableResourcesManager indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.RemoteConnection.DescriptorImpl indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.RequiredResourcesProperty.DescriptorImpl indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.UpdateLockStep.DescriptorImpl indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.actions.LockableResourcesManagementLink indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.actions.LockableResourcesRootAction indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.actions.ResourceVariableNameAction.ResourceVariableNameActionEnvironmentContributor indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.nodes.NodesMirror indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.queue.LockRunListener indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.queue.LockWaitTimeoutPeriodicWork indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.queue.LockableResourcesQueueTaskDispatcher indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.remote.RemoteLockManager indexed under hudson.Extension
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockStep.java:[96,12] Generating org/jenkins/plugins/lockableresources/LockStep.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockStepResource.java:[55,12] Generating org/jenkins/plugins/lockableresources/LockStepResource.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockableResource.java:[204,12] Generating org/jenkins/plugins/lockableresources/LockableResource.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockableResourceProperty.java:[21,12] Generating org/jenkins/plugins/lockableresources/LockableResourceProperty.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RemoteConnection.java:[36,12] Generating org/jenkins/plugins/lockableresources/RemoteConnection.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RequiredResourcesProperty.java:[55,12] Generating org/jenkins/plugins/lockableresources/RequiredResourcesProperty.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/UpdateLockStep.java:[66,12] Generating org/jenkins/plugins/lockableresources/UpdateLockStep.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/actions/LockableResourcesRootAction.java:[52,8] Generating org/jenkins/plugins/lockableresources/actions/LockableResourcesRootAction.javadoc
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockableResource.java:[58,8] Generating org/jenkins/plugins/lockableresources/LockableResource.javadoc
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockableResources.java:[15,8] Generating org/jenkins/plugins/lockableresources/LockableResources.javadoc
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockableResourceProperty.java:[14,8] Generating org/jenkins/plugins/lockableresources/LockableResourceProperty.javadoc
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RequiredResourcesProperty.java:[242,31] Generating org/jenkins/plugins/lockableresources/RequiredResourcesProperty/DescriptorImpl/doCheckLabelName.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/UpdateLockStep.java:[223,41] Generating org/jenkins/plugins/lockableresources/UpdateLockStep/DescriptorImpl/doAutoCompleteResource.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockStep.java:[243,38] Generating org/jenkins/plugins/lockableresources/LockStep/DescriptorImpl/doCheckLabel.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RequiredResourcesProperty.java:[205,31] Generating org/jenkins/plugins/lockableresources/RequiredResourcesProperty/DescriptorImpl/doCheckResourceNames.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RemoteConnection.java:[108,29] Generating org/jenkins/plugins/lockableresources/RemoteConnection/DescriptorImpl/doFillCredentialsIdItems.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/UpdateLockStep.java:[263,31] Generating org/jenkins/plugins/lockableresources/UpdateLockStep/DescriptorImpl/doCheckRemoveLabels.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/UpdateLockStep.java:[249,31] Generating org/jenkins/plugins/lockableresources/UpdateLockStep/DescriptorImpl/doCheckAddLabels.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockStep.java:[249,38] Generating org/jenkins/plugins/lockableresources/LockStep/DescriptorImpl/doCheckResource.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockStep.java:[255,38] Generating org/jenkins/plugins/lockableresources/LockStep/DescriptorImpl/doCheckResourceSelectStrategy.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RemoteConnection.java:[127,31] Generating org/jenkins/plugins/lockableresources/RemoteConnection/DescriptorImpl/doCheckUrl.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockableResourcesManager.java:[267,27] Generating org/jenkins/plugins/lockableresources/LockableResourcesManager/doCheckForcedServerId.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/UpdateLockStep.java:[284,31] Generating org/jenkins/plugins/lockableresources/UpdateLockStep/DescriptorImpl/doCheckDeleteResource.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RequiredResourcesProperty.java:[315,41] Generating org/jenkins/plugins/lockableresources/RequiredResourcesProperty/DescriptorImpl/doAutoCompleteLabelName.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RequiredResourcesProperty.java:[337,48] Generating org/jenkins/plugins/lockableresources/RequiredResourcesProperty/DescriptorImpl/doAutoCompleteResourceNames.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RequiredResourcesProperty.java:[271,31] Generating org/jenkins/plugins/lockableresources/RequiredResourcesProperty/DescriptorImpl/doCheckResourceNumber.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/UpdateLockStep.java:[232,31] Generating org/jenkins/plugins/lockableresources/UpdateLockStep/DescriptorImpl/doCheckResource.stapler
+[WARNING] unknown enum constant javax.annotation.meta.When.MAYBE
+  reason: class file for javax.annotation.meta.When not found
+[WARNING] unknown enum constant javax.annotation.meta.When.ALWAYS
+[WARNING] unknown enum constant javax.annotation.meta.When.UNKNOWN
+[WARNING] unknown enum constant javax.annotation.meta.When.MAYBE
+  reason: class file for javax.annotation.meta.When not found
+[WARNING] unknown enum constant javax.annotation.meta.When.ALWAYS
+[WARNING] unknown enum constant javax.annotation.meta.When.UNKNOWN
+[WARNING] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockableResource.java:[334,17] deprecated item is not annotated with @Deprecated
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockStepResource.java: Some input files use or override a deprecated API.
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockStepResource.java: Recompile with -Xlint:deprecation for details.
+[INFO] 
+[INFO] --- access-modifier-checker:1.35:enforce (default-enforce) @ lockable-resources ---
+[INFO] 
+[INFO] --- bridge-method-injector:1.32:process (default) @ lockable-resources ---
+[INFO] 
+[INFO] --- hpi:3.1814.v77d15159f9b_d:insert-test (default-insert-test) @ lockable-resources ---
+[INFO] 
+[INFO] --- antrun:3.2.0:run (createTempDir) @ lockable-resources ---
+[INFO] Executing tasks
+[INFO]     [mkdir] Created dir: C:\src\lrp\target\tmp
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- resources:3.5.0:testResources (default-testResources) @ lockable-resources ---
+[INFO] Copying 5 resources from src\test\resources to target\test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ lockable-resources ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 45 source files with javac [debug parameters release 17] to target\test-classes
+[INFO] /C:/src/lrp/src/test/java/org/jenkins/plugins/lockableresources/ConcurrentModificationExceptionTest.java: Some input files use or override a deprecated API.
+[INFO] /C:/src/lrp/src/test/java/org/jenkins/plugins/lockableresources/ConcurrentModificationExceptionTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] 
+[INFO] --- hpi:3.1814.v77d15159f9b_d:test-hpl (default-test-hpl) @ lockable-resources ---
+[INFO] Generating C:\src\lrp\target\test-classes\the.hpl
+[INFO] 
+[INFO] --- hpi:3.1814.v77d15159f9b_d:resolve-test-dependencies (default-resolve-test-dependencies) @ lockable-resources ---
+[INFO] 
+[INFO] --- hpi:3.1814.v77d15159f9b_d:test-runtime (default-test-runtime) @ lockable-resources ---
+[INFO] Setting jenkins.addOpens to --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED
+[INFO] Setting jenkins.insaneHook to --patch-module='java.base=C:\src\lrp\target\patch-modules\org-netbeans-insane-hook.jar' --add-exports=java.base/org.netbeans.insane.hook=ALL-UNNAMED
+[INFO] Setting jenkins.javaAgent to -javaagent:'C:\m2\org\mockito\mockito-core\5.23.0\mockito-core-5.23.0.jar'
+[INFO] 
+[INFO] --- surefire:3.5.6:test (default-test) @ lockable-resources ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running org.jenkins.plugins.lockableresources.LockableResourceTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.234 s -- in org.jenkins.plugins.lockableresources.LockableResourceTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  01:08 min
+[INFO] Finished at: 2026-08-19T14:48:24+09:00
+[INFO] ------------------------------------------------------------------------
+```
+</details>
+
+<details><summary>docker run console output</summary>
+
+
+```
+
+=== Checking out 148d8eb ===
+HEAD is now at 148d8eb Annotate remote acquire status endpoint with GET (#1076)
+148d8ebc6d9453403cfbd810d45623352979071a 2026-08-12 08:25:47 +0000 Annotate remote acquire status endpoint with GET (#1076)
+
+=== Environment ===
+rev.requested   : 148d8eb
+rev.head        : 148d8ebc6d9453403cfbd810d45623352979071a 2026-08-12 08:25:47 +0000 Annotate remote acquire status endpoint with GET (#1076)
+test.pattern    : LockableResourceTest
+repeat          : 1
+extra.mvn.args  : 
+
+os              : Microsoft Windows Server 2022 Datacenter build 10.0.20348.0
+cpu.count       : 6
+memory.total.mb : 8703
+temp            : C:\t
+
+java            : openjdk version "21.0.11" 2026-04-21 LTS | OpenJDK Runtime Environment Temurin-21.0.11+10 (build 21.0.11+10-LTS) | OpenJDK 64-Bit Server VM Temurin-21.0.11+10 (build 21.0.11+10-LTS, mixed mode, sharing)
+maven           : Apache Maven 3.9.9 (8e8579a9e76f7d015ee5ec7bfcdc97d260186937) | Maven home: C:\tools\maven | Java version: 21.0.11, vendor: Eclipse Adoptium, runtime: C:\openjdk-21 | Default locale: en_US, platform encoding: UTF-8 | OS name: "windows server 2022", version: "10.0", arch: "amd64", family: "windows"
+git             : git version 2.55.0.windows.4
+
+=== Run 1/1 : mvn -B -ntp -Dstyle.color=never -Dmaven.repo.local=C:\m2 -Dtest=LockableResourceTest test ===
+[INFO] Scanning for projects...
+[INFO] Artifact org.jenkins-ci.tools:maven-hpi-plugin:pom:3.1814.v77d15159f9b_d is present in the local repository, but cached from a remote repository ID that is unavailable in current build context, verifying that is downloadable from [incrementals (https://repo.jenkins-ci.org/incrementals/, default, releases), central (https://repo.maven.apache.org/maven2, default, releases)]
+[INFO] Artifact org.jenkins-ci.tools:maven-hpi-plugin:pom:3.1814.v77d15159f9b_d is present in the local repository, but cached from a remote repository ID that is unavailable in current build context, verifying that is downloadable from [incrementals (https://repo.jenkins-ci.org/incrementals/, default, releases), central (https://repo.maven.apache.org/maven2, default, releases)]
+[WARNING] The POM for org.jenkins-ci.tools:maven-hpi-plugin:jar:3.1814.v77d15159f9b_d is missing, no dependency information available
+[INFO] Artifact org.jenkins-ci.tools:maven-hpi-plugin:jar:3.1814.v77d15159f9b_d is present in the local repository, but cached from a remote repository ID that is unavailable in current build context, verifying that is downloadable from [incrementals (https://repo.jenkins-ci.org/incrementals/, default, releases), central (https://repo.maven.apache.org/maven2, default, releases)]
+[INFO] Artifact org.jenkins-ci.tools:maven-hpi-plugin:jar:3.1814.v77d15159f9b_d is present in the local repository, but cached from a remote repository ID that is unavailable in current build context, verifying that is downloadable from [incrementals (https://repo.jenkins-ci.org/incrementals/, default, releases), central (https://repo.maven.apache.org/maven2, default, releases)]
+[WARNING] Failed to build parent project for org.6wind.jenkins:lockable-resources:hpi:999999-SNAPSHOT
+[INFO] 
+[INFO] ----------------< org.6wind.jenkins:lockable-resources >----------------
+[INFO] Building Lockable Resources plugin 999999-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ hpi ]---------------------------------
+[INFO] 
+[INFO] --- hpi:3.1814.v77d15159f9b_d:validate (default-validate) @ lockable-resources ---
+[INFO] Created marker file C:\src\lrp\target\java-level\17
+[INFO] 
+[INFO] --- hpi:3.1814.v77d15159f9b_d:validate-hpi (default-validate-hpi) @ lockable-resources ---
+[INFO] 
+[INFO] --- enforcer:3.6.3:enforce (display-info) @ lockable-resources ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.version.RequireMavenVersion passed
+[INFO] Rule 1: org.apache.maven.enforcer.rules.version.RequireJavaVersion passed
+[INFO] Rule 2: org.apache.maven.enforcer.rules.version.RequireJavaVersion passed
+[INFO] Rule 3: org.apache.maven.enforcer.rules.RequirePluginVersions passed
+[INFO] Rule 4: org.codehaus.mojo.extraenforcer.dependencies.EnforceBytecodeVersion passed
+[INFO] Rule 5: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] Rule 6: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] Ignoring requireUpperBoundDeps in org.ow2.asm:asm
+[INFO] Rule 7: org.apache.maven.enforcer.rules.dependency.RequireUpperBoundDeps passed
+[INFO] banObsoleteDependencyOverrides skipped
+[INFO] Rule 8: io.jenkins.tools.maven.jenkins_enforcer_rules.BanObsoleteDependencyOverrides passed
+[INFO] 
+[INFO] --- enforcer:3.6.3:enforce (no-snapshots-in-release) @ lockable-resources ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.RequireReleaseDeps passed
+[INFO] 
+[INFO] --- localizer:1.31:generate (default) @ lockable-resources ---
+[INFO] 
+[INFO] --- enforcer:3.6.3:enforce (check-junit-imports) @ lockable-resources ---
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.RestrictImports passed
+[INFO] 
+[INFO] --- enforcer:3.6.3:enforce (check-commons-lang-imports) @ lockable-resources ---
+[INFO] Skipping Rule Enforcement.
+[INFO] 
+[INFO] --- enforcer:3.6.3:enforce (check-deprecated-stapler-imports) @ lockable-resources ---
+[INFO] Skipping Rule Enforcement.
+[INFO] 
+[INFO] --- resources:3.5.0:resources (default-resources) @ lockable-resources ---
+[INFO] Copying 117 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ lockable-resources ---
+[INFO] Generating flattened POM of project org.6wind.jenkins:lockable-resources:hpi:999999-SNAPSHOT...
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ lockable-resources ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 45 source files with javac [debug parameters release 17] to target\classes
+[WARNING] unknown enum constant javax.annotation.meta.When.MAYBE
+  reason: class file for javax.annotation.meta.When not found
+[WARNING] unknown enum constant javax.annotation.meta.When.ALWAYS
+[WARNING] unknown enum constant javax.annotation.meta.When.UNKNOWN
+[INFO] org.jenkins.plugins.lockableresources.queue.Utils.MatrixImpl indexed under org.jenkinsci.plugins.variant.OptionalExtension
+[INFO] org.jenkins.plugins.lockableresources.LockStep.DescriptorImpl indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.LockStepResource.DescriptorImpl indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.LockableResource.DescriptorImpl indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.LockableResourceProperty.DescriptorImpl indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.LockableResourcesManager indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.RemoteConnection.DescriptorImpl indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.RequiredResourcesProperty.DescriptorImpl indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.UpdateLockStep.DescriptorImpl indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.actions.LockableResourcesManagementLink indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.actions.LockableResourcesRootAction indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.actions.ResourceVariableNameAction.ResourceVariableNameActionEnvironmentContributor indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.nodes.NodesMirror indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.queue.LockRunListener indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.queue.LockWaitTimeoutPeriodicWork indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.queue.LockableResourcesQueueTaskDispatcher indexed under hudson.Extension
+[INFO] org.jenkins.plugins.lockableresources.remote.RemoteLockManager indexed under hudson.Extension
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockStep.java:[96,12] Generating org/jenkins/plugins/lockableresources/LockStep.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockStepResource.java:[55,12] Generating org/jenkins/plugins/lockableresources/LockStepResource.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockableResource.java:[204,12] Generating org/jenkins/plugins/lockableresources/LockableResource.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockableResourceProperty.java:[21,12] Generating org/jenkins/plugins/lockableresources/LockableResourceProperty.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RemoteConnection.java:[36,12] Generating org/jenkins/plugins/lockableresources/RemoteConnection.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RequiredResourcesProperty.java:[55,12] Generating org/jenkins/plugins/lockableresources/RequiredResourcesProperty.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/UpdateLockStep.java:[66,12] Generating org/jenkins/plugins/lockableresources/UpdateLockStep.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/actions/LockableResourcesRootAction.java:[52,8] Generating org/jenkins/plugins/lockableresources/actions/LockableResourcesRootAction.javadoc
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockableResource.java:[58,8] Generating org/jenkins/plugins/lockableresources/LockableResource.javadoc
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockableResources.java:[15,8] Generating org/jenkins/plugins/lockableresources/LockableResources.javadoc
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockableResourceProperty.java:[14,8] Generating org/jenkins/plugins/lockableresources/LockableResourceProperty.javadoc
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RequiredResourcesProperty.java:[242,31] Generating org/jenkins/plugins/lockableresources/RequiredResourcesProperty/DescriptorImpl/doCheckLabelName.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/UpdateLockStep.java:[223,41] Generating org/jenkins/plugins/lockableresources/UpdateLockStep/DescriptorImpl/doAutoCompleteResource.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockStep.java:[243,38] Generating org/jenkins/plugins/lockableresources/LockStep/DescriptorImpl/doCheckLabel.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RequiredResourcesProperty.java:[205,31] Generating org/jenkins/plugins/lockableresources/RequiredResourcesProperty/DescriptorImpl/doCheckResourceNames.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RemoteConnection.java:[108,29] Generating org/jenkins/plugins/lockableresources/RemoteConnection/DescriptorImpl/doFillCredentialsIdItems.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/UpdateLockStep.java:[263,31] Generating org/jenkins/plugins/lockableresources/UpdateLockStep/DescriptorImpl/doCheckRemoveLabels.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/UpdateLockStep.java:[249,31] Generating org/jenkins/plugins/lockableresources/UpdateLockStep/DescriptorImpl/doCheckAddLabels.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockStep.java:[249,38] Generating org/jenkins/plugins/lockableresources/LockStep/DescriptorImpl/doCheckResource.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockStep.java:[255,38] Generating org/jenkins/plugins/lockableresources/LockStep/DescriptorImpl/doCheckResourceSelectStrategy.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RemoteConnection.java:[127,31] Generating org/jenkins/plugins/lockableresources/RemoteConnection/DescriptorImpl/doCheckUrl.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockableResourcesManager.java:[267,27] Generating org/jenkins/plugins/lockableresources/LockableResourcesManager/doCheckForcedServerId.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/UpdateLockStep.java:[284,31] Generating org/jenkins/plugins/lockableresources/UpdateLockStep/DescriptorImpl/doCheckDeleteResource.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RequiredResourcesProperty.java:[315,41] Generating org/jenkins/plugins/lockableresources/RequiredResourcesProperty/DescriptorImpl/doAutoCompleteLabelName.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RequiredResourcesProperty.java:[337,48] Generating org/jenkins/plugins/lockableresources/RequiredResourcesProperty/DescriptorImpl/doAutoCompleteResourceNames.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/RequiredResourcesProperty.java:[271,31] Generating org/jenkins/plugins/lockableresources/RequiredResourcesProperty/DescriptorImpl/doCheckResourceNumber.stapler
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/UpdateLockStep.java:[232,31] Generating org/jenkins/plugins/lockableresources/UpdateLockStep/DescriptorImpl/doCheckResource.stapler
+[WARNING] unknown enum constant javax.annotation.meta.When.MAYBE
+  reason: class file for javax.annotation.meta.When not found
+[WARNING] unknown enum constant javax.annotation.meta.When.ALWAYS
+[WARNING] unknown enum constant javax.annotation.meta.When.UNKNOWN
+[WARNING] unknown enum constant javax.annotation.meta.When.MAYBE
+  reason: class file for javax.annotation.meta.When not found
+[WARNING] unknown enum constant javax.annotation.meta.When.ALWAYS
+[WARNING] unknown enum constant javax.annotation.meta.When.UNKNOWN
+[WARNING] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockableResource.java:[334,17] deprecated item is not annotated with @Deprecated
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockStepResource.java: Some input files use or override a deprecated API.
+[INFO] /C:/src/lrp/src/main/java/org/jenkins/plugins/lockableresources/LockStepResource.java: Recompile with -Xlint:deprecation for details.
+[INFO] 
+[INFO] --- access-modifier-checker:1.35:enforce (default-enforce) @ lockable-resources ---
+[INFO] 
+[INFO] --- bridge-method-injector:1.32:process (default) @ lockable-resources ---
+[INFO] 
+[INFO] --- hpi:3.1814.v77d15159f9b_d:insert-test (default-insert-test) @ lockable-resources ---
+[INFO] 
+[INFO] --- antrun:3.2.0:run (createTempDir) @ lockable-resources ---
+[INFO] Executing tasks
+[INFO]     [mkdir] Created dir: C:\src\lrp\target\tmp
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- resources:3.5.0:testResources (default-testResources) @ lockable-resources ---
+[INFO] Copying 5 resources from src\test\resources to target\test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ lockable-resources ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 45 source files with javac [debug parameters release 17] to target\test-classes
+[INFO] /C:/src/lrp/src/test/java/org/jenkins/plugins/lockableresources/ConcurrentModificationExceptionTest.java: Some input files use or override a deprecated API.
+[INFO] /C:/src/lrp/src/test/java/org/jenkins/plugins/lockableresources/ConcurrentModificationExceptionTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] 
+[INFO] --- hpi:3.1814.v77d15159f9b_d:test-hpl (default-test-hpl) @ lockable-resources ---
+[INFO] Generating C:\src\lrp\target\test-classes\the.hpl
+[INFO] 
+[INFO] --- hpi:3.1814.v77d15159f9b_d:resolve-test-dependencies (default-resolve-test-dependencies) @ lockable-resources ---
+[INFO] 
+[INFO] --- hpi:3.1814.v77d15159f9b_d:test-runtime (default-test-runtime) @ lockable-resources ---
+[INFO] Setting jenkins.addOpens to --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED
+[INFO] Setting jenkins.insaneHook to --patch-module='java.base=C:\src\lrp\target\patch-modules\org-netbeans-insane-hook.jar' --add-exports=java.base/org.netbeans.insane.hook=ALL-UNNAMED
+[INFO] Setting jenkins.javaAgent to -javaagent:'C:\m2\org\mockito\mockito-core\5.23.0\mockito-core-5.23.0.jar'
+[INFO] 
+[INFO] --- surefire:3.5.6:test (default-test) @ lockable-resources ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running org.jenkins.plugins.lockableresources.LockableResourceTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.234 s -- in org.jenkins.plugins.lockableresources.LockableResourceTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  01:08 min
+[INFO] Finished at: 2026-08-19T14:48:24+09:00
+[INFO] ------------------------------------------------------------------------
+Run 1/1 exit code: 0
+
+=== Summary ===
+rev      : 148d8ebc6d9453403cfbd810d45623352979071a 2026-08-12 08:25:47 +0000 Annotate remote acquire status endpoint with GET (#1076)
+pattern  : LockableResourceTest
+
+run 1: PASS (exit 0)
+```
+</details>
+
+
